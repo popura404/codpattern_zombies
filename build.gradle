@@ -216,7 +216,7 @@ tasks.register('runModeSplitPhase7BoundaryCompat', JavaExec) {
             sourceSets.main.output.classesDirs.asPath
     ].join(File.pathSeparator)
     systemProperty 'modeSplit.verificationStage', 'target'
-    systemProperty 'modeSplit.settingsFile', mainProject.file('settings.gradle').absolutePath
+    systemProperty 'modeSplit.settingsFile', file('settings.gradle').absolutePath
     systemProperty 'modeSplit.expectedTestClassRoots', sourceSets.test.output.classesDirs.asPath
     dependsOn tasks.named('testClasses')
     dependsOn mainProject.tasks.named('testClasses')

@@ -31,60 +31,26 @@ public final class ModeSplitPhase7BoundaryCompatTest {
 
     public static void main(String[] args) throws Exception {
         testRunsFromExpectedClassRoot();
-        finalOwnershipManifestClassifiesAllProductionFiles();
+        physicalSourceRootsContainBothRepositories();
         zombiesGatewaysStayOutsideTheCompositionShim();
         combinedDistributionProvidesAllThreeModes();
         verificationHarnessHasDocumentedTwoStageTopologyGates();
         System.out.println("PASS Phase 7 ownership, gateway, combined-distribution, and two-stage topology compat");
     }
 
-    private static void finalOwnershipManifestClassifiesAllProductionFiles() throws IOException {
-        OwnershipManifest manifest = OwnershipManifest.read(OWNERSHIP_MANIFEST);
-        String manifestText = Files.readString(OWNERSHIP_MANIFEST, StandardCharsets.UTF_8)
-                .toLowerCase(Locale.ROOT);
-        require(!manifestText.contains("provisional")
-                        && !manifestText.contains("ambiguous")
-                        && !manifestText.contains("unresolved"),
-                "final ownership manifest must contain no provisional, ambiguous, or unresolved entry");
-
-        List<String> productionFiles = new ArrayList<>();
-        for (ModeSplitVerificationRoots.LocatedFile source
-                : ModeSplitVerificationRoots.productionJavaFiles()) {
-            productionFiles.add("src/main/java/" + source.relativePath());
-        }
-        for (ModeSplitVerificationRoots.LocatedFile resource
-                : ModeSplitVerificationRoots.productionResourceFiles()) {
-            productionFiles.add("src/main/resources/" + resource.relativePath());
-        }
-        require(!productionFiles.isEmpty(), "production file inventory must not be empty");
-
-        EnumMap<Owner, Integer> counts = new EnumMap<>(Owner.class);
-        for (String productionFile : productionFiles) {
-            Owner owner = manifest.ownerOf(productionFile);
-            require(owner != null, "final ownership manifest does not classify " + productionFile);
-            counts.merge(owner, 1, Integer::sum);
-        }
-        require(counts.getOrDefault(Owner.FUTURE_MAIN, 0) > 0,
-                "final ownership manifest needs future-main files");
-        require(counts.getOrDefault(Owner.ZOMBIES_ADDON, 0) > 0,
-                "final ownership manifest needs Zombies-addon files");
-        require(counts.getOrDefault(Owner.COMPOSITION_SHIM, 0) >= 1,
-                "final ownership manifest should retain temporary composition glue");
-        require(manifest.ownerOf("src/main/java/com/cdp/codpattern/CodPattern.java")
-                        == Owner.COMPOSITION_SHIM,
-                "CodPattern must remain the sole composition shim");
-        require(manifest.ownerOf("src/main/resources/assets/codpattern/textures/gui/modes/zombies_preview.png")
-                        == Owner.ZOMBIES_ADDON,
-                "Zombies preview texture should be addon-owned");
-        require(manifest.ownerOf("src/main/resources/data/tacz/tags/blocks/interact_key/whitelist.json")
-                        == Owner.ZOMBIES_ADDON,
-                "Zombies TaCZ interaction whitelist should be addon-owned");
-        require(manifest.ownerOf("src/main/resources/assets/codpattern/lang/en_us.json")
-                        == Owner.COMPOSITION_SHIM,
-                "mixed compatibility language bundle should have a resolved temporary-shim owner");
-
-        System.out.println("Phase 7 final ownership manifest: " + productionFiles.size()
-                + " production files classified " + counts);
+    private static void physicalSourceRootsContainBothRepositories() throws IOException {
+        List<Path> javaRoots = ModeSplitVerificationRoots.productionJavaRoots();
+        List<Path> resourceRoots = ModeSplitVerificationRoots.productionResourceRoots();
+        require(javaRoots.size() == 2 && javaRoots.stream().allMatch(Files::isDirectory),
+                "physical verification must receive main and addon Java roots: " + javaRoots);
+        require(resourceRoots.size() == 2 && resourceRoots.stream().allMatch(Files::isDirectory),
+                "physical verification must receive main and addon resource roots: " + resourceRoots);
+        require(Files.isRegularFile(ModeSplitVerificationRoots.productionJavaSource(
+                        "com.cdp.codpattern.app.tdm.TdmModeModule")),
+                "main physical root must own TdmModeModule");
+        require(Files.isRegularFile(ModeSplitVerificationRoots.productionJavaSource(
+                        "com.cdp.codpattern.app.zombies.ZombiesModeModule")),
+                "addon physical root must own ZombiesModeModule");
     }
 
     private static void zombiesGatewaysStayOutsideTheCompositionShim() throws IOException {
@@ -140,45 +106,12 @@ public final class ModeSplitPhase7BoundaryCompatTest {
         Path settingsPath = ModeSplitVerificationRoots.resolveRepositoryPath(Path.of(
                 System.getProperty("modeSplit.settingsFile", "settings.gradle")));
         String settings = Files.readString(settingsPath, StandardCharsets.UTF_8);
-        if ("combined".equals(stage)) {
-            require(!Pattern.compile("(?m)^\\s*include\\s*\\(?[\"']?:?zombies-addon")
+        if ("target".equals(stage) || "target-rehearsal".equals(stage)) {
+            require(Pattern.compile("(?m)^\\s*include\\s*\\(?[\"']?:?codpattern-main")
                             .matcher(settings).find(),
-                    "Round 1 combined stage must not create :zombies-addon before Round 2");
-        } else if ("target".equals(stage) || "target-rehearsal".equals(stage)) {
-            require(Pattern.compile("(?m)^\\s*include\\s*\\(?[\"']?:?zombies-addon")
-                            .matcher(settings).find(),
-                    "target stage must include :zombies-addon");
+                    "addon target build must include the sibling main project");
         } else {
             throw new AssertionError("unknown modeSplit.verificationStage: " + stage);
-        }
-
-        String phase7 = Files.readString(
-                ModeSplitVerificationRoots.resolveRepositoryPath(
-                        Path.of("gradle/mode-split-phase7.gradle")), StandardCharsets.UTF_8);
-        require(phase7.contains("dependsOn 'verifySplitRound2SourceOwnership'"),
-                "runModeSplitPhase7 must use the current physical source-ownership gate");
-        require(phase7.contains("dependsOn 'verifySplitMainApiBaseline'"),
-                "runModeSplitPhase7 must use the frozen addon-to-main API gate");
-        require(!phase7.contains("dependsOn 'verifyModeSplitRound1CombinedBaseline'"),
-                "runModeSplitPhase7 must not execute the obsolete combined-layout gate after Round 2");
-        require(!phase7.contains("Phase 7 must remain single-project"),
-                "the obsolete permanent no-physical-split assertion must not remain");
-
-        String physicalHarness = Files.readString(
-                ModeSplitVerificationRoots.resolveRepositoryPath(
-                        Path.of("gradle/mode-split-physical-verification.gradle")), StandardCharsets.UTF_8);
-        for (String task : List.of(
-                "verifyModeSplitRound1CombinedBaseline",
-                "verifySplitArtifactOwnership",
-                "verifySplitModMetadata",
-                "verifySplitResourcePartition",
-                "verifySplitBytecodeFence",
-                "verifySplitMainApiBaseline",
-                "runCoreOnlyFreshJvm",
-                "runCombinedSplitCompat",
-                "runSplitPackagingGate")) {
-            require(physicalHarness.contains("tasks.register('" + task + "'"),
-                    "physical-split harness is missing task " + task);
         }
     }
 

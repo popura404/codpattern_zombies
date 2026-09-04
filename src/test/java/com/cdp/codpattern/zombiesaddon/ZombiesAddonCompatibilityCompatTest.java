@@ -1,5 +1,7 @@
 package com.cdp.codpattern.zombiesaddon;
 
+import com.cdp.codpattern.architecture.ModeSplitVerificationRoots;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,8 +43,9 @@ public final class ZombiesAddonCompatibilityCompatTest {
     }
 
     private static void metadataUsesIndependentMainVersionRange() throws Exception {
-        String properties = read("gradle.properties");
-        String metadata = read("src/main/resources/META-INF/mods.toml");
+        Path addonRoot = ModeSplitVerificationRoots.repositoryRoot().resolve("../zombies-addon").normalize();
+        String properties = read(addonRoot.resolve("gradle.properties"));
+        String metadata = read(addonRoot.resolve("src/main/resources/META-INF/mods.toml"));
 
         require(properties.contains("mod_version=" + ADDON_VERSION),
                 "addon project version must be " + ADDON_VERSION);
@@ -55,13 +58,15 @@ public final class ZombiesAddonCompatibilityCompatTest {
     }
 
     private static void physicalEntriesPreserveBootstrapOrdering() throws Exception {
-        String mainEntry = read("../codPattern/src/main/java/com/cdp/codpattern/CodPattern.java");
-        String addonEntry = read(
-                "src/main/java/com/cdp/codpattern/zombiesaddon/ZombiesAddon.java");
-        String coreBootstrap = read(
-                "../codPattern/src/main/java/com/cdp/codpattern/bootstrap/CoreBootstrap.java");
-        String zombiesBootstrap = read(
-                "src/main/java/com/cdp/codpattern/app/zombies/bootstrap/ZombiesBootstrap.java");
+        Path mainRoot = ModeSplitVerificationRoots.repositoryRoot();
+        Path addonRoot = mainRoot.resolve("../zombies-addon").normalize();
+        String mainEntry = read(mainRoot.resolve("src/main/java/com/cdp/codpattern/CodPattern.java"));
+        String addonEntry = read(addonRoot.resolve(
+                "src/main/java/com/cdp/codpattern/zombiesaddon/ZombiesAddon.java"));
+        String coreBootstrap = read(mainRoot.resolve(
+                "src/main/java/com/cdp/codpattern/bootstrap/CoreBootstrap.java"));
+        String zombiesBootstrap = read(addonRoot.resolve(
+                "src/main/java/com/cdp/codpattern/app/zombies/bootstrap/ZombiesBootstrap.java"));
 
         require(mainEntry.contains("CoreBootstrap.install(modEventBus);")
                         && !mainEntry.contains("ZombiesBootstrap"),
@@ -76,8 +81,8 @@ public final class ZombiesAddonCompatibilityCompatTest {
                 "main must register the real channel from the later common-setup callback");
     }
 
-    private static String read(String path) throws Exception {
-        return Files.readString(Path.of(path), StandardCharsets.UTF_8);
+    private static String read(Path path) throws Exception {
+        return Files.readString(path, StandardCharsets.UTF_8);
     }
 
     private static void require(boolean condition, String message) {

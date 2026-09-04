@@ -11,7 +11,8 @@ public final class FpsmToolPermissionStaticContractCompatTest {
     private static final Path SPAWN_POINT_ACTION_PACKET = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/packet/SpawnPointToolActionC2SPacket.java");
     private static final Path ZOMBIES_DEPLOY_ACTION_PACKET = Path.of("../zombies-addon/src/main/java/com/phasetranscrystal/fpsmatch/common/packet/zombies/ZombiesDeployToolActionC2SPacket.java");
     private static final Path FPSM_EVENTS = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/FPSMEvents.java");
-    private static final Path CORE_BOOTSTRAP = Path.of("src/main/java/com/cdp/codpattern/bootstrap/CoreBootstrap.java");
+    private static final Path TDM_MODE_MODULE = Path.of(
+            "src/main/java/com/cdp/codpattern/app/tdm/TdmModeModule.java");
     private static final Path ZOMBIES_PREVIEW_CONTRIBUTOR = Path.of(
             "../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/bootstrap/ZombiesHeldToolPreviewContributor.java");
     private static final Path MAP_CREATOR_TOOL = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/MapCreatorTool.java");
@@ -99,15 +100,15 @@ public final class FpsmToolPermissionStaticContractCompatTest {
 
     private static void assertPreviewTickGate() throws IOException {
         String events = Files.readString(FPSM_EVENTS);
-        String coreBootstrap = Files.readString(CORE_BOOTSTRAP);
+        String tdmModeModule = Files.readString(TDM_MODE_MODULE);
         String zombiesContributor = Files.readString(ZOMBIES_PREVIEW_CONTRIBUTOR);
         requireContains(events, "ToolAccessHelper.hasAdminAccess(player)",
                 "tool preview tick must be gated behind op level 2");
         requireContains(events, "ModeHeldToolPreviewContributors.route(player, stack",
                 "tool preview tick must route through installed preview contributors");
-        requireContains(coreBootstrap, "MapCreatorTool.clearHeldPreview(player)",
+        requireContains(tdmModeModule, "MapCreatorTool.clearHeldPreview(player)",
                 "map creator preview must clear for non-op players");
-        requireContains(coreBootstrap, "SpawnPointTool.clearHeldPreview(player)",
+        requireContains(tdmModeModule, "SpawnPointTool.clearHeldPreview(player)",
                 "spawn point preview must clear for non-op players");
         requireContains(zombiesContributor, "ZombiesDeployTool.clearHeldPreview(player)",
                 "zombies deploy preview must clear for non-op players");

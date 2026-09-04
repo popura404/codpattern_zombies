@@ -1,5 +1,9 @@
 package com.cdp.codpattern.app.zombies.service;
 
+import com.cdp.codpattern.app.match.ModeModules;
+import com.cdp.codpattern.app.tdm.TdmModeModule;
+import com.cdp.codpattern.app.zombies.ZombiesModeModule;
+
 import java.util.List;
 
 public final class ZombiesMvp123CompatTestSuite {
@@ -295,6 +299,9 @@ public final class ZombiesMvp123CompatTestSuite {
     }
 
     public static void main(String[] args) throws Throwable {
+        ModeModules.contribute(TdmModeModule.INSTANCE);
+        ModeModules.contribute(ZombiesModeModule.INSTANCE);
+        ModeModules.freeze();
         int skipped = ZombiesCompatSuiteRunner.runAll(TESTS, args);
         if (skipped > 0) {
             System.err.println("ZombiesMvp123CompatTestSuite skipped " + skipped

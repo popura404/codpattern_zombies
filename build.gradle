@@ -163,7 +163,10 @@ def splitCompatTestClasspath = files(
 tasks.register('runZombiesMvp123CompatSuite', JavaExec) {
     group = 'verification'
     description = 'Run the addon-owned pure JVM zombies MVP1-MVP3 compatibility suite.'
-    workingDir = project.projectDir
+    // Historical static contracts address main sources as src/... and addon
+    // sources as ../zombies-addon/...; keep that layout identical whether the
+    // task is launched from the main or addon checkout.
+    workingDir = mainProject.projectDir
     classpath = splitCompatTestClasspath
     mainClass = 'com.cdp.codpattern.app.zombies.service.ZombiesMvp123CompatTestSuite'
     dependsOn tasks.named('testClasses')

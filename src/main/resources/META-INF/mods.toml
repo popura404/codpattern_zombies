@@ -26,7 +26,7 @@ side="BOTH"
 [[dependencies.codpattern_zombies]]
 modId="codpattern"
 mandatory=true
-versionRange="[${mod_version}]"
+versionRange="${codpattern_version_range}"
 ordering="AFTER"
 side="BOTH"
 

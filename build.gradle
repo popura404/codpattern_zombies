@@ -125,6 +125,7 @@ tasks.named('processResources', ProcessResources).configure {
             forge_version_range: forge_version_range,
             loader_version_range: loader_version_range,
             mod_version: mod_version,
+            codpattern_version_range: codpattern_version_range,
             mod_license: mod_license,
             mod_authors: mod_authors,
     ]

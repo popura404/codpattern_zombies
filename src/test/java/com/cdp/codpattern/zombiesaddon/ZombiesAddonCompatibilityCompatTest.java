@@ -46,8 +46,8 @@ public final class ZombiesAddonCompatibilityCompatTest {
 
         require(properties.contains("mod_version=" + ADDON_VERSION),
                 "addon project version must be " + ADDON_VERSION);
-        require(properties.contains("codpattern_version_range=[0.8.0b,)"),
-                "main mod compatibility must start at 0.8.0b");
+        require(properties.contains("codpattern_version_range=[0.8.1b,)"),
+                "main mod compatibility must start at 0.8.1b");
         require(metadata.contains("versionRange=\"${codpattern_version_range}\""),
                 "main dependency must use its independent compatibility range");
         require(!metadata.contains("versionRange=\"[${mod_version}]\""),

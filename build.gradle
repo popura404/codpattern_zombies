@@ -1,0 +1,219 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'org.parchmentmc.librarian.forgegradle' version '1.2.0.7-dev-SNAPSHOT'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = 'codpattern-zombies'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+def mainProject = project(':codpattern-main')
+def dedicatedServerRunRequested = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains('server') || it.toLowerCase().contains('gametest')
+}
+def mainRuntimeOutput = files(
+        mainProject.layout.buildDirectory.dir('classes/java/main'),
+        mainProject.layout.buildDirectory.dir('resources/main'))
+def mainTestOutput = files(
+        mainProject.layout.buildDirectory.dir('classes/java/test'),
+        mainProject.layout.buildDirectory.dir('resources/test'))
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            // ForgeGradle's normal runClient task is rooted in this addon
+            // checkout, never in the main mod's directory.
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                codpattern {
+                    source mainProject.sourceSets.main
+                }
+                codpattern_zombies {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        client {
+            property 'forge.enabledGameTestNamespaces', 'codpattern_zombies'
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', 'codpattern_zombies'
+            args '--nogui'
+        }
+
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', 'codpattern_zombies'
+        }
+
+        data {
+            args '--mod', 'codpattern_zombies', '--all',
+                    '--output', file('src/generated/resources/'),
+                    '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+repositories {
+    maven {
+        name = 'Curse Maven'
+        url = 'https://www.cursemaven.com'
+        content {
+            includeGroup 'curse.maven'
+        }
+    }
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+    }
+    flatDir { dirs mainProject.file('libs') }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    implementation fg.deobf('curse.maven:timeless-and-classics-zero-1028108:6654541-sources-6654543')
+    compileOnly fg.deobf('maven.modrinth:lr-tactical:0.3.0')
+    // Keep the addon-side client run equivalent to the main mod's normal
+    // client environment.  These are external runtime mods, not addon
+    // project sources fetched by the main build.
+    if (!dedicatedServerRunRequested) {
+        runtimeOnly fg.deobf('maven.modrinth:physicsmod:JkM3OTEl')
+        runtimeOnly fg.deobf('maven.modrinth:taczaddon:1.1.6')
+    }
+
+    // The main project is a sibling source project.  Its classes are exposed
+    // for compilation and loaded separately by the run config's codpattern
+    // mod entry; they are not packaged into the addon JAR.
+    // Use the compiled output paths directly here.  Keeping this as a plain
+    // file collection avoids Gradle wiring the addon `classes` task back into
+    // the main project's source-set lifecycle (which would form a cycle).
+    compileOnly mainRuntimeOutput
+}
+
+tasks.named('compileJava').configure {
+    dependsOn mainProject.tasks.named('classes')
+}
+
+sourceSets.test.compileClasspath += mainRuntimeOutput
+sourceSets.test.compileClasspath += mainTestOutput
+sourceSets.test.runtimeClasspath += mainRuntimeOutput
+sourceSets.test.runtimeClasspath += mainTestOutput
+
+tasks.named('compileTestJava').configure {
+    dependsOn mainProject.tasks.named('testClasses')
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    def replaceProperties = [
+            minecraft_version: minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            forge_version: forge_version,
+            forge_version_range: forge_version_range,
+            loader_version_range: loader_version_range,
+            mod_version: mod_version,
+            mod_license: mod_license,
+            mod_authors: mod_authors,
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title'       : 'codpattern_zombies',
+                'Specification-Vendor'      : mod_authors,
+                'Specification-Version'     : '1',
+                'Implementation-Title'      : project.name,
+                'Implementation-Version'    : project.jar.archiveVersion,
+                'Implementation-Vendor'     : mod_authors,
+                'Implementation-Timestamp'  : new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+def splitCompatTestClasspath = files(
+        sourceSets.test.output,
+        sourceSets.main.output,
+        mainTestOutput,
+        mainRuntimeOutput) + sourceSets.test.compileClasspath
+
+tasks.register('runZombiesMvp123CompatSuite', JavaExec) {
+    group = 'verification'
+    description = 'Run the addon-owned pure JVM zombies MVP1-MVP3 compatibility suite.'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.service.ZombiesMvp123CompatTestSuite'
+    dependsOn tasks.named('testClasses')
+    dependsOn mainProject.tasks.named('testClasses')
+}
+
+tasks.register('runZombiesAddonPublicApiBoundaryCompat', JavaExec) {
+    group = 'verification'
+    description = 'Run the physical addon-to-main public API source-boundary audit.'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.architecture.ZombiesAddonPublicApiBoundaryCompatTest'
+    dependsOn tasks.named('testClasses')
+    dependsOn mainProject.tasks.named('testClasses')
+}
+
+tasks.register('runZombiesPhase0DataFixtureCompat', JavaExec) {
+    group = 'verification'
+    description = 'Run the addon-owned Phase 0 Zombies map, config, NBT, and ItemStack fixtures.'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.compat.modesplit.Phase0ZombiesDataFixtureCompatTest'
+    dependsOn tasks.named('testClasses')
+    dependsOn mainProject.tasks.named('testClasses')
+}
+
+tasks.register('runModeSplitPhase7BoundaryCompat', JavaExec) {
+    group = 'verification'
+    description = 'Run the addon-owned logical and physical split boundary compatibility checks.'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.verification.phase7.ModeSplitPhase7BoundaryCompatTest'
+    systemProperty 'modeSplit.productionJavaRoots', [
+            mainProject.file('src/main/java'), file('src/main/java')
+    ]*.absolutePath.join(File.pathSeparator)
+    systemProperty 'modeSplit.productionResourceRoots', [
+            mainProject.file('src/main/resources'), file('src/main/resources')
+    ]*.absolutePath.join(File.pathSeparator)
+    systemProperty 'modeSplit.testJavaRoots', [
+            mainProject.file('src/test/java'), file('src/test/java')
+    ]*.absolutePath.join(File.pathSeparator)
+    systemProperty 'modeSplit.testResourceRoots', [
+            mainProject.file('src/test/resources'), file('src/test/resources')
+    ]*.absolutePath.join(File.pathSeparator)
+    systemProperty 'modeSplit.mainClassRoots', [
+            mainProject.sourceSets.main.output.classesDirs.asPath,
+            sourceSets.main.output.classesDirs.asPath
+    ].join(File.pathSeparator)
+    systemProperty 'modeSplit.verificationStage', 'target'
+    systemProperty 'modeSplit.settingsFile', mainProject.file('settings.gradle').absolutePath
+    systemProperty 'modeSplit.expectedTestClassRoots', sourceSets.test.output.classesDirs.asPath
+    dependsOn tasks.named('testClasses')
+    dependsOn mainProject.tasks.named('testClasses')
+}

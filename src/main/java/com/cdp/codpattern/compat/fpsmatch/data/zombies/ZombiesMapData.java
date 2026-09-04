@@ -3,7 +3,6 @@ package com.cdp.codpattern.compat.fpsmatch.data.zombies;
 import com.cdp.codpattern.app.match.BuiltInGameModes;
 import com.cdp.codpattern.app.match.persistence.CommonModeMapData;
 import com.cdp.codpattern.app.match.persistence.ModeMapPersistenceProvider;
-import com.cdp.codpattern.app.match.persistence.ModeMapPersistenceRegistry;
 import com.cdp.codpattern.app.zombies.map.ZombiesMapObjects;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesAmmoBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesArmorStationData;
@@ -27,7 +26,6 @@ import com.phasetranscrystal.fpsmatch.core.data.SpawnPointData;
 import com.phasetranscrystal.fpsmatch.core.data.save.FPSMDataManager;
 import com.phasetranscrystal.fpsmatch.core.data.save.SaveHolder;
 import com.phasetranscrystal.fpsmatch.core.event.RegisterFPSMSaveDataEvent;
-import com.phasetranscrystal.fpsmatch.core.event.RegisterFPSMapEvent;
 import com.phasetranscrystal.fpsmatch.core.map.BaseMap;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -149,16 +147,7 @@ public class ZombiesMapData {
     }
 
     @SubscribeEvent
-    public static void onRegisterFPSMap(RegisterFPSMapEvent event) {
-        ModeMapPersistenceRegistry.register(PERSISTENCE_PROVIDER);
-        if (event != null) {
-            event.registerGameType(BuiltInGameModes.ZOMBIES, ZombiesMap::new);
-        }
-    }
-
-    @SubscribeEvent
     public static void onRegisterSaveData(RegisterFPSMSaveDataEvent event) {
-        ModeMapPersistenceRegistry.register(PERSISTENCE_PROVIDER);
         SaveHolder<MapData> saveHolder = new SaveHolder.Builder<>(MapData.CODEC)
                 .withReadHandler(ZombiesMapData::loadMap)
                 .withWriteHandler(ZombiesMapData::saveAllMaps)

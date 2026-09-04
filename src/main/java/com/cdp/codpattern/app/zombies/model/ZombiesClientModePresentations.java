@@ -1,15 +1,10 @@
 package com.cdp.codpattern.app.zombies.model;
 
-import com.cdp.codpattern.app.match.GameModeBootstrap;
 import com.cdp.codpattern.app.match.model.ClientModePresentation;
 import net.minecraft.resources.ResourceLocation;
 
 public final class ZombiesClientModePresentations {
     private ZombiesClientModePresentations() {
-    }
-
-    public static void registerDefaults() {
-        GameModeBootstrap.registerClientPresentations();
     }
 
     public static ClientModePresentation zombiesPresentation() {

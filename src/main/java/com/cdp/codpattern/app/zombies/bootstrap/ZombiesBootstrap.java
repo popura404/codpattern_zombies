@@ -1,14 +1,7 @@
 package com.cdp.codpattern.app.zombies.bootstrap;
 
-import com.cdp.codpattern.app.match.runtime.debug.ModeDebugSnapshotContributors;
-import com.cdp.codpattern.app.match.runtime.entity.ModeEntityReconciliationContributors;
-import com.cdp.codpattern.app.match.runtime.object.ModeObjectInteractionBypassContributors;
-import com.cdp.codpattern.app.match.runtime.player.ModePlayerLoginContributors;
-import com.cdp.codpattern.app.match.runtime.protection.ModeAreaProtectionContributors;
-import com.cdp.codpattern.app.match.runtime.tool.ModeHeldToolPreviewContributors;
-import com.cdp.codpattern.app.zombies.model.ZombiesGameModeDefinitions;
-import com.cdp.codpattern.app.zombies.service.ZombiesEntityReconciliationContributor;
-import com.cdp.codpattern.app.zombies.service.ZombiesLoginRecoveryContributor;
+import com.cdp.codpattern.app.match.ModeModules;
+import com.cdp.codpattern.app.zombies.ZombiesModeModule;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -27,13 +20,7 @@ public final class ZombiesBootstrap {
         if (!INSTALLED.compareAndSet(false, true)) {
             return;
         }
-        ZombiesGameModeDefinitions.registerDefaults();
-        ModePlayerLoginContributors.register(new ZombiesLoginRecoveryContributor());
-        ModeEntityReconciliationContributors.register(new ZombiesEntityReconciliationContributor());
-        ModeObjectInteractionBypassContributors.register(new ZombiesObjectInteractionBypassContributor());
-        ModeAreaProtectionContributors.register(new ZombiesAreaProtectionContributor());
-        ModeDebugSnapshotContributors.register(new ZombiesDebugSnapshotContributor());
-        ModeHeldToolPreviewContributors.register(new ZombiesHeldToolPreviewContributor());
+        ModeModules.contribute(ZombiesModeModule.INSTANCE);
         ZombiesNetworkPacketContributor.install();
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> ZombiesClientBootstrap::install);
 

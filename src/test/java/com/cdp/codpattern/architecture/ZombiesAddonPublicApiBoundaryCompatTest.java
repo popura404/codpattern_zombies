@@ -1,13 +1,12 @@
 package com.cdp.codpattern.architecture;
 
 import com.cdp.codpattern.app.match.model.GameModeDefinition;
-import com.cdp.codpattern.app.zombies.model.ZombiesGameModeDefinitions;
+import com.cdp.codpattern.app.zombies.ZombiesModeModule;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -54,8 +53,7 @@ public final class ZombiesAddonPublicApiBoundaryCompatTest {
             }
         }
 
-        List<GameModeDefinition> definitions = new ArrayList<>();
-        ZombiesGameModeDefinitions.contributor().contribute(definitions::add);
+        List<GameModeDefinition> definitions = ZombiesModeModule.INSTANCE.definitions();
         require(definitions.size() == 1 && "zombies".equals(definitions.get(0).gameType()),
                 "Zombies definition facade must expose exactly the addon-owned Zombies definition");
         require(publicMainImports > 0, "boundary audit did not inspect any addon-to-main public API imports");

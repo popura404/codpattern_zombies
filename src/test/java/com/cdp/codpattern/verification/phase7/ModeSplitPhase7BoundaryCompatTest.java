@@ -1,11 +1,11 @@
 package com.cdp.codpattern.verification.phase7;
 
-import com.cdp.codpattern.app.match.GameModeBootstrap;
 import com.cdp.codpattern.app.match.GameModeRegistry;
 import com.cdp.codpattern.app.match.GameModeRuntimeRegistry;
+import com.cdp.codpattern.app.match.ModeModules;
 import com.cdp.codpattern.app.match.model.ClientModePresentationRegistry;
-import com.cdp.codpattern.app.tdm.model.TdmGameModeDefinitions;
-import com.cdp.codpattern.app.zombies.model.ZombiesGameModeDefinitions;
+import com.cdp.codpattern.app.tdm.TdmModeModule;
+import com.cdp.codpattern.app.zombies.ZombiesModeModule;
 import com.cdp.codpattern.architecture.ModeSplitVerificationRoots;
 
 import java.io.File;
@@ -90,13 +90,16 @@ public final class ModeSplitPhase7BoundaryCompatTest {
     private static void zombiesGatewaysStayOutsideTheCompositionShim() throws IOException {
         Map<String, List<String>> requiredPublicRoutes = Map.of(
                 "com.cdp.codpattern.app.zombies.bootstrap.ZombiesBootstrap",
-                List.of("ZombiesGameModeDefinitions.registerDefaults()", "ModePlayerLoginContributors.register("),
+                List.of("ModeModules.contribute(ZombiesModeModule.INSTANCE)"),
+                "com.cdp.codpattern.app.zombies.ZombiesModeModule",
+                List.of("implements ModeModule", "ZombiesGameModeDefinitions.definitions()",
+                        "playerLoginContributors()", "areaProtectionContributors()"),
                 "com.cdp.codpattern.app.zombies.bootstrap.ZombiesClientBootstrap",
                 List.of("ModeClientActionHandlers.register(", "ModeGuiOverlayContributors.register("),
                 "com.cdp.codpattern.app.zombies.bootstrap.ZombiesNetworkPacketContributor",
                 List.of("ModeNetworkPacketContributions.install(", "ModeNetworkPacketSlots."),
                 "com.cdp.codpattern.app.zombies.model.ZombiesGameModeDefinitions",
-                List.of("ModeDefinitionContributions.register(", "Optional.of(ZombiesRuntimeProvider.INSTANCE)"));
+                List.of("Optional.of(ZombiesRuntimeProvider.INSTANCE)"));
 
         for (Map.Entry<String, List<String>> entry : requiredPublicRoutes.entrySet()) {
             Path sourcePath = ModeSplitVerificationRoots.productionJavaSource(entry.getKey());
@@ -115,9 +118,9 @@ public final class ModeSplitPhase7BoundaryCompatTest {
     }
 
     private static void combinedDistributionProvidesAllThreeModes() {
-        TdmGameModeDefinitions.registerDefaults();
-        ZombiesGameModeDefinitions.registerDefaults();
-        GameModeBootstrap.registerCommonProviders();
+        ModeModules.contribute(TdmModeModule.INSTANCE);
+        ModeModules.contribute(ZombiesModeModule.INSTANCE);
+        ModeModules.freeze();
 
         List<String> gameTypes = GameModeRegistry.orderedDefinitions().stream()
                 .map(definition -> definition.gameType())

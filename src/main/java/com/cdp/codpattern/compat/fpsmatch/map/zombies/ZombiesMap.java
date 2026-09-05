@@ -37,6 +37,7 @@ import com.cdp.codpattern.app.zombies.service.ZombiesEconomyService;
 import com.cdp.codpattern.app.zombies.service.ZombiesEquipmentSnapshotService;
 import com.cdp.codpattern.app.zombies.service.ZombiesErrorCode;
 import com.cdp.codpattern.app.zombies.service.ZombiesIntermissionRespawnService;
+import com.cdp.codpattern.app.zombies.service.ZombiesLegacyTextFormatter;
 import com.cdp.codpattern.app.zombies.service.ZombiesMapOccupancyService;
 import com.cdp.codpattern.app.zombies.service.ZombiesMobLifecycleService;
 import com.cdp.codpattern.app.zombies.service.ZombiesMobRecycleService;
@@ -61,6 +62,8 @@ import com.cdp.codpattern.app.zombies.service.ZombiesStartupValidationService;
 import com.cdp.codpattern.app.zombies.service.ZombiesUltimateMachineService;
 import com.cdp.codpattern.app.zombies.service.ZombiesWaveConfigRepository;
 import com.cdp.codpattern.app.zombies.service.ZombiesWaveDirector;
+import com.cdp.codpattern.app.zombies.service.ZombiesWaveTextRepository;
+import com.cdp.codpattern.app.zombies.service.ZombiesWaveTextScheduler;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponInstanceService;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponWallOfferService;
 import com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue;
@@ -132,6 +135,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
     private final ZombiesObjectInteractionService objectInteractionService;
     private final ZombiesBarrierVisualService barrierVisualService;
     private final ZombiesBarrierBlockRuntimeService barrierBlockRuntimeService;
+    private final ZombiesWaveTextScheduler waveTextScheduler = new ZombiesWaveTextScheduler(List.of());
     private final ModeRoomHandle roomHandle;
     private Optional<SpawnPointData> matchEndTeleportPoint = Optional.empty();
     private ZombiesMapObjects objects = ZombiesMapObjects.EMPTY;
@@ -268,6 +272,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
         MinecraftServer server = getServerLevel().getServer();
         List<UUID> members = normalizeStartMembers(memberSnapshot);
         if (server == null || members.isEmpty()) {
+            waveTextScheduler.cancel();
             clearFrozenObjectsAndResetRuntime();
             lifecycleRuntime.cancelStartVote();
             markRoomListDirty();
@@ -275,6 +280,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
         }
 
         loadStartupConfigs(server);
+        loadWaveTextConfig(server);
         reconcileActiveMobCounter();
         ZombiesStartupFlow startupFlow = new ZombiesStartupFlow(
                 new ZombiesStartupValidationService(
@@ -763,6 +769,23 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
                 rulesConfig().getDefaults()).load();
     }
 
+    private void loadWaveTextConfig(MinecraftServer server) {
+        if (server == null) {
+            waveTextScheduler.replaceDefinitions(List.of());
+            return;
+        }
+        ZombiesWaveTextRepository.LoadResult loadResult = new ZombiesWaveTextRepository(
+                ZombiesConfigPaths.zombiesMapWaveText(server, getMapName())).load();
+        waveTextScheduler.replaceDefinitions(loadResult.definitions());
+    }
+
+    private void sendWaveText(String text) {
+        Component message = ZombiesLegacyTextFormatter.parse(text);
+        for (ServerPlayer player : survivorPlayers()) {
+            player.sendSystemMessage(message);
+        }
+    }
+
     private ZombiesRulesConfig rulesConfig() {
         if (rulesConfig == null) {
             rulesConfig = new ZombiesRulesConfig();
@@ -872,6 +895,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
     }
 
     private void runCleanup(String reason) {
+        waveTextScheduler.cancel();
         cleanupService.cleanup(roomId, reason, this::levelForDimension);
         mobRecycleService.reset();
         reconcileActiveMobCounter();
@@ -1012,6 +1036,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
     }
 
     private void clearFrozenObjectsAndResetRuntime() {
+        waveTextScheduler.cancel();
         if (objectsFrozen) {
             powerService.reset();
         }
@@ -1543,9 +1568,18 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
                         runtimeState.waveState().maxWave());
                 reviveIntermissionDeadSpectators();
                 playIntermissionBell();
+                waveTextScheduler.startWave(runtimeState.waveState().targetWave(), ZombiesMap.this::sendWaveText);
             }
             if (runtimeState.phase() == ZombiesGamePhase.WAVE_ACTIVE && waveDirector != null) {
                 waveDirector.enterTargetWave(runtimeState.waveState());
+            }
+            return ZombiesServiceResult.ok();
+        }
+
+        @Override
+        public ZombiesServiceResult<Void> onExit(com.cdp.codpattern.app.zombies.runtime.ZombiesPhaseTransitionContext context) {
+            if ("INTERMISSION".equals(context.previousPhase())) {
+                waveTextScheduler.cancel();
             }
             return ZombiesServiceResult.ok();
         }
@@ -1558,6 +1592,9 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
             List<UUID> timedOutPlayers = connectionStateService.applyOfflineGraceTimeouts(runtimeState.roomTick());
             if (!timedOutPlayers.isEmpty()) {
                 markRosterDirty();
+            }
+            if (runtimeState.phase() == ZombiesGamePhase.INTERMISSION) {
+                waveTextScheduler.tick(ZombiesMap.this::sendWaveText);
             }
             if (runtimeState.phase() == ZombiesGamePhase.WAVE_ACTIVE && waveDirector != null) {
                 mobRecycleService.tick(

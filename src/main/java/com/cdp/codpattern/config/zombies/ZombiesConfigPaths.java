@@ -10,6 +10,7 @@ public final class ZombiesConfigPaths {
     private static final String SERVER_ZOMBIES_RULES_ROOT = "serverconfig/codpattern/zombies_rules";
     private static final String ZOMBIES_RULES_CONFIG_FILE = "config.json";
     private static final String ZOMBIES_WAVES_DIRECTORY = "waves";
+    private static final String ZOMBIES_WAVE_TEXT_DIRECTORY = "wavetext";
     private static final String ZOMBIES_WEAPON_FILTER_FILE = "zombies_weapon_filter.json";
 
     private ZombiesConfigPaths() {
@@ -27,6 +28,10 @@ public final class ZombiesConfigPaths {
 
     public static Path zombiesMapWaves(MinecraftServer server, String mapName) {
         return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WAVES_DIRECTORY);
+    }
+
+    public static Path zombiesMapWaveText(MinecraftServer server, String mapName) {
+        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WAVE_TEXT_DIRECTORY);
     }
 
     public static Path zombiesMapWeaponFilter(MinecraftServer server, String mapName) {

@@ -204,6 +204,7 @@ public class ZombiesRulesConfig {
                 deadPlayerPolicy = DEAD_PLAYER_POLICY_SPECTATE_UNTIL_INTERMISSION;
             }
         }
+
     }
 
     public static class Defaults {
@@ -417,6 +418,11 @@ public class ZombiesRulesConfig {
             if (nbt == null || nbt.trim().isEmpty()) {
                 nbt = DEFAULT_STARTER_GUN_ITEM.equals(item) ? DEFAULT_STARTER_WEAPON_NBT : "";
             }
+        }
+
+        /** Public compatibility hook used by the split weapon_rules model. */
+        public void normalizeCompat() {
+            normalize();
         }
     }
 

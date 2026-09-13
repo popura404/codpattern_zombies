@@ -3,6 +3,7 @@ package com.cdp.codpattern.app.zombies.service;
 import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxConfig;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxRepository;
+import com.cdp.codpattern.config.zombies.ZombiesWeaponRulesConfig;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,12 +16,25 @@ import java.util.function.Supplier;
 /** Weighted, wave-aware reward selection for mystery boxes. */
 public final class ZombiesMysteryBoxOfferService {
     private final Supplier<ZombiesMysteryBoxConfig> configSupplier;
+    private Supplier<ZombiesWeaponRulesConfig> weaponRulesSupplier = ZombiesWeaponRulesConfig::defaults;
     private final RandomGenerator random;
 
     public ZombiesMysteryBoxOfferService() { this(ZombiesMysteryBoxRepository::getConfig, RandomGenerator.getDefault()); }
     public ZombiesMysteryBoxOfferService(Supplier<ZombiesMysteryBoxConfig> configSupplier, RandomGenerator random) {
         this.configSupplier = configSupplier == null ? ZombiesMysteryBoxRepository::getConfig : configSupplier;
         this.random = random == null ? RandomGenerator.getDefault() : random;
+    }
+
+    /** v1 constructor: rarity damage is resolved from weapon_rules.json. */
+    public ZombiesMysteryBoxOfferService(Supplier<ZombiesMysteryBoxConfig> boxSupplier,
+                                         Supplier<ZombiesWeaponRulesConfig> weaponRulesSupplier,
+                                         RandomGenerator random) {
+        this(boxSupplier, random);
+        this.weaponRulesSupplier = weaponRulesSupplier == null ? ZombiesWeaponRulesConfig::defaults : weaponRulesSupplier;
+    }
+
+    public ZombiesMysteryBoxOfferService(ZombiesMysteryBoxConfig box, ZombiesWeaponRulesConfig weaponRules, RandomGenerator random) {
+        this(() -> box, () -> weaponRules, random);
     }
 
     public Offer createOffer(int currentWave) {
@@ -32,7 +46,10 @@ public final class ZombiesMysteryBoxOfferService {
         if (rarity == null) return Offer.empty(config.getCost());
         ZombiesMysteryBoxConfig.GunWeight gun = pickGun(rarity.value().getGuns());
         if (gun == null || !ZombiesWeaponInstanceState.isValidGunId(gun.getGunId())) return Offer.empty(config.getCost());
-        return new Offer(gun.getGunId(), rarity.value().getId(), rarity.value().getDamageMultiplier(), config.getCost());
+        double damage = rarity.value().getDamageMultiplier();
+        ZombiesWeaponRulesConfig rules = weaponRulesSupplier == null ? null : weaponRulesSupplier.get();
+        if (rules != null) damage = rules.damageMultiplier(rarity.value().getId()).orElse(damage);
+        return new Offer(gun.getGunId(), rarity.value().getId(), damage, config.getCost());
     }
     public List<String> eligibleGunIds() {
         ZombiesMysteryBoxConfig config = configSupplier.get();

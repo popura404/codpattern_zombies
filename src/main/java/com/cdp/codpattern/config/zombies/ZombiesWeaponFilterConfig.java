@@ -9,11 +9,14 @@ public class ZombiesWeaponFilterConfig {
             ZombiesRulesConfig.WeaponRules.DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE;
 
     private List<String> weaponTabs = defaultWeaponTabs();
-    private Double ammunitionPerMagazineMultiple = DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE;
+    /** Deprecated compatibility accessor; ammunition is stored in weapon_rules.json in v1. */
+    private transient Double ammunitionPerMagazineMultiple = DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE;
     private List<String> blockedItemNamespaces = defaultBlockedItemNamespaces();
     private List<String> blockedWeaponIds = defaultBlockedWeaponIds();
     private List<String> blockedAttachmentNamespaces = defaultBlockedAttachmentNamespaces();
     private List<String> blockedAttachmentIds = defaultBlockedAttachmentIds();
+
+    private int schemaVersion = 1;
 
     public List<String> getWeaponTabs() {
         if (weaponTabs == null) {
@@ -85,11 +88,16 @@ public class ZombiesWeaponFilterConfig {
         return ammunitionPerMagazineMultiple;
     }
 
+    public int getSchemaVersion() { return schemaVersion; }
+    public void setSchemaVersion(int value) { schemaVersion = value; }
+    public static ZombiesWeaponFilterConfig defaults() { ZombiesWeaponFilterConfig c = new ZombiesWeaponFilterConfig(); c.normalize(); return c; }
+
     public void setAmmunitionPerMagazineMultiple(Double ammunitionPerMagazineMultiple) {
         this.ammunitionPerMagazineMultiple = ammunitionPerMagazineMultiple;
     }
 
     public void normalize() {
+        schemaVersion = 1;
         setWeaponTabs(weaponTabs);
         setBlockedItemNamespaces(blockedItemNamespaces);
         setBlockedWeaponIds(blockedWeaponIds);

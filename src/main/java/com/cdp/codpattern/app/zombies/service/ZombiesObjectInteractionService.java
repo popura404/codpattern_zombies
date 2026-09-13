@@ -25,6 +25,7 @@ import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxConfig;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxRepository;
+import com.cdp.codpattern.config.zombies.ZombiesWeaponRulesConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -517,6 +518,18 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         this.mysteryBoxConfigSupplier = configSupplier == null ? ZombiesMysteryBoxRepository::getConfig : configSupplier;
         this.currentWaveSupplier = currentWaveSupplier == null ? () -> 1 : currentWaveSupplier;
         this.mysteryBoxOfferService = new ZombiesMysteryBoxOfferService(this.mysteryBoxConfigSupplier, null);
+    }
+
+    public void configureMysteryBoxRuntime(
+            Supplier<Collection<ZombiesMysteryBoxData>> mysteryBoxesSupplier,
+            Supplier<ZombiesMysteryBoxConfig> configSupplier,
+            Supplier<ZombiesWeaponRulesConfig> weaponRulesSupplier,
+            IntSupplier currentWaveSupplier
+    ) {
+        this.mysteryBoxesSupplier = mysteryBoxesSupplier == null ? List::of : mysteryBoxesSupplier;
+        this.mysteryBoxConfigSupplier = configSupplier == null ? ZombiesMysteryBoxRepository::getConfig : configSupplier;
+        this.currentWaveSupplier = currentWaveSupplier == null ? () -> 1 : currentWaveSupplier;
+        this.mysteryBoxOfferService = new ZombiesMysteryBoxOfferService(this.mysteryBoxConfigSupplier, weaponRulesSupplier, null);
     }
 
     @Override

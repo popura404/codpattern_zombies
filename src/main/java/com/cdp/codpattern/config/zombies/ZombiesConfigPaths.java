@@ -8,10 +8,16 @@ import java.nio.file.Path;
 /** Addon-owned construction of the existing map-scoped Zombies config paths. */
 public final class ZombiesConfigPaths {
     private static final String SERVER_ZOMBIES_RULES_ROOT = "serverconfig/codpattern/zombies_rules";
-    private static final String ZOMBIES_RULES_CONFIG_FILE = "config.json";
+    private static final String ZOMBIES_ROOM_FILE = "room.json";
+    private static final String ZOMBIES_WEAPON_RULES_FILE = "weapon_rules.json";
+    private static final String ZOMBIES_WEAPON_WALL_FILE = "weapon_wall.json";
     private static final String ZOMBIES_WAVES_DIRECTORY = "waves";
+    // Kept as a source-compatible alias for the pre-v1 path.  New maps use
+    // wave_text; callers of the old constant are not allowed to influence
+    // v1 loading.
     private static final String ZOMBIES_WAVE_TEXT_DIRECTORY = "wavetext";
-    private static final String ZOMBIES_WEAPON_FILTER_FILE = "zombies_weapon_filter.json";
+    private static final String ZOMBIES_WAVE_TEXT_DIRECTORY_V1 = "wave_text";
+    private static final String ZOMBIES_WEAPON_FILTER_FILE = "weapon_filter.json";
     private static final String ZOMBIES_MYSTERY_BOX_FILE = "mystery_box.json";
 
     private ZombiesConfigPaths() {
@@ -24,7 +30,21 @@ public final class ZombiesConfigPaths {
     }
 
     public static Path zombiesMapRulesConfig(MinecraftServer server, String mapName) {
-        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_RULES_CONFIG_FILE);
+        // Legacy path.  It is intentionally kept for compatibility and is no
+        // longer read by the unified repository.
+        return zombiesMapRulesRoot(server, mapName).resolve("config.json");
+    }
+
+    public static Path zombiesMapRoom(MinecraftServer server, String mapName) {
+        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_ROOM_FILE);
+    }
+
+    public static Path zombiesMapWeaponRules(MinecraftServer server, String mapName) {
+        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WEAPON_RULES_FILE);
+    }
+
+    public static Path zombiesMapWeaponWall(MinecraftServer server, String mapName) {
+        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WEAPON_WALL_FILE);
     }
 
     public static Path zombiesMapWaves(MinecraftServer server, String mapName) {
@@ -32,7 +52,7 @@ public final class ZombiesConfigPaths {
     }
 
     public static Path zombiesMapWaveText(MinecraftServer server, String mapName) {
-        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WAVE_TEXT_DIRECTORY);
+        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WAVE_TEXT_DIRECTORY_V1);
     }
 
     public static Path zombiesMapWeaponFilter(MinecraftServer server, String mapName) {

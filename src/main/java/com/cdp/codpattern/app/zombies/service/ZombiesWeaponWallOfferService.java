@@ -5,6 +5,8 @@ import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
 import com.cdp.codpattern.config.zombies.ZombiesRulesRepository;
 import com.cdp.codpattern.config.zombies.ZombiesRulesValidator;
+import com.cdp.codpattern.config.zombies.ZombiesWeaponWallConfig;
+import com.cdp.codpattern.config.zombies.ZombiesWeaponRulesConfig;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
@@ -22,6 +24,8 @@ public class ZombiesWeaponWallOfferService {
     private final Supplier<ZombiesRulesConfig> rulesSupplier;
     private final RandomGenerator random;
     private final Function<String, ItemStack> weaponStackFactory;
+    private Supplier<ZombiesWeaponWallConfig> splitWallSupplier;
+    private Supplier<ZombiesWeaponRulesConfig> splitRulesSupplier;
 
     public ZombiesWeaponWallOfferService() {
         this(ZombiesRulesRepository::getConfig, new Random(), ZombiesWeaponInventoryService::createDefaultTaczGunStackForRules);
@@ -39,12 +43,27 @@ public class ZombiesWeaponWallOfferService {
                 : weaponStackFactory;
     }
 
+    /** v1 constructor where wall pools and shared rarity damage are separate files. */
+    public ZombiesWeaponWallOfferService(
+            Supplier<ZombiesWeaponWallConfig> wallSupplier,
+            Supplier<ZombiesWeaponRulesConfig> weaponRulesSupplier,
+            RandomGenerator random,
+            Function<String, ItemStack> weaponStackFactory
+    ) {
+        this(ZombiesRulesRepository::getConfig, random, weaponStackFactory);
+        this.splitWallSupplier = wallSupplier == null ? ZombiesWeaponWallConfig::defaults : wallSupplier;
+        this.splitRulesSupplier = weaponRulesSupplier == null ? ZombiesWeaponRulesConfig::defaults : weaponRulesSupplier;
+    }
+
     public ZombiesObjectStateStore.WeaponWallOffer createOffer(
             ZombiesWeaponWallData weaponWall,
             int currentWave
     ) {
         if (weaponWall == null) {
             return ZombiesObjectStateStore.WeaponWallOffer.empty();
+        }
+        if (splitWallSupplier != null) {
+            return createSplitOffer(weaponWall.objectId(), currentWave);
         }
         ZombiesRulesConfig rules = rulesSupplier.get();
         if (rules == null) {
@@ -72,7 +91,26 @@ public class ZombiesWeaponWallOfferService {
                 rarity.rarity().getDamageMultiplier() == null ? 0.0D : rarity.rarity().getDamageMultiplier());
     }
 
+    private ZombiesObjectStateStore.WeaponWallOffer createSplitOffer(String objectId, int currentWave) {
+        ZombiesWeaponWallConfig wall = splitWallSupplier.get(); if (wall == null) wall = ZombiesWeaponWallConfig.defaults(); wall.normalize();
+        ZombiesWeaponRulesConfig rules = splitRulesSupplier.get(); if (rules == null) rules = ZombiesWeaponRulesConfig.defaults(); rules.normalize();
+        int refreshes = Math.max(0, (Math.max(1, currentWave) - 1) / Math.max(1, wall.getRefreshIntervalWaves()));
+        ZombiesWeaponWallConfig.RarityPool chosen = null; double total = 0;
+        for (ZombiesWeaponWallConfig.RarityPool pool : wall.getRarityPools()) { if (pool == null || pool.getGuns().isEmpty()) continue; double w = clamp(pool.getInitialWeight() + refreshes * pool.getWeightDeltaPerRefresh(), pool.getMinWeight(), pool.getMaxWeight()); if (w > 0) total += w; }
+        if (!(total > 0) || !Double.isFinite(total)) return ZombiesObjectStateStore.WeaponWallOffer.empty();
+        double cursor = random.nextDouble(total); for (ZombiesWeaponWallConfig.RarityPool pool : wall.getRarityPools()) { if (pool == null || pool.getGuns().isEmpty()) continue; double w = clamp(pool.getInitialWeight() + refreshes * pool.getWeightDeltaPerRefresh(), pool.getMinWeight(), pool.getMaxWeight()); if (w <= 0) continue; cursor -= w; if (cursor < 0) { chosen = pool; break; } }
+        if (chosen == null) return ZombiesObjectStateStore.WeaponWallOffer.empty();
+        ZombiesWeaponWallConfig.GunWeight gun = chosen.getGuns().get(0); double gunTotal = chosen.getGuns().stream().mapToDouble(ZombiesWeaponWallConfig.GunWeight::getWeight).filter(v -> v > 0 && Double.isFinite(v)).sum(); cursor = random.nextDouble(Math.max(gunTotal, 1)); for (ZombiesWeaponWallConfig.GunWeight candidate : chosen.getGuns()) { if (candidate == null || candidate.getWeight() <= 0) continue; cursor -= candidate.getWeight(); if (cursor < 0) { gun = candidate; break; } }
+        double damage = rules.damageMultiplier(chosen.getRarityId()).orElse(1.0);
+        int ammo = maxReserveAmmo(gun.getGunId(), rules.getAmmunition().getWeaponPoolMagazineMultiplier());
+        return new ZombiesObjectStateStore.WeaponWallOffer(objectId, chosen.getRarityId(), gun.getGunId(), chosen.getPrice(), ammo, damage);
+    }
+
     public int refreshIntervalWaves() {
+        if (splitWallSupplier != null) {
+            ZombiesWeaponWallConfig config = splitWallSupplier.get();
+            return config == null ? 1 : Math.max(1, config.getRefreshIntervalWaves());
+        }
         ZombiesRulesConfig rules = rulesSupplier.get();
         if (rules == null) {
             return 1;

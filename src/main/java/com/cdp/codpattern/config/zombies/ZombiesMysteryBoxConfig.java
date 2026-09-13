@@ -1,5 +1,7 @@
 package com.cdp.codpattern.config.zombies;
 
+import com.google.gson.annotations.SerializedName;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -7,8 +9,11 @@ import java.util.Objects;
 
 /** Map-scoped rules for the Zombies mystery box. */
 public final class ZombiesMysteryBoxConfig {
+    public static final int SUPPORTED_SCHEMA_VERSION = 1;
+    private int schemaVersion = SUPPORTED_SCHEMA_VERSION;
     private Integer cost = 950;
     private Integer refreshIntervalWaves = 5;
+    @SerializedName(value = "rarityPools", alternate = {"rarities"})
     private List<Rarity> rarities = defaultRarities();
 
     public Integer getCost() { return cost; }
@@ -22,8 +27,14 @@ public final class ZombiesMysteryBoxConfig {
     public void setRarities(List<Rarity> value) {
         rarities = value == null ? defaultRarities() : new ArrayList<>(value);
     }
+    public int getSchemaVersion() { return schemaVersion; }
+    public void setSchemaVersion(int value) { schemaVersion = value; }
+    /** v1 name; rarities remains as a source-compatible alias. */
+    public List<Rarity> getRarityPools() { return getRarities(); }
+    public void setRarityPools(List<Rarity> value) { setRarities(value); }
 
     public void normalize() {
+        schemaVersion = SUPPORTED_SCHEMA_VERSION;
         cost = nonNegative(cost, 950);
         refreshIntervalWaves = positive(refreshIntervalWaves, 5);
         List<Rarity> normalized = new ArrayList<>();
@@ -62,7 +73,8 @@ public final class ZombiesMysteryBoxConfig {
         private Double weightDeltaPerRefresh = 0.0;
         private Double minWeight = 0.0;
         private Double maxWeight = 100.0;
-        private Double damageMultiplier = 1.0;
+        /** Deprecated in v1; damage is resolved from weapon_rules.json. */
+        private transient Double damageMultiplier = 1.0;
         private List<GunWeight> guns = List.of(new GunWeight("tacz:glock_17", 1.0));
 
         public Rarity() { }

@@ -4,6 +4,9 @@ import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxConfig;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxRepository;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.random.RandomGenerator;
@@ -31,6 +34,32 @@ public final class ZombiesMysteryBoxOfferService {
         if (gun == null || !ZombiesWeaponInstanceState.isValidGunId(gun.getGunId())) return Offer.empty(config.getCost());
         return new Offer(gun.getGunId(), rarity.value().getId(), rarity.value().getDamageMultiplier(), config.getCost());
     }
+    public List<String> eligibleGunIds() {
+        ZombiesMysteryBoxConfig config = configSupplier.get();
+        if (config == null) config = ZombiesMysteryBoxConfig.defaults();
+        config.normalize();
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        if (config.getRarities() != null) for (ZombiesMysteryBoxConfig.Rarity rarity : config.getRarities()) {
+            if (rarity == null || rarity.getGuns() == null) continue;
+            for (ZombiesMysteryBoxConfig.GunWeight gun : rarity.getGuns())
+                if (gun != null && ZombiesWeaponInstanceState.isValidGunId(gun.getGunId()) && finite(gun.getWeight()) > 0.0) ids.add(gun.getGunId().trim());
+        }
+        return List.copyOf(ids);
+    }
+
+    public List<String> previewGunIds(String finalGunId, int frameCount) {
+        int count = Math.max(0, frameCount);
+        List<String> pool = new ArrayList<>(eligibleGunIds());
+        if (count == 0 || pool.isEmpty()) return List.of();
+        Collections.shuffle(pool, new java.util.Random(random.nextLong()));
+        List<String> result = new ArrayList<>(count);
+        String finalId = Objects.requireNonNullElse(finalGunId, "").trim();
+        for (String id : pool) { if (result.size() >= count - 1) break; if (!id.equals(finalId) || pool.size() < count) result.add(id); }
+        int index = 0; while (result.size() < count - 1) result.add(pool.get(index++ % pool.size()));
+        result.add(finalId);
+        return List.copyOf(result);
+    }
+
 
     private WeightedRarity pickRarity(List<ZombiesMysteryBoxConfig.Rarity> values, int refreshes) {
         double total = 0.0;

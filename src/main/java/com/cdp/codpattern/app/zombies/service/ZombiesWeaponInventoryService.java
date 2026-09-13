@@ -81,7 +81,7 @@ public final class ZombiesWeaponInventoryService {
             ZombiesWeaponInstanceState weaponState
     ) {
         if (weaponState == null || !ZombiesWeaponInstanceState.isValidGunId(weaponState.gunId())) {
-            return ZombiesServiceResult.failure(WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
+            return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
         }
         ItemStack stack = purchasedPrimaryWeaponFactory.create(weaponState.gunId());
         if (stack == null || stack.isEmpty()) {
@@ -175,7 +175,7 @@ public final class ZombiesWeaponInventoryService {
             ZombiesWeaponInstanceState weaponState
     ) {
         if (player == null) {
-            return ZombiesServiceResult.failure(WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
+            return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
         }
         InventorySnapshot snapshot = InventorySnapshot.capture(player.getInventory());
         try {
@@ -201,7 +201,7 @@ public final class ZombiesWeaponInventoryService {
     ) {
         if (inventory == null || preparedWeapon == null || preparedWeapon.itemStack() == null
                 || preparedWeapon.itemStack().isEmpty() || weaponState == null) {
-            return ZombiesServiceResult.failure(WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
+            return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
         }
         InventorySnapshot snapshot = InventorySnapshot.capture(inventory);
         ItemStack stack = preparedWeapon.itemStack();

@@ -262,5 +262,12 @@
     "gui.codpattern.zombies.deploy.blocking.missing_power_switch": "Missing power switch",
     "gui.codpattern.zombies.deploy.blocking.missing_soda_machine": "Missing soda machine",
     "gui.codpattern.zombies.deploy.blocking.missing_ultimate_machine": "Missing ultimate machine",
-    "gui.codpattern.zombies.deploy.blocking.mvp1_has_errors": "MVP1 still has errors"
+    "gui.codpattern.zombies.deploy.blocking.mvp1_has_errors": "MVP1 still has errors",
+    "message.codpattern.zombies.interaction.success.mystery_box_started": "Mystery box roll started",
+    "message.codpattern.zombies.interaction.status.mystery_box_rolling": "Mystery box is rolling",
+    "message.codpattern.zombies.interaction.status.mystery_box_locked": "Reward is locked",
+    "message.codpattern.zombies.interaction.failure.mystery_box_expired": "Reward expired",
+    "message.codpattern.zombies.interaction.failure.mystery_box_claim": "Mystery box claim failed",
+    "message.codpattern.zombies.interaction.status.mystery_box_cooldown": "Mystery box cooling down",
+    "rarity.codpattern.zombies.legendary": "Legendary"
 }

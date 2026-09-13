@@ -262,5 +262,12 @@
     "gui.codpattern.zombies.deploy.blocking.missing_power_switch": "缺少電源開關",
     "gui.codpattern.zombies.deploy.blocking.missing_soda_machine": "缺少汽水機",
     "gui.codpattern.zombies.deploy.blocking.missing_ultimate_machine": "缺少強化機",
-    "gui.codpattern.zombies.deploy.blocking.mvp1_has_errors": "MVP1 仍有錯誤"
+    "gui.codpattern.zombies.deploy.blocking.mvp1_has_errors": "MVP1 仍有錯誤",
+    "message.codpattern.zombies.interaction.success.mystery_box_started": "抽獎箱已開始滾動",
+    "message.codpattern.zombies.interaction.status.mystery_box_rolling": "抽獎箱正在滾動",
+    "message.codpattern.zombies.interaction.status.mystery_box_locked": "獎勵已鎖定",
+    "message.codpattern.zombies.interaction.failure.mystery_box_expired": "獎勵已逾時",
+    "message.codpattern.zombies.interaction.failure.mystery_box_claim": "抽獎箱領取失敗",
+    "message.codpattern.zombies.interaction.status.mystery_box_cooldown": "抽獎箱冷卻中",
+    "rarity.codpattern.zombies.legendary": "傳奇"
 }

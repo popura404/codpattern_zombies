@@ -3,6 +3,7 @@ package com.cdp.codpattern.client.gui.overlay.zombies;
 import com.cdp.codpattern.app.match.model.ModeObjectState;
 import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponItemStackService;
+import com.cdp.codpattern.app.zombies.service.ZombiesWeaponInventoryService;
 import com.cdp.codpattern.app.zombies.sync.ZombiesObjectStateKeys;
 import com.cdp.codpattern.client.ClientMatchState;
 import com.cdp.codpattern.client.ClientModeObjectState;
@@ -641,13 +642,29 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     }
 
     private static Optional<InteractionPromptLine> mysteryBoxPrompt(CompoundTag payload, boolean taczInteractKey) {
-        String label = "抽取随机武器 - "
-                + Math.max(0, payload.getInt(ZombiesObjectStateKeys.PAYLOAD_COST)) + "点";
-        return Optional.of(payload.getBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED)
-                ? activePrompt(label, taczInteractKey)
-                : disabledPrompt(label));
+        String phase = payload.getString("mysteryPhase");
+        if ("ROLLING".equals(phase)) return Optional.of(disabledPrompt("抽奖中…"));
+        if ("COOLDOWN".equals(phase)) return Optional.of(disabledPrompt("抽奖箱冷却中"));
+        String gunId = payload.getString("gunId"); String rarityId = payload.getString("rarityId");
+        String gunName = mysteryGunName(gunId);
+        Optional<ZombiesRarityDisplay.Entry> rarity = ZombiesRarityDisplay.fromRarityId(rarityId);
+        String rarityText = rarity.map(entry -> entry.label()).orElse(rarityId.isBlank() ? "未知" : rarityId);
+        String label = gunName + " · " + rarityText;
+        if ("CLAIMABLE".equals(phase)) {
+            String owner = payload.getString("ownerUuid");
+            boolean mine = Minecraft.getInstance().player != null && owner.equals(Minecraft.getInstance().player.getUUID().toString());
+            label = mine ? "领取 " + label : label + "（奖励已锁定）";
+            return Optional.of(new InteractionPromptLine(label, mine, taczInteractKey, rarity.map(ZombiesRarityDisplay.Entry::color).orElse(TEXT_ACCENT)));
+        }
+        String cost = "抽取随机武器 - " + Math.max(0, payload.getInt(ZombiesObjectStateKeys.PAYLOAD_COST)) + "点";
+        return Optional.of(activePrompt(cost, taczInteractKey));
     }
 
+    private static String mysteryGunName(String gunId) {
+        if (gunId == null || gunId.isBlank()) return "随机武器";
+        ItemStack stack = ZombiesWeaponInventoryService.createDefaultTaczGunStackForRules(gunId);
+        return stack == null || stack.isEmpty() || !TaczClientApi.isGun(stack) ? gunId : stack.getHoverName().getString();
+    }
     private static Optional<InteractionPromptLine> weaponWallPrompt(CompoundTag payload, boolean taczInteractKey) {
         String gunId = payload.getString("gunId");
         String rarityId = payload.getString("rarityId");

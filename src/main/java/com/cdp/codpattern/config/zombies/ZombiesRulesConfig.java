@@ -12,6 +12,7 @@ public class ZombiesRulesConfig {
     public static final String RARITY_COMMON = "common";
     public static final String RARITY_RARE = "rare";
     public static final String RARITY_EPIC = "epic";
+    public static final String RARITY_LEGENDARY = "legendary";
     public static final String DEFAULT_POOL_GLOCK_17 = "tacz:glock_17";
     public static final String DEFAULT_POOL_AK47 = "tacz:ak47";
     public static final String DEFAULT_POOL_M4A1 = "tacz:m4a1";
@@ -490,7 +491,8 @@ public class ZombiesRulesConfig {
                             100.0D,
                             1500,
                             1.6D,
-                            List.of(new GunWeight(DEFAULT_POOL_M4A1, 100.0D))));
+                            List.of(new GunWeight(DEFAULT_POOL_M4A1, 100.0D))),
+                    new Rarity(RARITY_LEGENDARY, 1.0D, 1.0D, 0.0D, 100.0D, 0, 2.0D, List.of()));
         }
     }
 

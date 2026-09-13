@@ -48,7 +48,8 @@ public final class ZombiesMysteryBoxConfig {
                 new Rarity("rare", 25.0, 5.0, 0.0, 100.0, 1.25,
                         List.of(new GunWeight("tacz:ak47", 100.0))),
                 new Rarity("epic", 5.0, 3.0, 0.0, 100.0, 1.6,
-                        List.of(new GunWeight("tacz:m4a1", 100.0))));
+                        List.of(new GunWeight("tacz:m4a1", 100.0))),
+                new Rarity("legendary", 1.0, 1.0, 0.0, 100.0, 2.0, List.of()));
     }
 
     private static int nonNegative(Integer value, int fallback) { return value == null || value < 0 ? fallback : value; }

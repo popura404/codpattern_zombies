@@ -8,6 +8,7 @@ public final class ZombiesRarityDisplay {
     private static final int COMMON_COLOR = 0xFF22C55E;
     private static final int RARE_COLOR = 0xFF3B82F6;
     private static final int EPIC_COLOR = 0xFFA855F7;
+    private static final int LEGENDARY_COLOR = 0xFFFF9800;
 
     private ZombiesRarityDisplay() {
     }
@@ -17,6 +18,7 @@ public final class ZombiesRarityDisplay {
             case "common" -> Optional.of(new Entry("common", "普通", COMMON_COLOR));
             case "rare" -> Optional.of(new Entry("rare", "稀有", RARE_COLOR));
             case "epic" -> Optional.of(new Entry("epic", "史诗", EPIC_COLOR));
+            case "legendary" -> Optional.of(new Entry("legendary", "传奇", LEGENDARY_COLOR));
             default -> Optional.empty();
         };
     }

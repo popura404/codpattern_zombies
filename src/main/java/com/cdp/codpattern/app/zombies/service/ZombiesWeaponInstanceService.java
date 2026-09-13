@@ -98,6 +98,15 @@ public final class ZombiesWeaponInstanceService {
             return ZombiesServiceResult.success(new WallWeaponPurchaseResult(weapon, cost));
         });
     }
+    public <T> ZombiesServiceResult<T> spendMysteryBoxCost(UUID playerId, double cost, ZombiesEconomyService.SpendAction<T> action) {
+        return economyService.spendAtomically(playerId, cost, action);
+    }
+
+    public void setMysteryBoxWeapon(UUID playerId, ZombiesWeaponInstanceState weapon) {
+        if (weapon == null) return;
+        economyService.state(playerId).ifPresent(state -> state.setMysteryBoxWeapon(weapon));
+    }
+
 
     public ZombiesServiceResult<WallWeaponPurchaseResult> purchaseMysteryBoxWeapon(
             UUID playerId,

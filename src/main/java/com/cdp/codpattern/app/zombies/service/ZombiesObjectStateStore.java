@@ -57,6 +57,16 @@ public final class ZombiesObjectStateStore {
     private static final String PAYLOAD_REQUIRES_POWER = "requiresPower";
     private static final String PAYLOAD_POWER_ON = "powerOn";
     private static final String PAYLOAD_BUFF_ID = "buffId";
+    private static final String PAYLOAD_BOX_POS_X = "boxPosX";
+    private static final String PAYLOAD_BOX_POS_Y = "boxPosY";
+    private static final String PAYLOAD_BOX_POS_Z = "boxPosZ";
+    private static final String PAYLOAD_MYSTERY_PHASE = "mysteryPhase";
+    private static final String PAYLOAD_OWNER_UUID = "ownerUuid";
+    private static final String PAYLOAD_OWNER_NAME = "ownerName";
+    private static final String PAYLOAD_ROLL_START = "rollStartTick";
+    private static final String PAYLOAD_CLAIM_DEADLINE = "claimDeadlineTick";
+    private static final String PAYLOAD_COOLDOWN_UNTIL = "cooldownUntilTick";
+    private static final String PAYLOAD_PREVIEW_GUNS = "previewGunIds";
     private static final String PAYLOAD_MAX_UPGRADE_LEVEL = "maxUpgradeLevel";
 
     private final ModeObjectIndex<BarrierRuntimeState> barriersByObjectId = new ModeObjectIndex<>();
@@ -69,6 +79,8 @@ public final class ZombiesObjectStateStore {
     private final ModeObjectRevisionIndex mysteryBoxRevisionsByObjectId = new ModeObjectRevisionIndex();
     private final BooleanSupplier powerOnSupplier;
     private final ZombiesWeaponWallOfferService weaponWallOfferService;
+    private Supplier<Collection<ZombiesMysteryBoxRuntimeService.RuntimeState>> mysteryBoxRuntimeSupplier = List::of;
+
     private final Supplier<ZombiesRulesConfig> rulesSupplier;
     private Supplier<ZombiesMysteryBoxConfig> mysteryBoxConfigSupplier = ZombiesMysteryBoxRepository::getConfig;
     private final ModeObjectRevisionClock revisionClock = new ModeObjectRevisionClock();
@@ -103,6 +115,11 @@ public final class ZombiesObjectStateStore {
     public synchronized void configureMysteryBoxConfigSupplier(Supplier<ZombiesMysteryBoxConfig> configSupplier) {
         this.mysteryBoxConfigSupplier = configSupplier == null ? ZombiesMysteryBoxRepository::getConfig : configSupplier;
     }
+
+    public synchronized void configureMysteryBoxRuntimeSupplier(Supplier<Collection<ZombiesMysteryBoxRuntimeService.RuntimeState>> supplier) {
+        this.mysteryBoxRuntimeSupplier = supplier == null ? List::of : supplier;
+    }
+
 
     public synchronized void resetBarriers(Collection<ZombiesBarrierData> barriers) {
         resetObjects(barriers, List.of(), List.of(), List.of());
@@ -440,19 +457,20 @@ public final class ZombiesObjectStateStore {
                 state.revision());
     }
 
-    private ModeObjectState toModeObjectState(
-            String objectId,
-            ZombiesMysteryBoxData mysteryBox,
-            long objectRevision
-    ) {
+    private ModeObjectState toModeObjectState(String objectId, ZombiesMysteryBoxData mysteryBox, long objectRevision) {
         ZombiesMysteryBoxConfig config = mysteryBoxConfigSupplier.get();
-        Integer configuredCost = config == null ? 0 : config.getCost();
-        int cost = Math.max(0, configuredCost == null ? 0 : configuredCost);
+        int cost = Math.max(0, config == null || config.getCost() == null ? 0 : config.getCost());
         CompoundTag payload = basePurchasePayload(objectId, OBJECT_TYPE_MYSTERY_BOX, cost, true);
-        payload.putString(PAYLOAD_RARITY_ID, "");
-        payload.putString(PAYLOAD_GUN_ID, "");
-        return new ModeObjectState(objectId, ZombiesObjectStateKeys.STATUS,
-                interactionPosition(mysteryBox), payload, objectRevision);
+        payload.putInt(PAYLOAD_BOX_POS_X, mysteryBox.pos().getX()); payload.putInt(PAYLOAD_BOX_POS_Y, mysteryBox.pos().getY()); payload.putInt(PAYLOAD_BOX_POS_Z, mysteryBox.pos().getZ());
+        ZombiesMysteryBoxRuntimeService.RuntimeState runtime = mysteryBoxRuntimeSupplier.get() == null ? null : mysteryBoxRuntimeSupplier.get().stream().filter(value -> value != null && objectId.equals(value.objectId())).findFirst().orElse(null);
+        if (runtime == null) { payload.putString(PAYLOAD_MYSTERY_PHASE, ZombiesMysteryBoxRuntimeService.Phase.IDLE.name()); payload.putString(PAYLOAD_RARITY_ID, ""); payload.putString(PAYLOAD_GUN_ID, ""); }
+        else {
+            payload.putString(PAYLOAD_MYSTERY_PHASE, runtime.phase().name()); payload.putString(PAYLOAD_RARITY_ID, runtime.offer().rarityId()); payload.putString(PAYLOAD_GUN_ID, runtime.offer().gunId());
+            if (runtime.owner() != null) payload.putString(PAYLOAD_OWNER_UUID, runtime.owner().toString());
+            payload.putLong(PAYLOAD_ROLL_START, runtime.startTick()); payload.putLong(PAYLOAD_CLAIM_DEADLINE, runtime.claimDeadlineTick()); payload.putLong(PAYLOAD_COOLDOWN_UNTIL, runtime.cooldownUntilTick());
+            net.minecraft.nbt.ListTag previews = new net.minecraft.nbt.ListTag(); for (String gun : runtime.previewGunIds()) previews.add(net.minecraft.nbt.StringTag.valueOf(gun)); payload.put(PAYLOAD_PREVIEW_GUNS, previews);
+        }
+        return new ModeObjectState(objectId, ZombiesObjectStateKeys.STATUS, interactionPosition(mysteryBox), payload, Math.max(objectRevision, runtime == null ? 0L : runtime.revision()));
     }
 
     private static void putBarrierAreaPayload(CompoundTag payload, ZombiesBarrierData barrier) {

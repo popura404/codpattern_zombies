@@ -236,6 +236,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
                 () -> runtimeObjects().mysteryBoxes(),
                 this::mysteryBoxConfig,
                 () -> runtimeState.waveState().targetWave());
+        this.objectStateStore.configureMysteryBoxRuntimeSupplier(() -> this.objectInteractionService.mysteryBoxRuntime().states());
         this.cleanupService = new ZombiesCleanupService(
                 ModeEntityOwnershipRegistry.instance(),
                 ZombiesMapOccupancyService.instance(),
@@ -265,6 +266,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
         tickCombatRegen();
         syncBuffRuntimeEffects();
         syncBarrierVisuals();
+        objectInteractionService.tickMysteryBoxRuntime(getServerLevel().getGameTime());
     }
 
     @Override
@@ -1019,6 +1021,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
     private void resetObjectRuntime(int currentWave, int maxWave) {
         activeSpawnGroupService.resetToInitial();
         powerService.reset();
+        objectInteractionService.resetMysteryBoxRuntime();
         objectStateStore.resetObjects(
                 runtimeObjects().barriers(),
                 runtimeObjects().weaponWalls(),

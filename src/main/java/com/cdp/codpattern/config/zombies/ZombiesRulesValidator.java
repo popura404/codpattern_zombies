@@ -26,6 +26,7 @@ public final class ZombiesRulesValidator {
     private static final Set<String> VALID_RARITIES = Set.of(
             ZombiesRulesConfig.RARITY_COMMON,
             ZombiesRulesConfig.RARITY_RARE,
+            ZombiesRulesConfig.RARITY_LEGENDARY,
             ZombiesRulesConfig.RARITY_EPIC);
 
     public List<ZombiesValidationIssue> validate(ZombiesRulesConfig config) {
@@ -207,7 +208,7 @@ public final class ZombiesRulesValidator {
                 issues.add(ZombiesValidationIssue.warning(
                         RULES_INVALID_WEAPON_WALL,
                         "weaponWall.rarities." + rarityId,
-                        "Weapon wall rarity id '" + rarityId + "' is ignored; only common, rare, and epic are supported."));
+                        "Weapon wall rarity id '" + rarityId + "' is ignored; only common, rare, epic, and legendary are supported."));
                 continue;
             }
             if (!seenValidRarities.add(rarityId)) {

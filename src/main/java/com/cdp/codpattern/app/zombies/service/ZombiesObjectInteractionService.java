@@ -108,6 +108,8 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
     private IntSupplier currentWaveSupplier = () -> 1;
     private ZombiesMysteryBoxOfferService mysteryBoxOfferService = new ZombiesMysteryBoxOfferService();
     private final BooleanSupplier purchasesAllowedSupplier;
+    private final ZombiesMysteryBoxRuntimeService mysteryBoxRuntime = new ZombiesMysteryBoxRuntimeService();
+
     private final ModeObjectInteractionDeduplicator interactionDeduplicator =
             new ModeObjectInteractionDeduplicator(20L);
     private final ModeObjectInteractionDispatcher<InteractionType, InteractionDispatchContext, InteractionResult>
@@ -537,6 +539,10 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         return GameModeRegistry.getOrDefault(gameType()).displayNameKey();
     }
 
+    public void tickMysteryBoxRuntime(long gameTime) { mysteryBoxRuntime.tick(gameTime); }
+    public void resetMysteryBoxRuntime() { mysteryBoxRuntime.reset(); }
+    public ZombiesMysteryBoxRuntimeService mysteryBoxRuntime() { return mysteryBoxRuntime; }
+
     @Override
     public InteractionResult interact(ServerPlayer player, ModeObjectInteractionContext context) {
         if (player == null || context == null) {
@@ -551,6 +557,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         if (lookup.target().isEmpty()) {
             lookup.failure().ifPresent(failure -> sendTargetFailure(player, failure));
             return lookup.failure().isPresent() ? InteractionResult.FAIL : InteractionResult.PASS;
+
         }
         InteractionTarget target = lookup.target().orElseThrow();
 
@@ -558,7 +565,10 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         if (gateResult != null) {
             return gateResult;
         }
-        if (!purchasesAllowedSupplier.getAsBoolean()) {
+        boolean paidClaim = target.type() == InteractionType.MYSTERY_BOX
+                && mysteryBoxRuntime.state(target.objectId()) != null
+                && mysteryBoxRuntime.state(target.objectId()).phase() == ZombiesMysteryBoxRuntimeService.Phase.CLAIMABLE;
+        if (!paidClaim && !purchasesAllowedSupplier.getAsBoolean()) {
             sendMessage(player, FAILURE_PHASE_LOCKED, target.objectId());
             return InteractionResult.FAIL;
         }
@@ -703,42 +713,31 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         return InteractionResult.FAIL;
     }
 
-    private InteractionResult purchaseMysteryBox(
-            ServerPlayer player,
-            InteractionTarget target,
-            ZombiesMysteryBoxData mysteryBox
-    ) {
-        ZombiesMysteryBoxOfferService.Offer offer = mysteryBoxOfferService.createOffer(
-                Math.max(1, currentWaveSupplier.getAsInt()));
-        if (offer == null || !offer.valid()) {
-            sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.MYSTERY_BOX_EMPTY_POOL));
-            return InteractionResult.FAIL;
+    private InteractionResult purchaseMysteryBox(ServerPlayer player, InteractionTarget target, ZombiesMysteryBoxData mysteryBox) {
+        String objectId = target.objectId();
+        ZombiesMysteryBoxRuntimeService.RuntimeState active = mysteryBoxRuntime.state(objectId);
+        long now = Math.max(0L, player.level().getGameTime());
+        if (active != null && active.phase() == ZombiesMysteryBoxRuntimeService.Phase.CLAIMABLE) {
+            if (!player.isAlive()) { sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.PLAYER_DEAD)); return InteractionResult.FAIL; }
+            ZombiesServiceResult<ZombiesMysteryBoxRuntimeService.RuntimeState> claimed = mysteryBoxRuntime.claim(objectId, player.getUUID(), now, state -> {
+                ZombiesServiceResult<ZombiesWeaponInventoryService.InventoryMutationResult> applied = weaponInventoryService.applyPreparedMysteryBoxWeapon(player, roomId, state.preparedWeapon(), ZombiesWeaponInstanceState.wallPrimary(state.offer().gunId(), state.offer().rarityId(), INTERNAL_COMPAT_WEAPON_LEVEL, state.offer().damageMultiplier(), mysteryBoxReserveAmmo(state.offer().gunId())));
+                if (applied.success()) weaponInstanceService.setMysteryBoxWeapon(player.getUUID(), applied.value().map(ZombiesWeaponInventoryService.InventoryMutationResult::weaponState).orElse(null));
+                return applied;
+            });
+            if (claimed.success()) { sendMessage(player, SUCCESS_MYSTERY_BOX, active.offer().gunId(), active.offer().rarityId(), objectId, displayCost(active.offer().cost())); return InteractionResult.SUCCESS; }
+            sendFailureMessage(player, target, claimed); return InteractionResult.FAIL;
         }
-        ZombiesWeaponInstanceState reward = ZombiesWeaponInstanceState.wallPrimary(
-                offer.gunId(), offer.rarityId(), INTERNAL_COMPAT_WEAPON_LEVEL,
-                offer.damageMultiplier(), mysteryBoxReserveAmmo(offer.gunId()));
-        ZombiesServiceResult<ZombiesWeaponInventoryService.PreparedWeaponStack> prepared =
-                weaponInventoryService.prepareMysteryBoxWeapon(roomId, reward);
-        if (!prepared.success() || prepared.value().isEmpty()) {
-            sendFailureMessage(player, target, prepared);
-            return InteractionResult.FAIL;
-        }
-        ZombiesServiceResult<ZombiesWeaponInstanceService.WallWeaponPurchaseResult> result =
-                weaponInstanceService.purchaseMysteryBoxWeapon(
-                        player.getUUID(), offer.gunId(), offer.rarityId(), INTERNAL_COMPAT_WEAPON_LEVEL,
-                        offer.damageMultiplier(), reward.maxReserveAmmo(), offer.cost(),
-                        (current, purchased) -> weaponInventoryService.applyPreparedMysteryBoxWeapon(
-                                player, roomId, prepared.value().get(), purchased));
-        if (result.success()) {
-            objectStateStore.markMysteryBoxUsed(mysteryBox);
-            ZombiesWeaponInstanceService.WallWeaponPurchaseResult purchase = result.value().orElse(null);
-            sendMessage(player, SUCCESS_MYSTERY_BOX,
-                    purchase == null ? offer.gunId() : purchase.weapon().gunId(),
-                    offer.rarityId(), target.objectId(), displayCost(offer.cost()));
-            return InteractionResult.SUCCESS;
-        }
-        sendFailureMessage(player, target, result);
-        return InteractionResult.FAIL;
+        if (active != null && active.phase() != ZombiesMysteryBoxRuntimeService.Phase.IDLE) { sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.OBJECT_BUSY)); return InteractionResult.FAIL; }
+        ZombiesMysteryBoxOfferService.Offer offer = mysteryBoxOfferService.createOffer(Math.max(1, currentWaveSupplier.getAsInt()));
+        if (offer == null || !offer.valid()) { sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.MYSTERY_BOX_EMPTY_POOL)); return InteractionResult.FAIL; }
+        ZombiesWeaponInstanceState reward = ZombiesWeaponInstanceState.wallPrimary(offer.gunId(), offer.rarityId(), INTERNAL_COMPAT_WEAPON_LEVEL, offer.damageMultiplier(), mysteryBoxReserveAmmo(offer.gunId()));
+        ZombiesServiceResult<ZombiesWeaponInventoryService.PreparedWeaponStack> prepared = weaponInventoryService.prepareMysteryBoxWeapon(roomId, reward);
+        if (!prepared.success() || prepared.value().isEmpty()) { sendFailureMessage(player, target, prepared); return InteractionResult.FAIL; }
+        List<String> frames = mysteryBoxOfferService.previewGunIds(offer.gunId(), 10);
+        ZombiesServiceResult<ZombiesMysteryBoxRuntimeService.RuntimeState> started = mysteryBoxRuntime.begin(objectId, player.getUUID(), offer, prepared.value().get(), frames, now, () -> weaponInstanceService.spendMysteryBoxCost(player.getUUID(), offer.cost(), state -> ZombiesServiceResult.ok()));
+        if (!started.success()) { sendFailureMessage(player, target, started); return InteractionResult.FAIL; }
+        sendMessage(player, MESSAGE_PREFIX + "success.mystery_box_started", offer.gunId(), offer.rarityId(), objectId, displayCost(offer.cost()));
+        return InteractionResult.SUCCESS;
     }
 
     private int mysteryBoxReserveAmmo(String gunId) {

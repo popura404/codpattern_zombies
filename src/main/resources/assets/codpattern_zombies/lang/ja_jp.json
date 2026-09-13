@@ -262,5 +262,12 @@
     "gui.codpattern.zombies.deploy.blocking.missing_power_switch": "電源スイッチが不足しています",
     "gui.codpattern.zombies.deploy.blocking.missing_soda_machine": "ソーダマシンが不足しています",
     "gui.codpattern.zombies.deploy.blocking.missing_ultimate_machine": "強化マシンが不足しています",
-    "gui.codpattern.zombies.deploy.blocking.mvp1_has_errors": "MVP1 にエラーがあります"
+    "gui.codpattern.zombies.deploy.blocking.mvp1_has_errors": "MVP1 にエラーがあります",
+    "message.codpattern.zombies.interaction.success.mystery_box_started": "ミステリーボックスの抽選を開始しました",
+    "message.codpattern.zombies.interaction.status.mystery_box_rolling": "抽選中",
+    "message.codpattern.zombies.interaction.status.mystery_box_locked": "報酬はロックされています",
+    "message.codpattern.zombies.interaction.failure.mystery_box_expired": "報酬の受取期限切れ",
+    "message.codpattern.zombies.interaction.failure.mystery_box_claim": "受取に失敗しました",
+    "message.codpattern.zombies.interaction.status.mystery_box_cooldown": "クールダウン中",
+    "rarity.codpattern.zombies.legendary": "レジェンダリー"
 }

@@ -155,7 +155,8 @@ public record ZombiesDeployDraft(
                  ZombiesDeployFieldSchema.ARMOR_STATION,
                  ZombiesDeployFieldSchema.POWER_SWITCH,
                  ZombiesDeployFieldSchema.SODA_MACHINE,
-                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> WORKFLOW_INTERACT;
+                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
+                 ZombiesDeployFieldSchema.MYSTERY_BOX -> WORKFLOW_INTERACT;
             default -> WORKFLOW_VALIDATE;
         };
     }

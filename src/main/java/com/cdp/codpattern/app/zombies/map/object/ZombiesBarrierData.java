@@ -15,8 +15,23 @@ public record ZombiesBarrierData(
         ResourceKey<Level> dimension,
         BlockPos areaFrom,
         BlockPos areaTo,
-        BlockPos interactionPos
+        BlockPos interactionPos,
+        String requiredItem
 ) {
+    public ZombiesBarrierData(
+            String objectId,
+            String name,
+            int group,
+            int cost,
+            boolean blocksPlayersOnly,
+            ResourceKey<Level> dimension,
+            BlockPos areaFrom,
+            BlockPos areaTo,
+            BlockPos interactionPos
+    ) {
+        this(objectId, name, group, cost, blocksPlayersOnly, dimension, areaFrom, areaTo, interactionPos, "");
+    }
+
     public ZombiesBarrierData(
             String objectId,
             int group,
@@ -27,12 +42,13 @@ public record ZombiesBarrierData(
             BlockPos areaTo,
             BlockPos interactionPos
     ) {
-        this(objectId, "", group, cost, blocksPlayersOnly, dimension, areaFrom, areaTo, interactionPos);
+        this(objectId, "", group, cost, blocksPlayersOnly, dimension, areaFrom, areaTo, interactionPos, "");
     }
 
     public ZombiesBarrierData {
         objectId = objectId == null ? "" : objectId.trim();
         name = name == null ? "" : name.trim();
+        requiredItem = requiredItem == null ? "" : requiredItem.trim();
     }
 
     public String displayName() {
@@ -48,6 +64,7 @@ public record ZombiesBarrierData(
             ZombiesObjectCodecs.DIMENSION_CODEC.fieldOf("dimension").forGetter(ZombiesBarrierData::dimension),
             BlockPos.CODEC.optionalFieldOf("areaFrom", BlockPos.ZERO).forGetter(ZombiesBarrierData::areaFrom),
             BlockPos.CODEC.optionalFieldOf("areaTo", BlockPos.ZERO).forGetter(ZombiesBarrierData::areaTo),
-            BlockPos.CODEC.optionalFieldOf("interactionPos", BlockPos.ZERO).forGetter(ZombiesBarrierData::interactionPos)
+            BlockPos.CODEC.optionalFieldOf("interactionPos", BlockPos.ZERO).forGetter(ZombiesBarrierData::interactionPos),
+            Codec.STRING.optionalFieldOf("requiredItem", "").forGetter(ZombiesBarrierData::requiredItem)
     ).apply(instance, ZombiesBarrierData::new));
 }

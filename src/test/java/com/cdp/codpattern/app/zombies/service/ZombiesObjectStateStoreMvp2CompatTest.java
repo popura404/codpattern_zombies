@@ -70,13 +70,15 @@ public final class ZombiesObjectStateStoreMvp2CompatTest {
     private static void barrierStateExposesAreaPayloadForHoverPrompts() {
         ZombiesBarrierData barrier = new ZombiesBarrierData(
                 "barrier-1",
+                "Barrier One",
                 3,
                 1250,
                 true,
                 dimension(),
                 new BlockPos(10, 64, 1),
                 new BlockPos(10, 66, 4),
-                new BlockPos(10, 64, 0));
+                new BlockPos(10, 64, 0),
+                "{Count:1b,id:\"minecraft:tripwire_hook\",tag:{CustomModelData:1}}");
         ZombiesObjectStateStore store = new ZombiesObjectStateStore();
         store.resetBarriers(List.of(barrier));
 
@@ -91,6 +93,8 @@ public final class ZombiesObjectStateStoreMvp2CompatTest {
         require(barrierState.payload().getInt("areaToX") == 10, "barrier state should expose areaToX");
         require(barrierState.payload().getInt("areaToY") == 66, "barrier state should expose areaToY");
         require(barrierState.payload().getInt("areaToZ") == 4, "barrier state should expose areaToZ");
+        require(barrier.requiredItem().equals(barrierState.payload().getString("requiredItem")),
+                "barrier state should expose requiredItem for client HUD prediction");
     }
 
     private static void purchaseObjectRevisionsOnlyChangeWhenMarkedSuccessful() {

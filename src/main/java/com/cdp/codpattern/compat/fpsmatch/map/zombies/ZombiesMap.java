@@ -13,6 +13,7 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesArmorStationData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesInitialSpawnData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesMysteryBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
 import com.cdp.codpattern.app.zombies.model.ZombiesGamePhase;
 import com.cdp.codpattern.app.zombies.model.ZombiesPlayerRuntimeState;
@@ -74,6 +75,8 @@ import com.cdp.codpattern.config.zombies.ZombiesRulesRepository;
 import com.cdp.codpattern.adapter.forge.network.ModNetworkChannel;
 import com.cdp.codpattern.config.zombies.ZombiesWeaponFilterConfig;
 import com.cdp.codpattern.config.zombies.ZombiesWeaponFilterRepository;
+import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxConfig;
+import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxRepository;
 import com.cdp.codpattern.fpsmatch.room.CodTdmRoomManager;
 import com.cdp.codpattern.network.match.VoteDialogPacket;
 import com.phasetranscrystal.fpsmatch.core.data.AreaData;
@@ -144,6 +147,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
     private ZombiesWaveDirector waveDirector;
     private ZombiesRulesConfig rulesConfig;
     private ZombiesWeaponFilterConfig weaponFilterConfig;
+    private ZombiesMysteryBoxConfig mysteryBoxConfig;
     private List<ZombiesValidationIssue> rulesValidationIssues = List.of();
     private final Map<UUID, Integer> combatRegenCooldowns = new LinkedHashMap<>();
     private int rosterVersion = 1;
@@ -190,6 +194,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
                 powerService::isPowerOn,
                 new ZombiesWeaponWallOfferService(this::rulesConfig, null, null),
                 this::rulesConfig);
+        this.objectStateStore.configureMysteryBoxConfigSupplier(this::mysteryBoxConfig);
         this.barrierVisualService = ZombiesBarrierVisualService.instance();
         this.barrierBlockRuntimeService = ZombiesBarrierBlockRuntimeService.instance();
         ZombiesBarrierService barrierService = new ZombiesBarrierService(
@@ -227,6 +232,10 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
                 new ZombiesRoomAnnouncementService(this::survivorPlayers),
                 this::rulesConfig,
                 () -> runtimeState.phase().allowsPurchases());
+        this.objectInteractionService.configureMysteryBoxRuntime(
+                () -> runtimeObjects().mysteryBoxes(),
+                this::mysteryBoxConfig,
+                () -> runtimeState.waveState().targetWave());
         this.cleanupService = new ZombiesCleanupService(
                 ModeEntityOwnershipRegistry.instance(),
                 ZombiesMapOccupancyService.instance(),
@@ -751,12 +760,18 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
         return runtimeObjects().ultimateMachines();
     }
 
+    private List<ZombiesMysteryBoxData> runtimeMysteryBoxes() {
+        return runtimeObjects().mysteryBoxes();
+    }
+
     private void loadStartupConfigs(MinecraftServer server) {
         if (server == null) {
             rulesConfig = new ZombiesRulesConfig();
             rulesConfig.normalize();
             weaponFilterConfig = new ZombiesWeaponFilterConfig();
             weaponFilterConfig.normalize();
+            mysteryBoxConfig = ZombiesMysteryBoxConfig.defaults();
+            ZombiesMysteryBoxRepository.setConfig(mysteryBoxConfig);
             rulesValidationIssues = List.of();
             return;
         }
@@ -764,6 +779,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
         rulesConfig = ZombiesRulesRepository.loadOrCreate(server, mapName);
         rulesValidationIssues = ZombiesRulesRepository.getLastValidationIssues();
         weaponFilterConfig = ZombiesWeaponFilterRepository.loadOrCreate(server, mapName);
+        mysteryBoxConfig = ZombiesMysteryBoxRepository.loadOrCreate(server, mapName);
         new ZombiesWaveConfigRepository(
                 ZombiesConfigPaths.zombiesMapWaves(server, mapName),
                 rulesConfig().getDefaults()).load();
@@ -800,6 +816,11 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
             weaponFilterConfig.normalize();
         }
         return weaponFilterConfig;
+    }
+
+    private ZombiesMysteryBoxConfig mysteryBoxConfig() {
+        if (mysteryBoxConfig == null) mysteryBoxConfig = ZombiesMysteryBoxConfig.defaults();
+        return mysteryBoxConfig;
     }
 
     private List<ZombiesValidationIssue> rulesValidationIssues() {
@@ -1006,6 +1027,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
                 runtimeObjects().powerSwitch(),
                 runtimeObjects().sodaMachines(),
                 runtimeObjects().ultimateMachines(),
+                runtimeObjects().mysteryBoxes(),
                 currentWave,
                 maxWave);
     }

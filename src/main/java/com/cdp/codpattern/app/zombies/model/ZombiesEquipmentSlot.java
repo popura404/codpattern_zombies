@@ -5,7 +5,8 @@ import java.util.Optional;
 
 public enum ZombiesEquipmentSlot {
     STARTER("starter", 0),
-    PRIMARY("primary", 1);
+    PRIMARY("primary", 1),
+    MYSTERY_BOX("mystery_box", 2);
 
     private final String key;
     private final int defaultInventorySlot;

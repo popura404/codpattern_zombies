@@ -21,7 +21,8 @@ public final class ZombiesWaveTextCompatTest {
     }
 
     public static void main(String[] args) throws Exception {
-        missingDirectoryCreatesOnlyEmptyWaveTextDirectory();
+        missingDirectoryCreatesWaveOneExample();
+        existingEmptyDirectoryCreatesWaveOneExample();
         repositoryLoadsUtf8EscapesAndPreservesMessageOrder();
         repositorySkipsMalformedFilesAndBadEntries();
         repositoryRequiresFileAndJsonWaveToMatch();
@@ -32,18 +33,26 @@ public final class ZombiesWaveTextCompatTest {
         mapLifecycleOwnsReloadBroadcastAndCancellationIntegration();
     }
 
-    private static void missingDirectoryCreatesOnlyEmptyWaveTextDirectory() throws IOException {
+    private static void missingDirectoryCreatesWaveOneExample() throws IOException {
         Path root = Files.createTempDirectory("zombies-wavetext-missing-");
         try {
             Path directory = root.resolve("wavetext");
             ZombiesWaveTextRepository.LoadResult result = new ZombiesWaveTextRepository(directory).load();
 
             require(Files.isDirectory(directory), "missing wavetext directory should be created");
-            try (Stream<Path> children = Files.list(directory)) {
-                require(children.findAny().isEmpty(), "wavetext directory must not receive an auto-sending example");
-            }
-            require(result.definitions().isEmpty(), "missing optional config should load as no wave text");
-            require(result.issues().isEmpty(), "creating a missing directory should not be an error");
+            requireWaveOneExample(directory, result, "missing directory");
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    private static void existingEmptyDirectoryCreatesWaveOneExample() throws IOException {
+        Path root = Files.createTempDirectory("zombies-wavetext-empty-");
+        try {
+            Path directory = Files.createDirectories(root.resolve("wavetext"));
+            ZombiesWaveTextRepository.LoadResult result = new ZombiesWaveTextRepository(directory).load();
+
+            requireWaveOneExample(directory, result, "existing empty directory");
         } finally {
             deleteRecursively(root);
         }
@@ -257,6 +266,35 @@ public final class ZombiesWaveTextCompatTest {
 
     private static String jsonLine(int wave, String text) {
         return "{\"wave\":" + wave + ",\"messages\":[{\"delayTicks\":0,\"text\":\"" + text + "\"}]}";
+    }
+
+    private static void requireWaveOneExample(
+            Path directory,
+            ZombiesWaveTextRepository.LoadResult result,
+            String context
+    ) throws IOException {
+        Path example = directory.resolve("wave_001.json");
+        require(Files.isRegularFile(example), context + " should create wave_001.json");
+        try (Stream<Path> children = Files.list(directory)) {
+            require(children.count() == 1L, context + " should create only one example file");
+        }
+        String json = Files.readString(example, StandardCharsets.UTF_8);
+        require(json.contains("\"wave\": 1"), context + " example should default to wave one");
+        require(json.contains("\"delayTicks\": 0"), context + " example should document immediate messages");
+        require(json.contains("\"delayTicks\": 40"), context + " example should document relative delays");
+        require(json.contains("\"text\": \"text1\""), context + " example should contain text1");
+        require(json.contains("\"text\": \"text2\""), context + " example should contain text2");
+        ZombiesWaveTextDefinition definition = result.definition(1).orElseThrow();
+        require(definition.messages().size() == 2, context + " example should load as a two-line template");
+        require(result.issues().isEmpty(), context + " example generation should not emit warnings");
+
+        String customized = jsonLine(1, "customized example");
+        Files.writeString(example, customized, StandardCharsets.UTF_8);
+        ZombiesWaveTextRepository.LoadResult reload = new ZombiesWaveTextRepository(directory).load();
+        require(customized.equals(Files.readString(example, StandardCharsets.UTF_8)),
+                context + " should never overwrite an existing wave-one example");
+        require("customized example".equals(reload.definition(1).orElseThrow().messages().get(0).text()),
+                context + " should reload the customized example unchanged");
     }
 
     private static void requireStyle(Style style, ChatFormatting color, boolean bold, String context) {

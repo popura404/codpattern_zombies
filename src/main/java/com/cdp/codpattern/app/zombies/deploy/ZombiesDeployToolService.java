@@ -12,6 +12,7 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesPowerSwitchData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesSodaMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesUltimateMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesMysteryBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
 import com.cdp.codpattern.app.zombies.service.ZombiesMapOccupancyService;
 import com.cdp.codpattern.app.zombies.validation.ZombiesMapValidationProfile;
@@ -571,7 +572,8 @@ public final class ZombiesDeployToolService {
                  ZombiesDeployFieldSchema.AMMO_BOX,
                  ZombiesDeployFieldSchema.ARMOR_STATION,
                  ZombiesDeployFieldSchema.SODA_MACHINE,
-                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> true;
+                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
+                 ZombiesDeployFieldSchema.MYSTERY_BOX -> true;
             default -> false;
         };
     }
@@ -611,7 +613,8 @@ public final class ZombiesDeployToolService {
                  ZombiesDeployFieldSchema.AMMO_BOX,
                  ZombiesDeployFieldSchema.ARMOR_STATION,
                  ZombiesDeployFieldSchema.SODA_MACHINE,
-                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> {
+                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
+                 ZombiesDeployFieldSchema.MYSTERY_BOX -> {
                 if (leftClick) {
                     setPosition(fields, "pos", placementPos);
                     setPosition(fields, "interaction", placementPos);
@@ -1138,6 +1141,12 @@ public final class ZombiesDeployToolService {
                     summaries.add(summary(i, type, data.objectId(), data.requiresPower() ? "requires power" : "no power", detail(data.dimension(), data.pos())));
                 }
             }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                for (int i = 0; i < resolved.mysteryBoxes().size(); i++) {
+                    ZombiesMysteryBoxData data = resolved.mysteryBoxes().get(i);
+                    summaries.add(summary(i, type, data.objectId(), "box", detail(data.dimension(), data.pos())));
+                }
+            }
             default -> {
             }
         }
@@ -1221,6 +1230,7 @@ public final class ZombiesDeployToolService {
             case ZombiesDeployFieldSchema.POWER_SWITCH -> objects.powerSwitch().isPresent() ? 1 : 0;
             case ZombiesDeployFieldSchema.SODA_MACHINE -> objects.sodaMachines().size();
             case ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> objects.ultimateMachines().size();
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> objects.mysteryBoxes().size();
             default -> 0;
         };
     }
@@ -1510,6 +1520,7 @@ public final class ZombiesDeployToolService {
             case "power_switch" -> ZombiesDeployFieldSchema.POWER_SWITCH;
             case "soda_machine" -> ZombiesDeployFieldSchema.SODA_MACHINE;
             case "ultimate_machine" -> ZombiesDeployFieldSchema.ULTIMATE_MACHINE;
+            case "mystery_box" -> ZombiesDeployFieldSchema.MYSTERY_BOX;
             default -> "";
         };
     }
@@ -1556,6 +1567,7 @@ public final class ZombiesDeployToolService {
             case ZombiesDeployFieldSchema.POWER_SWITCH -> resolved.powerSwitch().isPresent() ? 1 : 0;
             case ZombiesDeployFieldSchema.SODA_MACHINE -> resolved.sodaMachines().size();
             case ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> resolved.ultimateMachines().size();
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> resolved.mysteryBoxes().size();
             default -> 0;
         };
         if (size <= 0) {
@@ -1629,6 +1641,11 @@ public final class ZombiesDeployToolService {
                     if (targetId.equalsIgnoreCase(resolved.ultimateMachines().get(i).objectId())) {
                         return i;
                     }
+                }
+            }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                for (int i = 0; i < resolved.mysteryBoxes().size(); i++) {
+                    if (targetId.equalsIgnoreCase(resolved.mysteryBoxes().get(i).objectId())) return i;
                 }
             }
             case ZombiesDeployFieldSchema.INITIAL -> {
@@ -1761,6 +1778,12 @@ public final class ZombiesDeployToolService {
                     best = nearest(playerPos, best, data.pos(), data.objectId());
                 }
             }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                for (int i = 0; i < resolved.mysteryBoxes().size(); i++) {
+                    ZombiesMysteryBoxData data = resolved.mysteryBoxes().get(i);
+                    best = nearest(playerPos, best, data.pos(), data.objectId());
+                }
+            }
             default -> {
                 return null;
             }
@@ -1811,7 +1834,8 @@ public final class ZombiesDeployToolService {
                  ZombiesDeployFieldSchema.ARMOR_STATION,
                  ZombiesDeployFieldSchema.POWER_SWITCH,
                  ZombiesDeployFieldSchema.SODA_MACHINE,
-                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> true;
+                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
+                 ZombiesDeployFieldSchema.MYSTERY_BOX -> true;
             default -> false;
         };
     }
@@ -1984,6 +2008,27 @@ public final class ZombiesDeployToolService {
                 return duplicate;
             }
         }
+        for (int i = 0; i < resolved.mysteryBoxes().size(); i++) {
+            ZombiesMysteryBoxData mysteryBox = resolved.mysteryBoxes().get(i);
+            Optional<DuplicatePosition> duplicate = addPointRef(seen, new PointRef(
+                    ZombiesDeployFieldSchema.MYSTERY_BOX,
+                    i,
+                    "pos",
+                    dimensionId(mysteryBox.dimension()),
+                    mysteryBox.pos()));
+            if (duplicate.isPresent()) {
+                return duplicate;
+            }
+            duplicate = addPointRef(seen, new PointRef(
+                    ZombiesDeployFieldSchema.MYSTERY_BOX,
+                    i,
+                    "interaction",
+                    dimensionId(mysteryBox.dimension()),
+                    mysteryBox.interactionPos().orElse(null)));
+            if (duplicate.isPresent()) {
+                return duplicate;
+            }
+        }
         return Optional.empty();
     }
 
@@ -2121,7 +2166,8 @@ public final class ZombiesDeployToolService {
                  ZombiesDeployFieldSchema.ARMOR_STATION,
                  ZombiesDeployFieldSchema.SODA_MACHINE,
                  ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
-                 ZombiesDeployFieldSchema.POWER_SWITCH -> true;
+                 ZombiesDeployFieldSchema.POWER_SWITCH,
+                 ZombiesDeployFieldSchema.MYSTERY_BOX -> true;
             default -> false;
         };
     }
@@ -2168,6 +2214,12 @@ public final class ZombiesDeployToolService {
                             ultimateMachine.dimension(),
                             ultimateMachine.pos(),
                             CodPatternBlockRegister.ZOMBIES_ULTIMATE_MACHINE_BOX.get()))
+                    .toList();
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> resolved.mysteryBoxes().stream()
+                    .map(box -> new PurchasablePlacement(
+                            ZombiesDeployFieldSchema.MYSTERY_BOX,
+                            box.objectId(), box.dimension(), box.pos(),
+                            CodPatternBlockRegister.ZOMBIES_MYSTERY_BOX.get()))
                     .toList();
             case ZombiesDeployFieldSchema.POWER_SWITCH -> resolved.powerSwitch()
                     .map(powerSwitch -> List.of(new PurchasablePlacement(

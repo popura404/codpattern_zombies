@@ -234,7 +234,8 @@ public record ZombiesMapSnapshot(
                         barrier.dimension(),
                         barrier.interactionPos(),
                         barrier.areaFrom(),
-                        barrier.areaTo()))
+                        barrier.areaTo(),
+                        barrier.requiredItem()))
                 .toList();
         List<WeaponWallSnapshot> weaponWalls = resolved.weaponWalls().stream()
                 .map(weaponWall -> new WeaponWallSnapshot(
@@ -386,7 +387,10 @@ public record ZombiesMapSnapshot(
                         firstPayloadInt(object.payload(), "cost", "buyCost", "price").orElse(0),
                         firstPayloadBoolean(object.payload(), "blocksPlayersOnly", "blocks_players_only").orElse(true),
                         object.dimension(),
-                        object.position()));
+                        object.position(),
+                        object.position(),
+                        object.position(),
+                        firstPayloadString(object.payload(), "requiredItem", "required_item").orElse("")));
             }
         }
         return barriers;
@@ -543,14 +547,29 @@ public record ZombiesMapSnapshot(
             String dimensionId,
             BlockPos pos,
             BlockPos areaFrom,
-            BlockPos areaTo
+            BlockPos areaTo,
+            String requiredItem
     ) {
         public BarrierSnapshot(String objectId, String featureKey) {
             this(objectId, featureKey, 1, 0);
         }
 
         public BarrierSnapshot(String objectId, String featureKey, int group, int cost) {
-            this(objectId, featureKey, group, cost, true, "", null, null, null);
+            this(objectId, featureKey, group, cost, true, "", null, null, null, "");
+        }
+
+        public BarrierSnapshot(
+                String objectId,
+                String featureKey,
+                int group,
+                int cost,
+                boolean blocksPlayersOnly,
+                String dimensionId,
+                BlockPos pos,
+                BlockPos areaFrom,
+                BlockPos areaTo
+        ) {
+            this(objectId, featureKey, group, cost, blocksPlayersOnly, dimensionId, pos, areaFrom, areaTo, "");
         }
 
         public BarrierSnapshot(
@@ -563,7 +582,7 @@ public record ZombiesMapSnapshot(
                 BlockPos areaFrom,
                 BlockPos areaTo
         ) {
-            this(objectId, featureKey, group, cost, true, dimensionId, pos, areaFrom, areaTo);
+            this(objectId, featureKey, group, cost, true, dimensionId, pos, areaFrom, areaTo, "");
         }
 
         public BarrierSnapshot(
@@ -574,7 +593,7 @@ public record ZombiesMapSnapshot(
                 ResourceKey<Level> dimension,
                 BlockPos pos
         ) {
-            this(objectId, featureKey, group, cost, true, dimension, pos, pos, pos);
+            this(objectId, featureKey, group, cost, true, dimension, pos, pos, pos, "");
         }
 
         public BarrierSnapshot(
@@ -586,7 +605,7 @@ public record ZombiesMapSnapshot(
                 ResourceKey<Level> dimension,
                 BlockPos pos
         ) {
-            this(objectId, featureKey, group, cost, blocksPlayersOnly, dimension, pos, pos, pos);
+            this(objectId, featureKey, group, cost, blocksPlayersOnly, dimension, pos, pos, pos, "");
         }
 
         public BarrierSnapshot(
@@ -599,7 +618,7 @@ public record ZombiesMapSnapshot(
                 BlockPos areaFrom,
                 BlockPos areaTo
         ) {
-            this(objectId, featureKey, group, cost, true, dimension, pos, areaFrom, areaTo);
+            this(objectId, featureKey, group, cost, true, dimension, pos, areaFrom, areaTo, "");
         }
 
         public BarrierSnapshot(
@@ -612,6 +631,21 @@ public record ZombiesMapSnapshot(
                 BlockPos pos,
                 BlockPos areaFrom,
                 BlockPos areaTo
+        ) {
+            this(objectId, featureKey, group, cost, blocksPlayersOnly, dimension, pos, areaFrom, areaTo, "");
+        }
+
+        public BarrierSnapshot(
+                String objectId,
+                String featureKey,
+                int group,
+                int cost,
+                boolean blocksPlayersOnly,
+                ResourceKey<Level> dimension,
+                BlockPos pos,
+                BlockPos areaFrom,
+                BlockPos areaTo,
+                String requiredItem
         ) {
             this(
                     objectId,
@@ -622,13 +656,15 @@ public record ZombiesMapSnapshot(
                     ZombiesMapSnapshot.dimensionId(dimension),
                     pos,
                     areaFrom,
-                    areaTo);
+                    areaTo,
+                    requiredItem);
         }
 
         public BarrierSnapshot {
             objectId = Objects.requireNonNullElse(objectId, "").trim();
             featureKey = Objects.requireNonNullElse(featureKey, "").trim();
             dimensionId = normalizeDimensionId(dimensionId);
+            requiredItem = Objects.requireNonNullElse(requiredItem, "").trim();
         }
     }
 

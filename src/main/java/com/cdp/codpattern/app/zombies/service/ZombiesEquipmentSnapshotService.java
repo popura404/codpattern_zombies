@@ -115,6 +115,9 @@ public final class ZombiesEquipmentSnapshotService {
         if (slot == ZombiesEquipmentSlot.PRIMARY) {
             return playerState.primaryWeapon().orElse(fallback);
         }
+        if (slot == ZombiesEquipmentSlot.MYSTERY_BOX) {
+            return playerState.mysteryBoxWeapon().orElse(fallback);
+        }
         return fallback;
     }
 

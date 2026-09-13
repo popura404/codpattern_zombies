@@ -10,6 +10,7 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesPowerSwitchData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesSodaMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesUltimateMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesMysteryBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
 import com.cdp.codpattern.compat.fpsmatch.map.zombies.ZombiesMap;
 import com.phasetranscrystal.fpsmatch.FPSMatch;
@@ -490,6 +491,16 @@ public final class ZombiesDeployPreviewService {
                     sendSlotPointForField(player, key, label, binding, "interaction", data.dimension(), data.interactionPos().orElse(null), selectedIndex == i);
                 }
             }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                for (int i = 0; i < resolved.mysteryBoxes().size(); i++) {
+                    ZombiesMysteryBoxData data = resolved.mysteryBoxes().get(i);
+                    String key = getHeldPreviewObjectKey(player, type, i);
+                    String label = label(type, data.objectId(), i);
+                    sendPoint(player, key, label, objectColor(type, selectedIndex == i), data.dimension(), data.pos(), Float.NaN);
+                    sendSlotPointForField(player, key, label, binding, "pos", data.dimension(), data.pos(), selectedIndex == i);
+                    sendSlotPointForField(player, key, label, binding, "interaction", data.dimension(), data.interactionPos().orElse(null), selectedIndex == i);
+                }
+            }
             default -> {
             }
         }
@@ -802,6 +813,12 @@ public final class ZombiesDeployPreviewService {
                     best = nearest(best, playerPos, data.pos(), label(type, data.objectId(), i));
                 }
             }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                for (int i = 0; i < resolved.mysteryBoxes().size(); i++) {
+                    ZombiesMysteryBoxData data = resolved.mysteryBoxes().get(i);
+                    best = nearest(best, playerPos, data.pos(), label(type, data.objectId(), i));
+                }
+            }
             default -> {
                 return null;
             }
@@ -899,6 +916,7 @@ public final class ZombiesDeployPreviewService {
             case ZombiesDeployFieldSchema.POWER_SWITCH -> resolved.powerSwitch().isPresent() ? 1 : 0;
             case ZombiesDeployFieldSchema.SODA_MACHINE -> resolved.sodaMachines().size();
             case ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> resolved.ultimateMachines().size();
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> resolved.mysteryBoxes().size();
             default -> 0;
         };
     }
@@ -922,7 +940,8 @@ public final class ZombiesDeployPreviewService {
                     ZombiesDeployFieldSchema.AMMO_BOX,
                     ZombiesDeployFieldSchema.ARMOR_STATION,
                     ZombiesDeployFieldSchema.SODA_MACHINE,
-                    ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> SHOP_COLOR;
+                    ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
+                    ZombiesDeployFieldSchema.MYSTERY_BOX -> SHOP_COLOR;
             default -> PreviewColorUtil.getPointPreviewColor(BuiltInGameModes.ZOMBIES);
         };
     }

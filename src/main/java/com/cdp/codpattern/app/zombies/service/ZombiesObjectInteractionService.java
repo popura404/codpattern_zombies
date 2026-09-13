@@ -9,18 +9,22 @@ import com.cdp.codpattern.app.match.port.ModeInteractableObjectPort;
 import com.cdp.codpattern.app.match.runtime.object.ModeObjectInteractionDeduplicator;
 import com.cdp.codpattern.app.match.runtime.object.ModeObjectInteractionDispatcher;
 import com.cdp.codpattern.app.match.runtime.object.ModeObjectTargetResolver;
+import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesAmmoBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesArmorStationData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesPowerSwitchData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesSodaMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesUltimateMachineData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesMysteryBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
 import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot;
 import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
 import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
+import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxConfig;
+import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxRepository;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -39,6 +43,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
+import java.util.function.IntSupplier;
 
 public final class ZombiesObjectInteractionService implements ModeInteractableObjectPort {
     private static final int INTERNAL_COMPAT_WEAPON_LEVEL = 1;
@@ -52,6 +57,8 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
     private static final String FAILURE_OBJECT_OUT_OF_RANGE = MESSAGE_PREFIX + "failure.object_out_of_range";
     private static final String FAILURE_NOT_ENOUGH_POINTS = MESSAGE_PREFIX + "failure.not_enough_points";
     private static final String FAILURE_BARRIER_ALREADY_CLEARED = MESSAGE_PREFIX + "failure.barrier_already_cleared";
+    private static final String FAILURE_BARRIER_REQUIRED_ITEM_MISSING =
+            MESSAGE_PREFIX + "failure.barrier_required_item_missing";
     private static final String FAILURE_WEAPON_ALREADY_OWNED = MESSAGE_PREFIX + "failure.weapon_already_owned";
     private static final String FAILURE_AMMO_ALREADY_FULL = MESSAGE_PREFIX + "failure.ammo_already_full";
     private static final String FAILURE_ARMOR_ALREADY_OWNED = MESSAGE_PREFIX + "failure.armor_already_owned";
@@ -60,6 +67,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
     private static final String FAILURE_PHASE_LOCKED = MESSAGE_PREFIX + "failure.phase_locked";
     private static final String FAILURE_INVALID_CURRENT_WEAPON = MESSAGE_PREFIX + "failure.invalid_current_weapon";
     private static final String FAILURE_MAX_UPGRADE = MESSAGE_PREFIX + "failure.max_upgrade";
+    private static final String FAILURE_MYSTERY_BOX_EMPTY = MESSAGE_PREFIX + "failure.mystery_box_empty";
     private static final String FAILURE_GENERIC = MESSAGE_PREFIX + "failure.generic";
     private static final String NOTICE_POWER_ALREADY_ON = MESSAGE_PREFIX + "notice.power_already_on";
     private static final String SUCCESS_BARRIER = MESSAGE_PREFIX + "success.barrier";
@@ -69,6 +77,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
     private static final String SUCCESS_POWER = MESSAGE_PREFIX + "success.power";
     private static final String SUCCESS_SODA = MESSAGE_PREFIX + "success.soda";
     private static final String SUCCESS_ULTIMATE = MESSAGE_PREFIX + "success.ultimate";
+    private static final String SUCCESS_MYSTERY_BOX = MESSAGE_PREFIX + "success.mystery_box";
     private static final String ANNOUNCEMENT_BARRIER = MESSAGE_PREFIX + "announcement.barrier";
     private static final String ANNOUNCEMENT_POWER = MESSAGE_PREFIX + "announcement.power";
     private static final ZombiesErrorCode BARRIER_ALREADY_CLEARED = ZombiesErrorCode.of("barrier.already_cleared");
@@ -82,6 +91,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
     private final Supplier<Optional<ZombiesPowerSwitchData>> powerSwitchSupplier;
     private final Supplier<Collection<ZombiesSodaMachineData>> sodaMachinesSupplier;
     private final Supplier<Collection<ZombiesUltimateMachineData>> ultimateMachinesSupplier;
+    private Supplier<Collection<ZombiesMysteryBoxData>> mysteryBoxesSupplier = List::of;
     private final ZombiesBarrierService barrierService;
     private final ZombiesWeaponInstanceService weaponInstanceService;
     private final ZombiesAmmoBoxService ammoBoxService;
@@ -94,6 +104,9 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
     private final ZombiesBarrierBlockRuntimeService barrierBlockRuntimeService;
     private final ZombiesRoomAnnouncementService announcementService;
     private final Supplier<ZombiesRulesConfig> rulesSupplier;
+    private Supplier<ZombiesMysteryBoxConfig> mysteryBoxConfigSupplier = ZombiesMysteryBoxRepository::getConfig;
+    private IntSupplier currentWaveSupplier = () -> 1;
+    private ZombiesMysteryBoxOfferService mysteryBoxOfferService = new ZombiesMysteryBoxOfferService();
     private final BooleanSupplier purchasesAllowedSupplier;
     private final ModeObjectInteractionDeduplicator interactionDeduplicator =
             new ModeObjectInteractionDeduplicator(20L);
@@ -493,6 +506,17 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         registerInteractionHandlers();
     }
 
+    public void configureMysteryBoxRuntime(
+            Supplier<Collection<ZombiesMysteryBoxData>> mysteryBoxesSupplier,
+            Supplier<ZombiesMysteryBoxConfig> configSupplier,
+            IntSupplier currentWaveSupplier
+    ) {
+        this.mysteryBoxesSupplier = mysteryBoxesSupplier == null ? List::of : mysteryBoxesSupplier;
+        this.mysteryBoxConfigSupplier = configSupplier == null ? ZombiesMysteryBoxRepository::getConfig : configSupplier;
+        this.currentWaveSupplier = currentWaveSupplier == null ? () -> 1 : currentWaveSupplier;
+        this.mysteryBoxOfferService = new ZombiesMysteryBoxOfferService(this.mysteryBoxConfigSupplier, null);
+    }
+
     @Override
     public RoomId roomId() {
         return roomId;
@@ -562,7 +586,8 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
                 armorStationsSupplier.get(),
                 powerSwitchSupplier.get(),
                 sodaMachinesSupplier.get(),
-                ultimateMachinesSupplier.get());
+                ultimateMachinesSupplier.get(),
+                mysteryBoxesSupplier.get());
     }
 
     public Optional<ZombiesInteractionPrompt> prompt(ServerPlayer player, ModeObjectInteractionContext context) {
@@ -617,6 +642,8 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
                 dispatch.target(),
                 (ZombiesUltimateMachineData) dispatch.target().data(),
                 dispatch.context().itemStack()));
+        interactionDispatcher.register(InteractionType.MYSTERY_BOX, dispatch -> purchaseMysteryBox(
+                dispatch.player(), dispatch.target(), (ZombiesMysteryBoxData) dispatch.target().data()));
     }
 
     private InteractionResult purchaseBarrier(ServerPlayer player, InteractionTarget target, ZombiesBarrierData barrier) {
@@ -674,6 +701,54 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         }
         sendFailureMessage(player, target, result);
         return InteractionResult.FAIL;
+    }
+
+    private InteractionResult purchaseMysteryBox(
+            ServerPlayer player,
+            InteractionTarget target,
+            ZombiesMysteryBoxData mysteryBox
+    ) {
+        ZombiesMysteryBoxOfferService.Offer offer = mysteryBoxOfferService.createOffer(
+                Math.max(1, currentWaveSupplier.getAsInt()));
+        if (offer == null || !offer.valid()) {
+            sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.MYSTERY_BOX_EMPTY_POOL));
+            return InteractionResult.FAIL;
+        }
+        ZombiesWeaponInstanceState reward = ZombiesWeaponInstanceState.wallPrimary(
+                offer.gunId(), offer.rarityId(), INTERNAL_COMPAT_WEAPON_LEVEL,
+                offer.damageMultiplier(), mysteryBoxReserveAmmo(offer.gunId()));
+        ZombiesServiceResult<ZombiesWeaponInventoryService.PreparedWeaponStack> prepared =
+                weaponInventoryService.prepareMysteryBoxWeapon(roomId, reward);
+        if (!prepared.success() || prepared.value().isEmpty()) {
+            sendFailureMessage(player, target, prepared);
+            return InteractionResult.FAIL;
+        }
+        ZombiesServiceResult<ZombiesWeaponInstanceService.WallWeaponPurchaseResult> result =
+                weaponInstanceService.purchaseMysteryBoxWeapon(
+                        player.getUUID(), offer.gunId(), offer.rarityId(), INTERNAL_COMPAT_WEAPON_LEVEL,
+                        offer.damageMultiplier(), reward.maxReserveAmmo(), offer.cost(),
+                        (current, purchased) -> weaponInventoryService.applyPreparedMysteryBoxWeapon(
+                                player, roomId, prepared.value().get(), purchased));
+        if (result.success()) {
+            objectStateStore.markMysteryBoxUsed(mysteryBox);
+            ZombiesWeaponInstanceService.WallWeaponPurchaseResult purchase = result.value().orElse(null);
+            sendMessage(player, SUCCESS_MYSTERY_BOX,
+                    purchase == null ? offer.gunId() : purchase.weapon().gunId(),
+                    offer.rarityId(), target.objectId(), displayCost(offer.cost()));
+            return InteractionResult.SUCCESS;
+        }
+        sendFailureMessage(player, target, result);
+        return InteractionResult.FAIL;
+    }
+
+    private int mysteryBoxReserveAmmo(String gunId) {
+        ItemStack stack = ZombiesWeaponInventoryService.createDefaultTaczGunStackForRules(gunId);
+        if (stack == null || stack.isEmpty() || !TaczGatewayProvider.gateway().isGun(stack)) return 0;
+        int magazine = TaczGatewayProvider.gateway().resolveMagazineAmmo(stack);
+        ZombiesRulesConfig rules = rulesSupplier.get();
+        int multiple = rules == null || rules.getWeaponRules().getWeaponPoolAmmunitionPerMagazineMultiple() == null
+                ? 0 : rules.getWeaponRules().getWeaponPoolAmmunitionPerMagazineMultiple();
+        return Math.max(0, magazine * Math.max(0, multiple));
     }
 
     ZombiesServiceResult<ZombiesWeaponInstanceService.WallWeaponPurchaseResult> purchaseWeaponWall(
@@ -1145,6 +1220,15 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
                         ultimateMachine));
             }
         }
+        for (ZombiesMysteryBoxData mysteryBox : safeCollection(mysteryBoxesSupplier)) {
+            if (mysteryBox != null && player.level().dimension().equals(mysteryBox.dimension())) {
+                candidates.add(new InteractionTarget(
+                        InteractionType.MYSTERY_BOX,
+                        ZombiesObjectStateStore.objectKey(mysteryBox),
+                        interactionPosition(mysteryBox),
+                        mysteryBox));
+            }
+        }
         return candidates;
     }
 
@@ -1199,6 +1283,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
             case ARMOR_STATION -> mainHand;
             case SODA_MACHINE -> mainHand;
             case ULTIMATE_MACHINE -> mainHandTacz;
+            case MYSTERY_BOX -> mainHand;
             default -> true;
         };
     }
@@ -1218,6 +1303,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
             case ARMOR_STATION -> CodPatternBlockRegister.ZOMBIES_ARMOR_STATION_BOX.get();
             case SODA_MACHINE -> CodPatternBlockRegister.ZOMBIES_SODA_MACHINE_BOX.get();
             case ULTIMATE_MACHINE -> CodPatternBlockRegister.ZOMBIES_ULTIMATE_MACHINE_BOX.get();
+            case MYSTERY_BOX -> CodPatternBlockRegister.ZOMBIES_MYSTERY_BOX.get();
             default -> null;
         };
     }
@@ -1227,7 +1313,8 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
                 || type == InteractionType.AMMO_BOX
                 || type == InteractionType.ARMOR_STATION
                 || type == InteractionType.SODA_MACHINE
-                || type == InteractionType.ULTIMATE_MACHINE;
+                || type == InteractionType.ULTIMATE_MACHINE
+                || type == InteractionType.MYSTERY_BOX;
     }
 
     private static boolean isAnyBoxStyleBlock(ServerPlayer player, BlockPos pos) {
@@ -1239,7 +1326,8 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
                 || block == CodPatternBlockRegister.ZOMBIES_AMMO_BOX.get()
                 || block == CodPatternBlockRegister.ZOMBIES_ARMOR_STATION_BOX.get()
                 || block == CodPatternBlockRegister.ZOMBIES_SODA_MACHINE_BOX.get()
-                || block == CodPatternBlockRegister.ZOMBIES_ULTIMATE_MACHINE_BOX.get();
+                || block == CodPatternBlockRegister.ZOMBIES_ULTIMATE_MACHINE_BOX.get()
+                || block == CodPatternBlockRegister.ZOMBIES_MYSTERY_BOX.get();
     }
 
     private static String objectTypeId(InteractionType type) {
@@ -1251,6 +1339,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
             case BARRIER -> "barrier";
             case SODA_MACHINE -> "soda_machine";
             case ULTIMATE_MACHINE -> "ultimate_machine";
+            case MYSTERY_BOX -> "mystery_box";
         };
     }
 
@@ -1311,6 +1400,13 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
             sendMessage(player, FAILURE_BARRIER_ALREADY_CLEARED, target.objectId(), fallbackGroup(target));
             return;
         }
+        if (ZombiesErrorCode.BARRIER_REQUIRED_ITEM_MISSING.equals(code)) {
+            Object requiredItemName = target.data() instanceof ZombiesBarrierData barrier
+                    ? ZombiesRequiredItem.displayName(barrier.requiredItem())
+                    : param(result, "requiredItemName", "?");
+            sendMessage(player, FAILURE_BARRIER_REQUIRED_ITEM_MISSING, requiredItemName);
+            return;
+        }
         if (ZombiesErrorCode.WEAPON_ALREADY_OWNED.equals(code)) {
             sendMessage(
                     player,
@@ -1365,6 +1461,10 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
                     param(result, "weaponLevel", fallbackWeaponLevel(target)));
             return;
         }
+        if (ZombiesErrorCode.MYSTERY_BOX_EMPTY_POOL.equals(code)) {
+            sendMessage(player, FAILURE_MYSTERY_BOX_EMPTY, target.objectId());
+            return;
+        }
         sendMessage(player, FAILURE_GENERIC, target.objectId(), code.key());
     }
 
@@ -1390,6 +1490,10 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         }
         if (data instanceof ZombiesUltimateMachineData) {
             return displayUltimateCost();
+        }
+        if (data instanceof ZombiesMysteryBoxData) {
+            ZombiesMysteryBoxConfig config = mysteryBoxConfigSupplier.get();
+            return config == null ? 0 : Math.max(0, config.getCost());
         }
         return 0;
     }
@@ -1552,6 +1656,10 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         return ultimateMachine.interactionPos().orElse(ultimateMachine.pos());
     }
 
+    private static BlockPos interactionPosition(ZombiesMysteryBoxData mysteryBox) {
+        return mysteryBox.interactionPos().orElse(mysteryBox.pos());
+    }
+
     private static double distanceToInteractionSqr(Vec3 playerPos, InteractionTarget target) {
         Vec3 targetPos = Vec3.atCenterOf(target.position());
         return playerPos.distanceToSqr(targetPos);
@@ -1564,7 +1672,8 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         ARMOR_STATION,
         POWER_SWITCH,
         SODA_MACHINE,
-        ULTIMATE_MACHINE
+        ULTIMATE_MACHINE,
+        MYSTERY_BOX
     }
 
     private record InteractionTarget(

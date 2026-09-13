@@ -36,10 +36,13 @@ public final class ZombiesErrorCode {
     public static final ZombiesErrorCode OBJECT_OUT_OF_RANGE = new ZombiesErrorCode("object.out_of_range");
     public static final ZombiesErrorCode OBJECT_ROOM_MISMATCH = new ZombiesErrorCode("object.room_mismatch");
     public static final ZombiesErrorCode OBJECT_BUSY = new ZombiesErrorCode("object.busy");
+    public static final ZombiesErrorCode BARRIER_REQUIRED_ITEM_MISSING =
+            new ZombiesErrorCode("barrier.required_item_missing");
 
     public static final ZombiesErrorCode WEAPON_INVALID_CURRENT_WEAPON = new ZombiesErrorCode("weapon.invalid_current_weapon");
     public static final ZombiesErrorCode WEAPON_ALREADY_OWNED = new ZombiesErrorCode("weapon.already_owned");
     public static final ZombiesErrorCode WEAPON_MAX_UPGRADE = new ZombiesErrorCode("weapon.max_upgrade");
+    public static final ZombiesErrorCode MYSTERY_BOX_EMPTY_POOL = new ZombiesErrorCode("mystery_box.empty_pool");
 
     public static final ZombiesErrorCode POWER_REQUIRES_POWER = new ZombiesErrorCode("power.requires_power");
     public static final ZombiesErrorCode POWER_ALREADY_ON = new ZombiesErrorCode("power.already_on");

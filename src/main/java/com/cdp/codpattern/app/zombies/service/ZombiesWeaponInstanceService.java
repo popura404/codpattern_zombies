@@ -99,6 +99,40 @@ public final class ZombiesWeaponInstanceService {
         });
     }
 
+    public ZombiesServiceResult<WallWeaponPurchaseResult> purchaseMysteryBoxWeapon(
+            UUID playerId,
+            String gunId,
+            String rarityId,
+            int weaponLevel,
+            double damageMultiplier,
+            int maxReserveAmmo,
+            double cost,
+            WallWeaponCommitGuard commitGuard
+    ) {
+        if (!ZombiesWeaponInstanceState.isValidGunId(gunId)
+                || !ZombiesWeaponInstanceState.isValidWeaponLevel(weaponLevel)
+                || !ZombiesWeaponInstanceState.isValidDamageMultiplier(damageMultiplier)
+                || maxReserveAmmo < 0) {
+            return ZombiesServiceResult.failure(WEAPON_INVALID_PURCHASE, weaponParams(gunId, rarityId, weaponLevel), "");
+        }
+        return economyService.spendAtomically(playerId, cost, state -> {
+            ZombiesWeaponInstanceState currentWeapon = state.mysteryBoxWeapon().orElse(null);
+            ZombiesWeaponInstanceState weapon = ZombiesWeaponInstanceState.wallPrimary(
+                    gunId, rarityId, weaponLevel, damageMultiplier, maxReserveAmmo);
+            ZombiesServiceResult<?> guardResult = commitGuard == null
+                    ? ZombiesServiceResult.ok()
+                    : commitGuard.beforeCommit(currentWeapon, weapon);
+            if (guardResult == null || !guardResult.success()) {
+                return ZombiesServiceResult.failure(
+                        guardResult == null ? ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON : guardResult.code(),
+                        guardResult == null ? Map.of() : guardResult.params(),
+                        guardResult == null ? "" : guardResult.logMessage());
+            }
+            state.setMysteryBoxWeapon(weapon);
+            return ZombiesServiceResult.success(new WallWeaponPurchaseResult(weapon, cost));
+        });
+    }
+
     public ZombiesServiceResult<ZombiesWeaponInstanceState> currentPrimaryWeapon(UUID playerId) {
         return economyService.state(playerId)
                 .flatMap(ZombiesPlayerRuntimeState::primaryWeapon)

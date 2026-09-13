@@ -8,11 +8,14 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesAmmoBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesArmorStationData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesPowerSwitchData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesMysteryBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesSodaMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesUltimateMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
 import com.cdp.codpattern.app.zombies.sync.ZombiesObjectStateKeys;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
+import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxConfig;
+import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxRepository;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 
@@ -34,6 +37,7 @@ public final class ZombiesObjectStateStore {
     private static final String OBJECT_TYPE_POWER_SWITCH = "power_switch";
     private static final String OBJECT_TYPE_SODA_MACHINE = "soda_machine";
     private static final String OBJECT_TYPE_ULTIMATE_MACHINE = "ultimate_machine";
+    private static final String OBJECT_TYPE_MYSTERY_BOX = "mystery_box";
     private static final String PAYLOAD_OBJECT_ID = "objectId";
     private static final String PAYLOAD_NAME = "name";
     private static final String PAYLOAD_GROUP = "group";
@@ -62,9 +66,11 @@ public final class ZombiesObjectStateStore {
     private final ModeObjectRevisionIndex powerSwitchRevisionsByObjectId = new ModeObjectRevisionIndex();
     private final ModeObjectRevisionIndex sodaMachineRevisionsByObjectId = new ModeObjectRevisionIndex();
     private final ModeObjectRevisionIndex ultimateMachineRevisionsByObjectId = new ModeObjectRevisionIndex();
+    private final ModeObjectRevisionIndex mysteryBoxRevisionsByObjectId = new ModeObjectRevisionIndex();
     private final BooleanSupplier powerOnSupplier;
     private final ZombiesWeaponWallOfferService weaponWallOfferService;
     private final Supplier<ZombiesRulesConfig> rulesSupplier;
+    private Supplier<ZombiesMysteryBoxConfig> mysteryBoxConfigSupplier = ZombiesMysteryBoxRepository::getConfig;
     private final ModeObjectRevisionClock revisionClock = new ModeObjectRevisionClock();
 
     public ZombiesObjectStateStore() {
@@ -92,6 +98,10 @@ public final class ZombiesObjectStateStore {
                 ? new ZombiesWeaponWallOfferService()
                 : weaponWallOfferService;
         this.rulesSupplier = rulesSupplier == null ? ZombiesRulesConfig::new : rulesSupplier;
+    }
+
+    public synchronized void configureMysteryBoxConfigSupplier(Supplier<ZombiesMysteryBoxConfig> configSupplier) {
+        this.mysteryBoxConfigSupplier = configSupplier == null ? ZombiesMysteryBoxRepository::getConfig : configSupplier;
     }
 
     public synchronized void resetBarriers(Collection<ZombiesBarrierData> barriers) {
@@ -129,6 +139,22 @@ public final class ZombiesObjectStateStore {
             int currentWave,
             int maxWave
     ) {
+        resetObjects(barriers, weaponWalls, ammoBoxes, armorStations, powerSwitch, sodaMachines,
+                ultimateMachines, List.of(), currentWave, maxWave);
+    }
+
+    public synchronized void resetObjects(
+            Collection<ZombiesBarrierData> barriers,
+            Collection<ZombiesWeaponWallData> weaponWalls,
+            Collection<ZombiesAmmoBoxData> ammoBoxes,
+            Collection<ZombiesArmorStationData> armorStations,
+            Optional<ZombiesPowerSwitchData> powerSwitch,
+            Collection<ZombiesSodaMachineData> sodaMachines,
+            Collection<ZombiesUltimateMachineData> ultimateMachines,
+            Collection<ZombiesMysteryBoxData> mysteryBoxes,
+            int currentWave,
+            int maxWave
+    ) {
         List<ZombiesBarrierData> snapshot = safeBarriers(barriers);
         Map<String, BarrierRuntimeState> next = new LinkedHashMap<>();
         for (ZombiesBarrierData barrier : snapshot) {
@@ -142,6 +168,7 @@ public final class ZombiesObjectStateStore {
         resetPowerSwitchRevision(powerSwitch);
         resetStableRevisions(sodaMachineRevisionsByObjectId, safeSodaMachines(sodaMachines));
         resetStableRevisions(ultimateMachineRevisionsByObjectId, safeUltimateMachines(ultimateMachines));
+        resetStableRevisions(mysteryBoxRevisionsByObjectId, safeMysteryBoxes(mysteryBoxes));
     }
 
     public synchronized ZombiesServiceResult<BarrierGroupUpdate> clearBarrierGroup(
@@ -217,6 +244,20 @@ public final class ZombiesObjectStateStore {
             Collection<ZombiesSodaMachineData> sodaMachines,
             Collection<ZombiesUltimateMachineData> ultimateMachines
     ) {
+        return objectStates(barriers, weaponWalls, ammoBoxes, armorStations, powerSwitch, sodaMachines,
+                ultimateMachines, List.of());
+    }
+
+    public synchronized List<ModeObjectState> objectStates(
+            Collection<ZombiesBarrierData> barriers,
+            Collection<ZombiesWeaponWallData> weaponWalls,
+            Collection<ZombiesAmmoBoxData> ammoBoxes,
+            Collection<ZombiesArmorStationData> armorStations,
+            Optional<ZombiesPowerSwitchData> powerSwitch,
+            Collection<ZombiesSodaMachineData> sodaMachines,
+            Collection<ZombiesUltimateMachineData> ultimateMachines,
+            Collection<ZombiesMysteryBoxData> mysteryBoxes
+    ) {
         List<ModeObjectState> states = new ArrayList<>(barrierStates(barriers));
         for (ZombiesWeaponWallData weaponWall : safeWeaponWalls(weaponWalls)) {
             String objectId = objectKey(weaponWall);
@@ -247,6 +288,11 @@ public final class ZombiesObjectStateStore {
             String objectId = objectKey(ultimateMachine);
             long objectRevision = ensureStableRevision(ultimateMachineRevisionsByObjectId, objectId);
             states.add(toModeObjectState(objectId, ultimateMachine, objectRevision));
+        }
+        for (ZombiesMysteryBoxData mysteryBox : safeMysteryBoxes(mysteryBoxes)) {
+            String objectId = objectKey(mysteryBox);
+            long objectRevision = ensureStableRevision(mysteryBoxRevisionsByObjectId, objectId);
+            states.add(toModeObjectState(objectId, mysteryBox, objectRevision));
         }
         return List.copyOf(states);
     }
@@ -340,6 +386,13 @@ public final class ZombiesObjectStateStore {
         return nextRevision;
     }
 
+    public synchronized long markMysteryBoxUsed(ZombiesMysteryBoxData mysteryBox) {
+        if (mysteryBox == null) return revisionClock.current();
+        long nextRevision = nextRevision();
+        mysteryBoxRevisionsByObjectId.put(objectKey(mysteryBox), nextRevision);
+        return nextRevision;
+    }
+
     public synchronized long revision() {
         return revisionClock.current();
     }
@@ -375,6 +428,7 @@ public final class ZombiesObjectStateStore {
         payload.putInt(PAYLOAD_GROUP, barrier.group());
         payload.putString(PAYLOAD_NAME, barrier.displayName());
         payload.putInt(ZombiesObjectStateKeys.PAYLOAD_COST, Math.max(0, barrier.cost()));
+        payload.putString(ZombiesObjectStateKeys.PAYLOAD_REQUIRED_ITEM, barrier.requiredItem());
         payload.putBoolean(PAYLOAD_CLEARED, state.cleared());
         payload.putBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED, !state.cleared());
         putBarrierAreaPayload(payload, barrier);
@@ -384,6 +438,21 @@ public final class ZombiesObjectStateStore {
                 barrier.interactionPos(),
                 payload,
                 state.revision());
+    }
+
+    private ModeObjectState toModeObjectState(
+            String objectId,
+            ZombiesMysteryBoxData mysteryBox,
+            long objectRevision
+    ) {
+        ZombiesMysteryBoxConfig config = mysteryBoxConfigSupplier.get();
+        Integer configuredCost = config == null ? 0 : config.getCost();
+        int cost = Math.max(0, configuredCost == null ? 0 : configuredCost);
+        CompoundTag payload = basePurchasePayload(objectId, OBJECT_TYPE_MYSTERY_BOX, cost, true);
+        payload.putString(PAYLOAD_RARITY_ID, "");
+        payload.putString(PAYLOAD_GUN_ID, "");
+        return new ModeObjectState(objectId, ZombiesObjectStateKeys.STATUS,
+                interactionPosition(mysteryBox), payload, objectRevision);
     }
 
     private static void putBarrierAreaPayload(CompoundTag payload, ZombiesBarrierData barrier) {
@@ -639,6 +708,11 @@ public final class ZombiesObjectStateStore {
                 .toList();
     }
 
+    private static List<ZombiesMysteryBoxData> safeMysteryBoxes(Collection<ZombiesMysteryBoxData> mysteryBoxes) {
+        if (mysteryBoxes == null || mysteryBoxes.isEmpty()) return List.of();
+        return mysteryBoxes.stream().filter(Objects::nonNull).toList();
+    }
+
     private boolean shouldRefreshWeaponWall(int targetWave) {
         return weaponWallOfferService.shouldRefreshForWave(targetWave);
     }
@@ -711,6 +785,13 @@ public final class ZombiesObjectStateStore {
         return "ultimate_machine:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
     }
 
+    static String objectKey(ZombiesMysteryBoxData mysteryBox) {
+        String objectId = mysteryBox == null ? "" : Objects.requireNonNullElse(mysteryBox.objectId(), "").trim();
+        if (!objectId.isBlank()) return objectId;
+        BlockPos pos = mysteryBox == null ? BlockPos.ZERO : interactionPosition(mysteryBox);
+        return "mystery_box:" + pos.getX() + "," + pos.getY() + "," + pos.getZ();
+    }
+
     private static String objectKey(Object object) {
         if (object instanceof ZombiesBarrierData barrier) {
             return objectKey(barrier);
@@ -732,6 +813,9 @@ public final class ZombiesObjectStateStore {
         }
         if (object instanceof ZombiesUltimateMachineData ultimateMachine) {
             return objectKey(ultimateMachine);
+        }
+        if (object instanceof ZombiesMysteryBoxData mysteryBox) {
+            return objectKey(mysteryBox);
         }
         return "";
     }
@@ -776,6 +860,11 @@ public final class ZombiesObjectStateStore {
             return BlockPos.ZERO;
         }
         return ultimateMachine.interactionPos().orElse(ultimateMachine.pos());
+    }
+
+    private static BlockPos interactionPosition(ZombiesMysteryBoxData mysteryBox) {
+        if (mysteryBox == null) return BlockPos.ZERO;
+        return mysteryBox.interactionPos().orElse(mysteryBox.pos());
     }
 
     private static int displayAmmoCost(ZombiesAmmoBoxData ammoBox) {

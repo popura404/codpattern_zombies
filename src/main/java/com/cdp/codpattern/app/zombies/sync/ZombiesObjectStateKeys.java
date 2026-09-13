@@ -12,6 +12,7 @@ public final class ZombiesObjectStateKeys {
     public static final String PAYLOAD_ENABLED = "enabled";
     public static final String PAYLOAD_REASON = "reason";
     public static final String PAYLOAD_COST = "cost";
+    public static final String PAYLOAD_REQUIRED_ITEM = "requiredItem";
 
     private ZombiesObjectStateKeys() {
     }

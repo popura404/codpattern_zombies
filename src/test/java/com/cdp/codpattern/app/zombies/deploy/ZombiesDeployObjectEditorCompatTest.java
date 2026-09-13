@@ -108,6 +108,7 @@ public final class ZombiesDeployObjectEditorCompatTest {
                         "group", "2",
                         "cost", "750",
                         "blocksPlayersOnly", "true",
+                        "requiredItem", "minecraft:tripwire_hook{CustomModelData:1}",
                         "areaFromX", "5",
                         "areaFromY", "64",
                         "areaFromZ", "5",
@@ -123,6 +124,10 @@ public final class ZombiesDeployObjectEditorCompatTest {
         ZombiesBarrierData added = only(add.objects().barriers(), "added barrier");
         requireBarrier(added, "barrier-2-a", 2, 750, true,
                 new BlockPos(5, 64, 5), new BlockPos(7, 66, 5), new BlockPos(6, 65, 4));
+        require(added.requiredItem().contains("id:\"minecraft:tripwire_hook\"")
+                        && added.requiredItem().contains("Count:1b")
+                        && added.requiredItem().contains("CustomModelData:1"),
+                "barrier add should normalize required item to count-one ItemStack SNBT");
 
         Map<String, String> updateFields = new LinkedHashMap<>(add.fields());
         updateFields.put("objectId", "barrier-3-a");
@@ -141,6 +146,8 @@ public final class ZombiesDeployObjectEditorCompatTest {
         ZombiesBarrierData updated = only(update.objects().barriers(), "updated barrier");
         requireBarrier(updated, "barrier-3-a", 3, 950, false,
                 new BlockPos(5, 64, 5), new BlockPos(7, 66, 8), new BlockPos(6, 65, 4));
+        require(added.requiredItem().equals(updated.requiredItem()),
+                "barrier update should preserve normalized required item");
 
         ZombiesDeployObjectEditor.EditResult duplicate = edit(
                 update.objects(),
@@ -155,6 +162,19 @@ public final class ZombiesDeployObjectEditorCompatTest {
                 "barrier duplicate should generate non-conflicting object id");
         require(duplicate.objects().barriers().get(1).areaTo().equals(new BlockPos(7, 66, 8)),
                 "barrier duplicate should preserve area bounds");
+        require(updated.requiredItem().equals(duplicate.objects().barriers().get(1).requiredItem()),
+                "barrier duplicate should preserve required item");
+
+        Map<String, String> invalidFields = new LinkedHashMap<>(add.fields());
+        invalidFields.put("requiredItem", "minecraft:not_a_real_item");
+        ZombiesDeployObjectEditor.EditResult invalid = edit(
+                add.objects(),
+                ZombiesDeployObjectEditor.Operation.UPDATE,
+                ZombiesDeployFieldSchema.BARRIER,
+                0,
+                invalidFields);
+        requireFailure(invalid, "field.invalid_item", "invalid barrier required item should fail save");
+        require(invalid.objects() == add.objects(), "invalid required item should not mutate objects");
     }
 
     private static void ammoBoxPricesByWeaponLevelParseAndUpdateFromListField() {

@@ -40,6 +40,7 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         mvp3BarrierGroupCostMismatchFails();
         mvp3BarrierOverlappingCellsFail();
         mvp3BarrierBlocksPlayersOnlyFalseFails();
+        invalidBarrierRequiredItemFailsMapValidation();
         mvp3FullInitialSnapshotSucceeds();
     }
 
@@ -301,6 +302,27 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
 
         require(report.hasErrors(), "MVP3 barrier area outside map bounds should fail");
         requireIssue(report, "map.object_out_of_bounds");
+    }
+
+    private static void invalidBarrierRequiredItemFailsMapValidation() {
+        ZombiesMapSnapshot.BarrierSnapshot barrier = new ZombiesMapSnapshot.BarrierSnapshot(
+                "barrier-invalid-required-item",
+                "barrier",
+                1,
+                0,
+                true,
+                MAP_DIMENSION,
+                new BlockPos(6, 1, 6),
+                new BlockPos(6, 1, 6),
+                new BlockPos(6, 2, 6),
+                "minecraft:diamond{broken");
+
+        ZombiesMapValidationReport report = validate(
+                ZombiesMapValidationProfile.MVP3_FULL_INITIAL,
+                snapshotWithBarriers(List.of(barrier)));
+
+        require(report.hasErrors(), "invalid non-empty barrier requiredItem should fail map validation");
+        requireIssue(report, "map.invalid_barrier");
     }
 
     private static void mvp3DiagonalBarrierAreaFails() {

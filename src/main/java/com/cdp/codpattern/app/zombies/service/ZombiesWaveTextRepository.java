@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -30,6 +31,22 @@ public final class ZombiesWaveTextRepository {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Gson GSON = new Gson();
     private static final Pattern WAVE_TEXT_FILE_PATTERN = Pattern.compile("^wave_(\\d+).*\\.json$");
+    private static final String DEFAULT_WAVE_TEXT_FILE_NAME = "wave_001.json";
+    private static final String DEFAULT_WAVE_TEXT_JSON = """
+            {
+              "wave": 1,
+              "messages": [
+                {
+                  "delayTicks": 0,
+                  "text": "text1"
+                },
+                {
+                  "delayTicks": 40,
+                  "text": "text2"
+                }
+              ]
+            }
+            """;
 
     private final Path waveTextDirectory;
 
@@ -63,6 +80,10 @@ public final class ZombiesWaveTextRepository {
             addIssue(issues, waveTextDirectory,
                     "Wave text directory could not be scanned: " + exception.getMessage());
             return new LoadResult(List.of(), issues);
+        }
+
+        if (files.isEmpty() && ensureDefaultExample(issues)) {
+            files = List.of(waveTextDirectory.resolve(DEFAULT_WAVE_TEXT_FILE_NAME));
         }
 
         Map<Integer, LoadedDefinition> definitions = new LinkedHashMap<>();
@@ -136,6 +157,24 @@ public final class ZombiesWaveTextRepository {
         } catch (IOException | JsonParseException | IllegalStateException exception) {
             addIssue(issues, file, "Wave text file could not be parsed: " + exception.getMessage());
             return Optional.empty();
+        }
+    }
+
+    private boolean ensureDefaultExample(List<LoadIssue> issues) {
+        Path example = waveTextDirectory.resolve(DEFAULT_WAVE_TEXT_FILE_NAME);
+        try {
+            if (!Files.exists(example)) {
+                Files.writeString(
+                        example,
+                        DEFAULT_WAVE_TEXT_JSON,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE_NEW);
+            }
+            return true;
+        } catch (IOException | SecurityException exception) {
+            addIssue(issues, example, "Default wave text example could not be created: "
+                    + exception.getMessage());
+            return false;
         }
     }
 

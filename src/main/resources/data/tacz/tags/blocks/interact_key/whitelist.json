@@ -7,6 +7,7 @@
     "codpattern:zombies_ammo_box",
     "codpattern:zombies_armor_station_box",
     "codpattern:zombies_soda_machine_box",
-    "codpattern:zombies_ultimate_machine_box"
+    "codpattern:zombies_ultimate_machine_box",
+    "codpattern:zombies_mystery_box"
   ]
 }

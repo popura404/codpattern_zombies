@@ -4,6 +4,7 @@ import com.cdp.codpattern.app.zombies.map.ZombiesMapSnapshot;
 import com.cdp.codpattern.app.zombies.map.ZombiesMatchSnapshot;
 import com.cdp.codpattern.app.zombies.service.ZombiesBarrierBlockRuntimeService;
 import com.cdp.codpattern.app.zombies.service.ZombiesErrorCode;
+import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
@@ -155,6 +156,7 @@ public final class ZombiesMapValidator {
         if (profile.requireUniqueObjectIds()) {
             addDuplicateObjectIdIssues(snapshot, issues);
         }
+        addBarrierRequiredItemIssues(snapshot, issues);
         if (profile.validatePurchases()) {
             addPurchaseIssues(snapshot, issues);
         }
@@ -162,6 +164,24 @@ public final class ZombiesMapValidator {
             addFullInitialIssues(snapshot, issues);
         }
         return issues;
+    }
+
+    private static void addBarrierRequiredItemIssues(
+            ZombiesMapSnapshot snapshot,
+            List<ZombiesValidationIssue> issues
+    ) {
+        for (ZombiesMapSnapshot.BarrierSnapshot barrier : snapshot.barriers()) {
+            if (barrier == null) {
+                continue;
+            }
+            ZombiesRequiredItem.ParseResult result = ZombiesRequiredItem.parse(barrier.requiredItem());
+            if (result.configured() && !result.valid()) {
+                issues.add(ZombiesValidationIssue.error(
+                        MAP_INVALID_BARRIER,
+                        subject("barrier", barrier.objectId(), barrier.featureKey()),
+                        "Barrier requiredItem is invalid: " + result.error()));
+            }
+        }
     }
 
     private static boolean validGroupOneZombieSpawn(ZombiesMapSnapshot.SpawnSnapshot spawn) {

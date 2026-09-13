@@ -73,6 +73,12 @@ public final class CodPatternBlockRegister {
                     .strength(2.0F, 6.0F)
                     .sound(SoundType.WOOD))
     );
+    public static final RegistryObject<ZombiesBoxInteractionBlock> ZOMBIES_MYSTERY_BOX = BLOCKS.register(
+            "zombies_mystery_box",
+            () -> new ZombiesBoxInteractionBlock(BlockBehaviour.Properties.copy(Blocks.ORANGE_CONCRETE)
+                    .strength(2.0F, 6.0F)
+                    .sound(SoundType.WOOD))
+    );
 
     public static final RegistryObject<Item> ZOMBIES_POWER_SWITCH_ITEM = ITEMS.register(
             "zombies_power_switch",
@@ -102,6 +108,10 @@ public final class CodPatternBlockRegister {
             "zombies_ultimate_machine_box",
             () -> new BlockItem(ZOMBIES_ULTIMATE_MACHINE_BOX.get(), new Item.Properties())
     );
+    public static final RegistryObject<Item> ZOMBIES_MYSTERY_BOX_ITEM = ITEMS.register(
+            "zombies_mystery_box",
+            () -> new BlockItem(ZOMBIES_MYSTERY_BOX.get(), new Item.Properties())
+    );
 
     private CodPatternBlockRegister() {
     }
@@ -116,6 +126,7 @@ public final class CodPatternBlockRegister {
             event.accept(ZOMBIES_ARMOR_STATION_BOX_ITEM);
             event.accept(ZOMBIES_SODA_MACHINE_BOX_ITEM);
             event.accept(ZOMBIES_ULTIMATE_MACHINE_BOX_ITEM);
+            event.accept(ZOMBIES_MYSTERY_BOX_ITEM);
         }
     }
 }

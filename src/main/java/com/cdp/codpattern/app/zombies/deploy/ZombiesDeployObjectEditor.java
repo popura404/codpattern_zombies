@@ -9,7 +9,9 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesPowerSwitchData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesSodaMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesUltimateMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesMysteryBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
+import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.model.ZombiesArmorState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
@@ -122,6 +124,12 @@ final class ZombiesDeployObjectEditor {
                 next.add(data);
                 yield success(withUltimateMachines(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
             }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                ZombiesMysteryBoxData data = parseMysteryBox(objects, NO_EXCLUSION, fields);
+                List<ZombiesMysteryBoxData> next = mutable(objects.mysteryBoxes());
+                next.add(data);
+                yield success(withMysteryBoxes(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
+            }
             default -> unsupported(type, objects, fields);
         };
     }
@@ -196,6 +204,13 @@ final class ZombiesDeployObjectEditor {
                 next.set(selectedIndex, data);
                 yield success(withUltimateMachines(objects, next), type, selectedIndex, fieldsFrom(data), 1);
             }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                requireIndex(type, selectedIndex, objects.mysteryBoxes().size());
+                ZombiesMysteryBoxData data = parseMysteryBox(objects, new ObjectRef(type, selectedIndex), fields);
+                List<ZombiesMysteryBoxData> next = mutable(objects.mysteryBoxes());
+                next.set(selectedIndex, data);
+                yield success(withMysteryBoxes(objects, next), type, selectedIndex, fieldsFrom(data), 1);
+            }
             default -> unsupported(type, objects, fields);
         };
     }
@@ -237,7 +252,8 @@ final class ZombiesDeployObjectEditor {
                         source.dimension(),
                         source.areaFrom(),
                         source.areaTo(),
-                        source.interactionPos());
+                        source.interactionPos(),
+                        source.requiredItem());
                 List<ZombiesBarrierData> next = mutable(objects.barriers());
                 next.add(data);
                 yield success(withBarriers(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
@@ -313,6 +329,16 @@ final class ZombiesDeployObjectEditor {
                 List<ZombiesUltimateMachineData> next = mutable(objects.ultimateMachines());
                 next.add(data);
                 yield success(withUltimateMachines(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
+            }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                requireIndex(type, selectedIndex, objects.mysteryBoxes().size());
+                ZombiesMysteryBoxData source = objects.mysteryBoxes().get(selectedIndex);
+                ZombiesMysteryBoxData data = new ZombiesMysteryBoxData(
+                        copyObjectId(objects, source.objectId(), type), source.cost(), source.weaponPool(),
+                        source.dimension(), source.pos(), source.interactionPos());
+                List<ZombiesMysteryBoxData> next = mutable(objects.mysteryBoxes());
+                next.add(data);
+                yield success(withMysteryBoxes(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
             }
             default -> unsupported(type, objects, fieldsForSelection(objects, type, selectedIndex));
         };
@@ -391,6 +417,14 @@ final class ZombiesDeployObjectEditor {
                 int nextIndex = nextIndexAfterDelete(selectedIndex, next.size());
                 yield success(updated, type, nextIndex, fieldsForSelection(updated, type, nextIndex), 1);
             }
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> {
+                requireIndex(type, selectedIndex, objects.mysteryBoxes().size());
+                List<ZombiesMysteryBoxData> next = mutable(objects.mysteryBoxes());
+                next.remove(selectedIndex);
+                ZombiesMapObjects updated = withMysteryBoxes(objects, next);
+                int nextIndex = nextIndexAfterDelete(selectedIndex, next.size());
+                yield success(updated, type, nextIndex, fieldsForSelection(updated, type, nextIndex), 1);
+            }
             default -> unsupported(type, objects, fieldsForSelection(objects, type, selectedIndex));
         };
     }
@@ -451,6 +485,12 @@ final class ZombiesDeployObjectEditor {
                     -1,
                     mergedFields(type, Map.of()),
                     objects.ultimateMachines().size());
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> success(
+                    withMysteryBoxes(objects, List.of()),
+                    type,
+                    -1,
+                    mergedFields(type, Map.of()),
+                    objects.mysteryBoxes().size());
             default -> unsupported(type, objects, mergedFields(type, Map.of()));
         };
     }
@@ -494,7 +534,17 @@ final class ZombiesDeployObjectEditor {
                 dimension(fields),
                 blockPos(fields, "areaFrom"),
                 blockPos(fields, "areaTo"),
-                blockPos(fields, "interaction"));
+                blockPos(fields, "interaction"),
+                requiredItemField(fields));
+    }
+
+    private static String requiredItemField(Map<String, String> fields) {
+        String value = text(fields, "requiredItem");
+        try {
+            return ZombiesRequiredItem.normalize(value);
+        } catch (IllegalArgumentException exception) {
+            throw failure("field.invalid_item", "field requiredItem must be a valid item ID/SNBT: " + value);
+        }
     }
 
     private static ZombiesAmmoBoxData parseAmmoBox(
@@ -596,6 +646,21 @@ final class ZombiesDeployObjectEditor {
                 Optional.of(blockPos(fields, "interaction")));
     }
 
+    private static ZombiesMysteryBoxData parseMysteryBox(
+            ZombiesMapObjects objects,
+            ObjectRef excluded,
+            Map<String, String> fields
+    ) {
+        String objectId = resolveObjectId(objects, excluded, text(fields, "objectId"), ZombiesDeployFieldSchema.MYSTERY_BOX);
+        return new ZombiesMysteryBoxData(
+                objectId,
+                0,
+                List.of(),
+                dimension(fields),
+                blockPos(fields, "pos"),
+                Optional.of(blockPos(fields, "interaction")));
+    }
+
     private static EditResult unsupported(String type, ZombiesMapObjects objects, Map<String, String> fields) {
         return EditResult.failure("object.unsupported_type", "unsupported deploy object type: " + type, objects, -1, fields);
     }
@@ -672,6 +737,9 @@ final class ZombiesDeployObjectEditor {
             case ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> selectedIndex < objects.ultimateMachines().size()
                     ? fieldsFrom(objects.ultimateMachines().get(selectedIndex))
                     : mergedFields(type, Map.of());
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> selectedIndex < objects.mysteryBoxes().size()
+                    ? fieldsFrom(objects.mysteryBoxes().get(selectedIndex))
+                    : mergedFields(type, Map.of());
             default -> mergedFields(type, Map.of());
         };
     }
@@ -706,6 +774,7 @@ final class ZombiesDeployObjectEditor {
         fields.put("group", Integer.toString(data.group()));
         fields.put("cost", Integer.toString(data.cost()));
         fields.put("blocksPlayersOnly", Boolean.toString(data.blocksPlayersOnly()));
+        fields.put("requiredItem", data.requiredItem());
         fields.put("dimension", dimensionId(data.dimension()));
         putPosition(fields, "areaFrom", data.areaFrom());
         putPosition(fields, "areaTo", data.areaTo());
@@ -759,6 +828,13 @@ final class ZombiesDeployObjectEditor {
         Map<String, String> fields = basePositionFields(ZombiesDeployFieldSchema.ULTIMATE_MACHINE, data.dimension(), data.pos());
         fields.put("objectId", data.objectId());
         fields.put("requiresPower", Boolean.toString(data.requiresPower()));
+        putPosition(fields, "interaction", data.interactionPos().orElse(data.pos()));
+        return fields;
+    }
+
+    private static Map<String, String> fieldsFrom(ZombiesMysteryBoxData data) {
+        Map<String, String> fields = basePositionFields(ZombiesDeployFieldSchema.MYSTERY_BOX, data.dimension(), data.pos());
+        fields.put("objectId", data.objectId());
         putPosition(fields, "interaction", data.interactionPos().orElse(data.pos()));
         return fields;
     }
@@ -1125,6 +1201,13 @@ final class ZombiesDeployObjectEditor {
                 ultimateMachines,
                 objects.mysteryBoxes(),
                 objects.windows());
+    }
+
+    private static ZombiesMapObjects withMysteryBoxes(ZombiesMapObjects objects, List<ZombiesMysteryBoxData> mysteryBoxes) {
+        return new ZombiesMapObjects(
+                objects.initialSpawns(), objects.zombieSpawns(), objects.barriers(), objects.weaponWalls(),
+                objects.ammoBoxes(), objects.armorStations(), objects.powerSwitch(), objects.sodaMachines(),
+                objects.ultimateMachines(), mysteryBoxes, objects.windows());
     }
 
     private static EditFailure failure(String code, String message) {

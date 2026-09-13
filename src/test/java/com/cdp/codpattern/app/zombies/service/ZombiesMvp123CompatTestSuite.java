@@ -26,6 +26,9 @@ public final class ZombiesMvp123CompatTestSuite {
             new ZombiesCompatSuiteRunner.TestEntry("MVP2/MVP3 map validator compat",
                     "com.cdp.codpattern.app.zombies.validation.ZombiesMapValidatorMvp2Mvp3CompatTest",
                     true),
+            new ZombiesCompatSuiteRunner.TestEntry("Barrier required item codec, parser, and exact matching compat",
+                    "com.cdp.codpattern.app.zombies.item.ZombiesRequiredItemCompatTest",
+                    true),
             new ZombiesCompatSuiteRunner.TestEntry("MVP2 deploy object editor compat",
                     "com.cdp.codpattern.app.zombies.deploy.ZombiesDeployObjectEditorCompatTest",
                     true),
@@ -281,6 +284,11 @@ public final class ZombiesMvp123CompatTestSuite {
                     "barrierMovementFallbackPushesOutsideActiveArea",
                     "zombiesruntimegametests.barriermovementfallbackpushesoutsideactivearea",
                     "barrier movement fallback target calculation"),
+            new GameTestOnlyCoverage(
+                    "com.cdp.codpattern.app.zombies.gametest.ZombiesRuntimeGameTests",
+                    "barrierRequiredItemIsExactNonConsumingAndCheckedBeforeSpend",
+                    "zombiesruntimegametests.barrierrequireditemisexactnonconsumingandcheckedbeforespend",
+                    "Forge ServerPlayer inventory path for exact required-item NBT, pre-spend rejection, and non-consumption"),
             new GameTestOnlyCoverage(
                     "com.cdp.codpattern.app.zombies.gametest.ZombiesRuntimeGameTests",
                     "objectInteractionPowerSwitchPowersPlacedBlockAndDeductsPoints",

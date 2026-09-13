@@ -73,6 +73,7 @@ public class ZombiesDeployToolScreen extends Screen {
             ZombiesDeployFieldSchema.ARMOR_STATION,
             ZombiesDeployFieldSchema.SODA_MACHINE,
             ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
+            ZombiesDeployFieldSchema.MYSTERY_BOX,
             ZombiesDeployFieldSchema.POWER_SWITCH
     );
 

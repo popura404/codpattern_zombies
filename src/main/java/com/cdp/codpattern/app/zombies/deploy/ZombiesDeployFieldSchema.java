@@ -19,6 +19,7 @@ public final class ZombiesDeployFieldSchema {
     public static final String POWER_SWITCH = "power_switch";
     public static final String SODA_MACHINE = "soda_machine";
     public static final String ULTIMATE_MACHINE = "ultimate_machine";
+    public static final String MYSTERY_BOX = "mystery_box";
 
     public static final String PROFILE_MVP1 = ZombiesMapValidationProfile.MVP1_MINIMAL_KEY;
     public static final String PROFILE_MVP2 = ZombiesMapValidationProfile.MVP2_PURCHASES_KEY;
@@ -52,6 +53,7 @@ public final class ZombiesDeployFieldSchema {
                     field("group", FieldType.INTEGER, "2"),
                     field("cost", FieldType.INTEGER, "750"),
                     field("blocksPlayersOnly", FieldType.BOOLEAN, "true"),
+                    field("requiredItem", FieldType.TEXT, ""),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("areaFromX", FieldType.INTEGER, "0"),
                     field("areaFromY", FieldType.INTEGER, "64"),
@@ -121,6 +123,16 @@ public final class ZombiesDeployFieldSchema {
             new ObjectTypeSchema(ULTIMATE_MACHINE, "gui.codpattern.zombies.deploy.type.ultimate_machine", false, false, List.of(
                     field("objectId", FieldType.TEXT, ""),
                     field("requiresPower", FieldType.BOOLEAN, "true"),
+                    field("dimension", FieldType.TEXT, "minecraft:overworld"),
+                    field("posX", FieldType.INTEGER, "0"),
+                    field("posY", FieldType.INTEGER, "64"),
+                    field("posZ", FieldType.INTEGER, "0"),
+                    field("interactionX", FieldType.INTEGER, "0"),
+                    field("interactionY", FieldType.INTEGER, "64"),
+                    field("interactionZ", FieldType.INTEGER, "0")
+            )),
+            new ObjectTypeSchema(MYSTERY_BOX, "gui.codpattern.zombies.deploy.type.mystery_box", false, false, List.of(
+                    field("objectId", FieldType.TEXT, ""),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("posX", FieldType.INTEGER, "0"),
                     field("posY", FieldType.INTEGER, "64"),

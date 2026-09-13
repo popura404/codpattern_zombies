@@ -36,7 +36,8 @@ public record ZombiesDeployCaptureBinding(
                  ZombiesDeployFieldSchema.AMMO_BOX,
                  ZombiesDeployFieldSchema.ARMOR_STATION,
                  ZombiesDeployFieldSchema.SODA_MACHINE,
-                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> new ZombiesDeployCaptureBinding("pos", "interaction");
+                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
+                 ZombiesDeployFieldSchema.MYSTERY_BOX -> new ZombiesDeployCaptureBinding("pos", "interaction");
             case ZombiesDeployFieldSchema.INITIAL,
                  ZombiesDeployFieldSchema.ZOMBIE_SPAWN,
                  ZombiesDeployFieldSchema.POWER_SWITCH -> new ZombiesDeployCaptureBinding("pos", "");

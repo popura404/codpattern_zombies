@@ -30,6 +30,7 @@ public class ZombiesPlayerRuntimeState {
     private BlockPos lastAliveTargetPos;
     private ZombiesWeaponInstanceState starterWeapon;
     private ZombiesWeaponInstanceState primaryWeapon;
+    private ZombiesWeaponInstanceState mysteryBoxWeapon;
     private ZombiesArmorState armor;
     private ZombiesEquipmentSnapshot deathEquipmentSnapshot;
     private final Map<ZombiesBuffType, ZombiesBuffState> buffs = new EnumMap<>(ZombiesBuffType.class);
@@ -120,6 +121,7 @@ public class ZombiesPlayerRuntimeState {
         this.lastAliveTargetPos = lastAliveTargetPos;
         this.starterWeapon = null;
         this.primaryWeapon = primaryWeapon;
+        this.mysteryBoxWeapon = null;
         this.armor = armor;
         this.deathEquipmentSnapshot = null;
     }
@@ -182,6 +184,10 @@ public class ZombiesPlayerRuntimeState {
 
     public synchronized Optional<ZombiesWeaponInstanceState> primaryWeapon() {
         return Optional.ofNullable(primaryWeapon);
+    }
+
+    public synchronized Optional<ZombiesWeaponInstanceState> mysteryBoxWeapon() {
+        return Optional.ofNullable(mysteryBoxWeapon);
     }
 
     public synchronized Optional<ZombiesArmorState> armor() {
@@ -307,6 +313,14 @@ public class ZombiesPlayerRuntimeState {
         primaryWeapon = null;
     }
 
+    public synchronized void setMysteryBoxWeapon(ZombiesWeaponInstanceState weapon) {
+        mysteryBoxWeapon = weapon;
+    }
+
+    public synchronized void clearMysteryBoxWeapon() {
+        mysteryBoxWeapon = null;
+    }
+
     public synchronized void setArmor(ZombiesArmorState armor) {
         this.armor = armor;
     }
@@ -356,6 +370,10 @@ public class ZombiesPlayerRuntimeState {
                 ModePlayerValue.ofInt(primaryWeapon == null ? 0 : primaryWeapon.weaponLevel()));
         values.put(ZombiesRuntimeStateKeys.PLAYER_WEAPON_PRIMARY_UPGRADE,
                 ModePlayerValue.ofInt(primaryWeapon == null ? 0 : primaryWeapon.upgradeLevel()));
+        values.put(ZombiesRuntimeStateKeys.PLAYER_WEAPON_MYSTERY_BOX_LEVEL,
+                ModePlayerValue.ofInt(mysteryBoxWeapon == null ? 0 : mysteryBoxWeapon.weaponLevel()));
+        values.put(ZombiesRuntimeStateKeys.PLAYER_WEAPON_MYSTERY_BOX_UPGRADE,
+                ModePlayerValue.ofInt(mysteryBoxWeapon == null ? 0 : mysteryBoxWeapon.upgradeLevel()));
         values.put(ZombiesRuntimeStateKeys.PLAYER_ARMOR_LEVEL,
                 ModePlayerValue.ofInt(armor == null ? 0 : armor.armorLevel()));
         for (ZombiesBuffType buffType : ZombiesBuffType.values()) {

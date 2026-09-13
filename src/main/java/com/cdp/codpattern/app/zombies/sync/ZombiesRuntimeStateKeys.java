@@ -21,6 +21,8 @@ public final class ZombiesRuntimeStateKeys {
     public static final String PLAYER_ARMOR_LEVEL = "armor.level";
     public static final String PLAYER_WEAPON_PRIMARY_LEVEL = "weapon.primary.level";
     public static final String PLAYER_WEAPON_PRIMARY_UPGRADE = "weapon.primary.upgrade";
+    public static final String PLAYER_WEAPON_MYSTERY_BOX_LEVEL = "weapon.mystery_box.level";
+    public static final String PLAYER_WEAPON_MYSTERY_BOX_UPGRADE = "weapon.mystery_box.upgrade";
     public static final String PLAYER_POWER_ENABLED = "power.enabled";
     public static final String PLAYER_BUFF_PREFIX = "buff.";
     public static final String ACTIVE_ZOMBIE_ENTITY_IDS = "entities.active_zombie_ids";

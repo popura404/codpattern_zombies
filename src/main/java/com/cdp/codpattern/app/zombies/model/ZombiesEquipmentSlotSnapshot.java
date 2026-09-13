@@ -29,4 +29,8 @@ public record ZombiesEquipmentSlotSnapshot(
     public boolean primary() {
         return slot == ZombiesEquipmentSlot.PRIMARY;
     }
+
+    public boolean mysteryBox() {
+        return slot == ZombiesEquipmentSlot.MYSTERY_BOX;
+    }
 }

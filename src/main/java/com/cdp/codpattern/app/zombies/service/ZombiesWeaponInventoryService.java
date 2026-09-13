@@ -76,6 +76,30 @@ public final class ZombiesWeaponInventoryService {
         return ZombiesServiceResult.success(new PreparedWeaponStack(stack, tagResult.value().get()));
     }
 
+    public ZombiesServiceResult<PreparedWeaponStack> prepareMysteryBoxWeapon(
+            RoomId roomId,
+            ZombiesWeaponInstanceState weaponState
+    ) {
+        if (weaponState == null || !ZombiesWeaponInstanceState.isValidGunId(weaponState.gunId())) {
+            return ZombiesServiceResult.failure(WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
+        }
+        ItemStack stack = purchasedPrimaryWeaponFactory.create(weaponState.gunId());
+        if (stack == null || stack.isEmpty()) {
+            return ZombiesServiceResult.failure(WEAPON_ITEM_UNAVAILABLE, weaponParams(weaponState), "");
+        }
+        stack = stack.copy();
+        if (!TaczGatewayProvider.gateway().isGun(stack)) {
+            return ZombiesServiceResult.failure(WEAPON_ITEM_UNAVAILABLE, weaponParams(weaponState), "");
+        }
+        TaczGatewayProvider.gateway().configureGunAmmo(stack, 0);
+        ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> tagResult =
+                weaponItemStackService.writeWeaponTags(stack, roomId, ZombiesEquipmentSlot.MYSTERY_BOX, weaponState);
+        if (!tagResult.success() || tagResult.value().isEmpty()) {
+            return ZombiesServiceResult.failure(WEAPON_ITEM_TAG_FAILED, mergeParams(weaponParams(weaponState), tagResult.params()), tagResult.logMessage());
+        }
+        return ZombiesServiceResult.success(new PreparedWeaponStack(stack, tagResult.value().get()));
+    }
+
     public ZombiesServiceResult<InventoryMutationResult> applyPreparedPrimaryWeapon(
             ServerPlayer player,
             RoomId roomId,
@@ -141,6 +165,63 @@ public final class ZombiesWeaponInventoryService {
                 tagResult.value()
                         .map(ZombiesWeaponItemStackService.ZombiesWeaponTagData::instanceId)
                         .orElse(instanceId),
+                weaponState));
+    }
+
+    public ZombiesServiceResult<InventoryMutationResult> applyPreparedMysteryBoxWeapon(
+            ServerPlayer player,
+            RoomId roomId,
+            PreparedWeaponStack preparedWeapon,
+            ZombiesWeaponInstanceState weaponState
+    ) {
+        if (player == null) {
+            return ZombiesServiceResult.failure(WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
+        }
+        InventorySnapshot snapshot = InventorySnapshot.capture(player.getInventory());
+        try {
+            ZombiesServiceResult<InventoryMutationResult> result = applyPreparedMysteryBoxWeapon(
+                    player.getInventory(), roomId, preparedWeapon, weaponState);
+            if (!result.success()) {
+                snapshot.restore(player.getInventory());
+                return result;
+            }
+            syncInventory(player);
+            return result;
+        } catch (RuntimeException exception) {
+            snapshot.restore(player.getInventory());
+            return itemCommitFailure(weaponState, exception);
+        }
+    }
+
+    public ZombiesServiceResult<InventoryMutationResult> applyPreparedMysteryBoxWeapon(
+            Inventory inventory,
+            RoomId roomId,
+            PreparedWeaponStack preparedWeapon,
+            ZombiesWeaponInstanceState weaponState
+    ) {
+        if (inventory == null || preparedWeapon == null || preparedWeapon.itemStack() == null
+                || preparedWeapon.itemStack().isEmpty() || weaponState == null) {
+            return ZombiesServiceResult.failure(WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
+        }
+        InventorySnapshot snapshot = InventorySnapshot.capture(inventory);
+        ItemStack stack = preparedWeapon.itemStack();
+        String instanceId = preparedWeapon.tagData().instanceId();
+        ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> tagResult =
+                weaponItemStackService.writeWeaponTags(stack, roomId, instanceId, ZombiesEquipmentSlot.MYSTERY_BOX, weaponState);
+        if (!tagResult.success()) {
+            snapshot.restore(inventory);
+            return ZombiesServiceResult.failure(WEAPON_ITEM_TAG_FAILED, mergeParams(weaponParams(weaponState), tagResult.params()), tagResult.logMessage());
+        }
+        removeRoomWeaponSlot(inventory, roomId, ZombiesEquipmentSlot.MYSTERY_BOX);
+        int inventorySlot = setInventoryItem(inventory, ZombiesEquipmentSlot.MYSTERY_BOX.defaultInventorySlot(), stack);
+        if (inventorySlot < 0) {
+            snapshot.restore(inventory);
+            return ZombiesServiceResult.failure(WEAPON_ITEM_COMMIT_FAILED, weaponParams(weaponState), "Unable to write mystery box weapon to inventory.");
+        }
+        return ZombiesServiceResult.success(new InventoryMutationResult(
+                ZombiesEquipmentSlot.MYSTERY_BOX,
+                inventorySlot,
+                tagResult.value().map(ZombiesWeaponItemStackService.ZombiesWeaponTagData::instanceId).orElse(instanceId),
                 weaponState));
     }
 

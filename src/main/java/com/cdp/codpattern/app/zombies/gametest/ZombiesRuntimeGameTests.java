@@ -620,6 +620,77 @@ public final class ZombiesRuntimeGameTests {
     }
 
     @GameTest(template = EMPTY_TEMPLATE, batch = BATCH, timeoutTicks = 40, required = false)
+    public static void barrierRequiredItemIsExactNonConsumingAndCheckedBeforeSpend(GameTestHelper helper) {
+        RoomId roomId = roomId("barrier-required-item");
+        ServerPlayer player = silentDetachedServerPlayer(helper);
+        try {
+            player.getInventory().clearContent();
+            ZombiesBarrierData barrier = new ZombiesBarrierData(
+                    "gametest-required-item-barrier",
+                    "Required Item Barrier",
+                    2,
+                    750,
+                    true,
+                    helper.getLevel().dimension(),
+                    helper.absolutePos(new BlockPos(1, 1, 1)),
+                    helper.absolutePos(new BlockPos(1, 3, 1)),
+                    helper.absolutePos(new BlockPos(1, 2, 1)),
+                    "minecraft:tripwire_hook{CustomModelData:1}");
+            ZombiesPlayerStateService playerStateService = new ZombiesPlayerStateService();
+            ZombiesEconomyService economyService = new ZombiesEconomyService(playerStateService);
+            economyService.addPoints(player.getUUID(), 1_000.0D);
+            ZombiesObjectStateStore objectStateStore = new ZombiesObjectStateStore(() -> false);
+            objectStateStore.resetBarriers(List.of(barrier));
+            long initialRevision = objectStateStore.revision();
+            ZombiesBarrierService service = new ZombiesBarrierService(
+                    roomId,
+                    () -> List.of(barrier),
+                    economyService,
+                    objectStateStore,
+                    new ZombiesActiveSpawnGroupService(),
+                    ignored -> true,
+                    () -> ZombiesGamePhase.WAVE_ACTIVE);
+
+            ZombiesServiceResult<ZombiesBarrierService.BarrierPurchaseResult> missing =
+                    service.purchase(player, barrier);
+            helper.assertFalse(missing.success(), "missing required item must reject barrier purchase");
+            helper.assertTrue(ZombiesErrorCode.BARRIER_REQUIRED_ITEM_MISSING.equals(missing.code()),
+                    "missing item must return the stable barrier.required_item_missing code");
+            helper.assertTrue(playerStateService.get(player.getUUID()).orElseThrow().displayPoints() == 1_000,
+                    "missing item must not deduct points");
+            helper.assertTrue(objectStateStore.revision() == initialRevision,
+                    "missing item must not advance object revision");
+
+            ItemStack wrongNbt = new ItemStack(Items.TRIPWIRE_HOOK);
+            wrongNbt.getOrCreateTag().putInt("CustomModelData", 2);
+            player.getInventory().setItem(10, wrongNbt);
+            ZombiesServiceResult<ZombiesBarrierService.BarrierPurchaseResult> mismatch =
+                    service.purchase(player, barrier);
+            helper.assertFalse(mismatch.success(), "wrong item NBT must reject barrier purchase");
+            helper.assertTrue(playerStateService.get(player.getUUID()).orElseThrow().displayPoints() == 1_000,
+                    "wrong NBT must not deduct points");
+            helper.assertTrue(objectStateStore.revision() == initialRevision,
+                    "wrong NBT must not advance object revision");
+
+            ItemStack matching = new ItemStack(Items.TRIPWIRE_HOOK, 3);
+            matching.getOrCreateTag().putInt("CustomModelData", 1);
+            player.getInventory().setItem(10, matching);
+            ZombiesServiceResult<ZombiesBarrierService.BarrierPurchaseResult> success =
+                    service.purchase(player, barrier);
+            helper.assertTrue(success.success(), "exact item and NBT must open the barrier");
+            helper.assertTrue(playerStateService.get(player.getUUID()).orElseThrow().displayPoints() == 250,
+                    "successful purchase must deduct points once");
+            helper.assertTrue(objectStateStore.isBarrierCleared(barrier), "successful purchase must clear the barrier");
+            helper.assertTrue(player.getInventory().getItem(10).getCount() == 3,
+                    "required item must not be consumed");
+        } finally {
+            player.getInventory().clearContent();
+            player.discard();
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = EMPTY_TEMPLATE, batch = BATCH, timeoutTicks = 40, required = false)
     public static void objectInteractionPowerSwitchPowersPlacedBlockAndDeductsPoints(GameTestHelper helper) {
         RoomId roomId = roomId("object-power-interact");
         BlockPos relativePos = new BlockPos(1, 1, 1);

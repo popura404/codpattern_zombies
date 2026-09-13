@@ -57,7 +57,15 @@ minecraft {
         }
 
         gameTestServer {
-            property 'forge.enabledGameTestNamespaces', 'codpattern_zombies'
+            property 'forge.enabledGameTestNamespaces', 'codpattern'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
+            environment 'MOD_CLASSES', [
+                    "codpattern%%${mainProject.layout.buildDirectory.dir('resources/main').get().asFile.absolutePath}",
+                    "codpattern%%${mainProject.layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath}",
+                    "codpattern_zombies%%${layout.buildDirectory.dir('resources/main').get().asFile.absolutePath}",
+                    "codpattern_zombies%%${layout.buildDirectory.dir('classes/java/main').get().asFile.absolutePath}"
+            ].join(File.pathSeparator)
         }
 
         data {
@@ -66,6 +74,18 @@ minecraft {
                     '--existing', file('src/main/resources/')
         }
     }
+}
+
+tasks.register('syncGameTestStructures', Copy) {
+    group = 'verification'
+    description = 'Copy the shared empty GameTest template into the addon run directory.'
+    from mainProject.layout.projectDirectory.dir('src/main/resources/gameteststructures')
+    into layout.projectDirectory.dir('run/gameteststructures')
+    include '**/*.snbt'
+}
+
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    dependsOn tasks.named('syncGameTestStructures')
 }
 
 repositories {

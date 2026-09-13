@@ -12,6 +12,7 @@ public final class ZombiesConfigPaths {
     private static final String ZOMBIES_WAVES_DIRECTORY = "waves";
     private static final String ZOMBIES_WAVE_TEXT_DIRECTORY = "wavetext";
     private static final String ZOMBIES_WEAPON_FILTER_FILE = "zombies_weapon_filter.json";
+    private static final String ZOMBIES_MYSTERY_BOX_FILE = "mystery_box.json";
 
     private ZombiesConfigPaths() {
     }
@@ -36,6 +37,10 @@ public final class ZombiesConfigPaths {
 
     public static Path zombiesMapWeaponFilter(MinecraftServer server, String mapName) {
         return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WEAPON_FILTER_FILE);
+    }
+
+    public static Path zombiesMapMysteryBox(MinecraftServer server, String mapName) {
+        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_MYSTERY_BOX_FILE);
     }
 
     public static String safeMapConfigName(String mapName) {

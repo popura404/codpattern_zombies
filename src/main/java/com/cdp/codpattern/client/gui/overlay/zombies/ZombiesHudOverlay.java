@@ -1,6 +1,7 @@
 package com.cdp.codpattern.client.gui.overlay.zombies;
 
 import com.cdp.codpattern.app.match.model.ModeObjectState;
+import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponItemStackService;
 import com.cdp.codpattern.app.zombies.sync.ZombiesObjectStateKeys;
 import com.cdp.codpattern.client.ClientMatchState;
@@ -634,8 +635,17 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             case "armor_station" -> armorStationPrompt(payload, taczInteractKey);
             case "soda_machine" -> sodaMachinePrompt(payload, taczInteractKey);
             case "ultimate_machine" -> ultimateMachinePrompt(payload, mainHand, roomKey, taczInteractKey);
+            case "mystery_box" -> mysteryBoxPrompt(payload, taczInteractKey);
             default -> Optional.empty();
         };
+    }
+
+    private static Optional<InteractionPromptLine> mysteryBoxPrompt(CompoundTag payload, boolean taczInteractKey) {
+        String label = "抽取随机武器 - "
+                + Math.max(0, payload.getInt(ZombiesObjectStateKeys.PAYLOAD_COST)) + "点";
+        return Optional.of(payload.getBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED)
+                ? activePrompt(label, taczInteractKey)
+                : disabledPrompt(label));
     }
 
     private static Optional<InteractionPromptLine> weaponWallPrompt(CompoundTag payload, boolean taczInteractKey) {
@@ -732,11 +742,29 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
                 : disabledPrompt(label));
     }
 
-    private static Optional<InteractionPromptLine> barrierPrompt(CompoundTag payload, boolean taczInteractKey) {
+    private static Optional<InteractionPromptLine> barrierPrompt(
+            CompoundTag payload,
+            boolean taczInteractKey
+    ) {
         int group = Math.max(0, payload.getInt("group"));
         String target = group > 0 ? "屏障组 " + group : "屏障";
         if (payload.getBoolean("cleared") || !payload.getBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED)) {
             return Optional.of(disabledPrompt(target + " 已开启"));
+        }
+        String requiredItem = payload.getString(ZombiesObjectStateKeys.PAYLOAD_REQUIRED_ITEM).trim();
+        if (!requiredItem.isEmpty()) {
+            LocalPlayer player = Minecraft.getInstance().player;
+            Component itemName = ZombiesRequiredItem.displayName(requiredItem);
+            boolean owned = player != null
+                    && ZombiesRequiredItem.inventoryContains(player.getInventory(), requiredItem);
+            String key = owned
+                    ? "hud.codpattern.zombies.barrier.required_item_owned"
+                    : "hud.codpattern.zombies.barrier.required_item_missing";
+            return Optional.of(new InteractionPromptLine(
+                    Component.translatable(key, itemName).getString(),
+                    owned,
+                    owned && taczInteractKey,
+                    owned ? TEXT_OK : TEXT_DANGER));
         }
         return Optional.of(activePrompt("开启 " + target + " - "
                 + Math.max(0, payload.getInt(ZombiesObjectStateKeys.PAYLOAD_COST)) + "点", taczInteractKey));
@@ -748,7 +776,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
                 || "ammo_box".equals(type)
                 || "armor_station".equals(type)
                 || "soda_machine".equals(type)
-                || "ultimate_machine".equals(type);
+                || "ultimate_machine".equals(type)
+                || "mystery_box".equals(type);
     }
 
     private static boolean isTaczInteractKeyPromptObjectType(String type) {
@@ -757,7 +786,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
                 || "ammo_box".equals(type)
                 || "armor_station".equals(type)
                 || "soda_machine".equals(type)
-                || "ultimate_machine".equals(type);
+                || "ultimate_machine".equals(type)
+                || "mystery_box".equals(type);
     }
 
     private static boolean matchesPromptTarget(
@@ -820,6 +850,7 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             case "armor_station" -> CodPatternBlockRegister.ZOMBIES_ARMOR_STATION_BOX.get();
             case "soda_machine" -> CodPatternBlockRegister.ZOMBIES_SODA_MACHINE_BOX.get();
             case "ultimate_machine" -> CodPatternBlockRegister.ZOMBIES_ULTIMATE_MACHINE_BOX.get();
+            case "mystery_box" -> CodPatternBlockRegister.ZOMBIES_MYSTERY_BOX.get();
             default -> null;
         };
     }

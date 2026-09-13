@@ -145,6 +145,16 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "barrier prompt must match runtime barrier area cells without a hover request packet");
         requireContains(overlay, "areaFromX",
                 "barrier prompt must use synced barrier area endpoints");
+        requireContains(overlay, "ZombiesObjectStateKeys.PAYLOAD_REQUIRED_ITEM",
+                "barrier prompt must read the synced required item");
+        requireContains(overlay, "ZombiesRequiredItem.inventoryContains(player.getInventory(), requiredItem)",
+                "barrier prompt must predict ownership from all client inventory slots");
+        requireContains(overlay, "hud.codpattern.zombies.barrier.required_item_owned",
+                "owned required items must use the localized HUD state");
+        requireContains(overlay, "hud.codpattern.zombies.barrier.required_item_missing",
+                "missing required items must use the localized HUD state");
+        requireContains(overlay, "owned ? TEXT_OK : TEXT_DANGER",
+                "owned and missing required item states must render green and red");
 
         System.out.println("PASS zombies HUD overlay static contract compat");
     }

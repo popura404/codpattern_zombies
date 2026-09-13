@@ -143,6 +143,8 @@ public final class ZombiesReviveLoadoutService {
             playerState.setStarterWeapon(weaponState);
         } else if (slot == ZombiesEquipmentSlot.PRIMARY) {
             playerState.setPrimaryWeapon(weaponState);
+        } else if (slot == ZombiesEquipmentSlot.MYSTERY_BOX) {
+            playerState.setMysteryBoxWeapon(weaponState);
         }
     }
 

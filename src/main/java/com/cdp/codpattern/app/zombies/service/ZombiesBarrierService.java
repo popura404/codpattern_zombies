@@ -1,12 +1,15 @@
 package com.cdp.codpattern.app.zombies.service;
 
+import com.cdp.codpattern.app.match.model.ModePlayerValue;
 import com.cdp.codpattern.app.match.model.RoomId;
+import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
 import com.cdp.codpattern.app.zombies.model.ZombiesGamePhase;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -81,6 +84,18 @@ public final class ZombiesBarrierService {
         ZombiesGamePhase phase = phaseSupplier.get();
         if (phase == null || !phase.allowsPurchases()) {
             return ZombiesServiceResult.failure(OBJECT_PHASE_LOCKED);
+        }
+        ZombiesRequiredItem.ParseResult requiredItem = ZombiesRequiredItem.parse(barrier.requiredItem());
+        if (requiredItem.configured()
+                && (!requiredItem.valid()
+                || !ZombiesRequiredItem.inventoryContains(player.getInventory(), barrier.requiredItem()))) {
+            return ZombiesServiceResult.failure(
+                    ZombiesErrorCode.BARRIER_REQUIRED_ITEM_MISSING,
+                    Map.of(
+                            "requiredItem", ModePlayerValue.ofString(barrier.requiredItem()),
+                            "requiredItemName", ModePlayerValue.ofString(
+                                    ZombiesRequiredItem.displayName(barrier.requiredItem()).getString())),
+                    requiredItem.valid() ? "" : "invalid barrier requiredItem: " + requiredItem.error());
         }
 
         return economyService.spendAtomically(playerId, barrier.cost(), ignoredState -> {

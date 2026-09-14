@@ -11,8 +11,12 @@ import com.cdp.codpattern.client.zombies.ClientZombiesState;
 import com.cdp.codpattern.client.zombies.ZombiesRarityDisplay;
 import com.cdp.codpattern.client.gui.overlay.TdmHudOverlay;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
+import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.compat.tacz.client.TaczClientApi;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.tacz.guns.client.input.InteractKey;
+import com.tacz.guns.api.item.IGun;
+import com.tacz.guns.api.item.gun.FireMode;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
@@ -88,9 +92,27 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     private static final int RESULT_PAGE_COUNT = 2;
     private static final long RESULT_PAGE_DURATION_MS = 5000L;
     private static final long RESULT_PAGE_FADE_MS = 550L;
-    private static final int HELD_RARITY_RIGHT_MARGIN = 16;
-    private static final int HELD_RARITY_BOTTOM_MARGIN = 42;
-    private static final int HELD_UPGRADE_LEVEL_BOTTOM_MARGIN = 28;
+    private static final int HELD_PANEL_BASE_WIDTH = 320;
+    private static final int HELD_PANEL_BASE_HEIGHT = 90;
+    private static final int HELD_PANEL_RIGHT_MARGIN = 12;
+    private static final int HELD_PANEL_BOTTOM_MARGIN = 12;
+    private static final int HELD_PANEL_MIN_WIDTH = 220;
+    private static final int HELD_PANEL_LEFT_REGION_WIDTH = 224;
+    private static final int HELD_PANEL_BORDER_WIDTH = 2;
+    private static final int HELD_PANEL_IMAGE_X = 12;
+    private static final int HELD_PANEL_IMAGE_Y = 11;
+    private static final int HELD_PANEL_IMAGE_WIDTH = 196;
+    private static final int HELD_PANEL_IMAGE_HEIGHT = 66;
+    private static final int HELD_PANEL_AMMO_RIGHT_PADDING = 10;
+    private static final float HELD_PANEL_CURRENT_SCALE = 2.0F;
+    private static final int HELD_PANEL_ICON_SIZE = 10;
+    private static final int HELD_PANEL_TEXT_ALPHA = 204;
+    private static final ResourceLocation FIRE_MODE_SEMI = ResourceLocation.fromNamespaceAndPath(
+            "tacz", "textures/hud/fire_mode_semi.png");
+    private static final ResourceLocation FIRE_MODE_AUTO = ResourceLocation.fromNamespaceAndPath(
+            "tacz", "textures/hud/fire_mode_auto.png");
+    private static final ResourceLocation FIRE_MODE_BURST = ResourceLocation.fromNamespaceAndPath(
+            "tacz", "textures/hud/fire_mode_burst.png");
     private static int intermissionWaveNumber = Integer.MIN_VALUE;
     private static long intermissionWaveStartedAtMs;
     private static String resultPhaseKey = "";
@@ -125,8 +147,7 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         renderPhaseNotice(graphics, font, screenWidth, screenHeight);
         renderInteractionPrompt(graphics, font, screenWidth, screenHeight);
         renderPlayerStatus(graphics, font, screenWidth, screenHeight);
-        renderHeldWeaponRarity(graphics, font, screenWidth, screenHeight);
-        renderHeldWeaponUpgradeLevel(graphics, font, screenWidth, screenHeight);
+        renderHeldWeaponPanel(graphics, font, screenWidth, screenHeight);
     }
 
     private static void renderTopStats(GuiGraphics graphics, Font font, int screenWidth) {
@@ -907,7 +928,16 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
                 maxReserveAmmo));
     }
 
-    private static void renderHeldWeaponRarity(
+    /** Returns whether the custom panel can replace the active TaCZ gun HUD. */
+    public static boolean shouldReplaceTaczGunHud() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!ClientZombiesState.shouldRenderHud() || minecraft.player == null) {
+            return false;
+        }
+        return heldWeaponPanelData(minecraft.player.getMainHandItem(), ClientMatchState.roomContextName()).isPresent();
+    }
+
+    private static void renderHeldWeaponPanel(
             GuiGraphics graphics,
             Font font,
             int screenWidth,
@@ -915,104 +945,202 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     ) {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
-        String roomKey = ClientMatchState.roomContextName();
-        if (player == null || roomKey == null || roomKey.isBlank()) {
+        if (player == null) {
+            return;
+        }
+        Optional<HeldWeaponPanelData> dataOptional = heldWeaponPanelData(
+                player.getMainHandItem(), ClientMatchState.roomContextName());
+        if (dataOptional.isEmpty()) {
+            return;
+        }
+        HeldWeaponPanelData data = dataOptional.get();
+        if (screenWidth < HELD_PANEL_MIN_WIDTH + HELD_PANEL_RIGHT_MARGIN * 2) {
             return;
         }
 
-        Optional<ZombiesRarityDisplay.Entry> rarity = heldWeaponRarity(player.getMainHandItem(), roomKey);
-        if (rarity.isEmpty()) {
+        float scale = Math.min(
+                com.cdp.codpattern.client.gui.GuiTextHelper.referenceScale(),
+                Math.max(0.0F, (screenWidth - HELD_PANEL_RIGHT_MARGIN * 2.0F) / HELD_PANEL_BASE_WIDTH));
+        if (scale <= 0.0F) {
             return;
         }
-
-        ZombiesRarityDisplay.Entry display = rarity.get();
-        String text = display.label();
-        int textWidth = font.width(text);
-        int x = screenWidth - HELD_RARITY_RIGHT_MARGIN - textWidth;
-        int y = screenHeight - HELD_RARITY_BOTTOM_MARGIN - font.lineHeight;
-        if (x < 2 || y < 2) {
+        int panelWidth = Math.round(HELD_PANEL_BASE_WIDTH * scale);
+        int panelHeight = Math.round(HELD_PANEL_BASE_HEIGHT * scale);
+        if (screenHeight < panelHeight + HELD_PANEL_BOTTOM_MARGIN * 2) {
             return;
         }
+        int right = screenWidth - HELD_PANEL_RIGHT_MARGIN;
+        int bottom = screenHeight - HELD_PANEL_BOTTOM_MARGIN;
+        int left = right - panelWidth;
+        int top = bottom - panelHeight;
 
+        int rarityColor = data.rarity().map(ZombiesRarityDisplay.Entry::color).orElse(0xFF6B7280);
+        int borderWidth = Math.max(1, Math.round(HELD_PANEL_BORDER_WIDTH * scale));
+        graphics.fill(left, top, left + borderWidth, bottom, withAlpha(rarityColor, HELD_PANEL_TEXT_ALPHA));
         graphics.fillGradient(
-                x - 9,
-                y - 6,
-                x + textWidth + 9,
-                y + font.lineHeight + 6,
-                withAlpha(display.color(), 22),
-                withAlpha(display.color(), 112));
-        graphics.drawString(font, text, x, y, display.color(), true);
+                left + borderWidth,
+                top,
+                left + panelWidth,
+                bottom,
+                withAlpha(rarityColor, HELD_PANEL_TEXT_ALPHA),
+                withAlpha(rarityColor, 0));
+
+        int imageX = left + Math.round(HELD_PANEL_IMAGE_X * scale);
+        int imageY = top + Math.round(HELD_PANEL_IMAGE_Y * scale);
+        int imageWidth = Math.round(HELD_PANEL_IMAGE_WIDTH * scale);
+        int imageHeight = Math.round(HELD_PANEL_IMAGE_HEIGHT * scale);
+        if (data.hudTexture() != null) {
+            RenderSystem.enableBlend();
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, HELD_PANEL_TEXT_ALPHA / 255.0F);
+            graphics.blit(data.hudTexture(), imageX, imageY, imageWidth, imageHeight,
+                    0, 0, 384, 128, 384, 128);
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+            RenderSystem.disableBlend();
+        } else {
+            int iconSize = Math.min(imageWidth, imageHeight);
+            graphics.pose().pushPose();
+            graphics.pose().translate(imageX + (imageWidth - iconSize) / 2.0F,
+                    imageY + (imageHeight - iconSize) / 2.0F, 0.0F);
+            graphics.pose().scale(iconSize / 16.0F, iconSize / 16.0F, 1.0F);
+            graphics.renderItem(data.stack(), 0, 0);
+            graphics.pose().popPose();
+        }
+
+        if (!data.upgradeRoman().isBlank()) {
+            drawScaledPanelString(graphics, font, data.upgradeRoman(),
+                    left + Math.round(HELD_PANEL_IMAGE_X * scale),
+                    bottom - Math.round(HELD_PANEL_IMAGE_Y * scale) - Math.round(font.lineHeight * scale),
+                    scale, withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA), 1.0F);
+        }
+
+        int ammoLeft = left + Math.round(HELD_PANEL_LEFT_REGION_WIDTH * scale);
+        int ammoRight = right - Math.round(HELD_PANEL_AMMO_RIGHT_PADDING * scale);
+        String current = data.currentAmmoText();
+        float currentScale = HELD_PANEL_CURRENT_SCALE * scale;
+        int currentWidth = Math.round(font.width(current) * currentScale);
+        int currentX = ammoRight - currentWidth;
+        int currentY = top + Math.round(10 * scale);
+        int currentColor = data.lowAmmo() ? withAlpha(TEXT_DANGER, HELD_PANEL_TEXT_ALPHA) : withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA);
+        drawScaledPanelString(graphics, font, current, Math.max(ammoLeft, currentX), currentY,
+                currentScale, currentColor, 1.0F);
+
+        ResourceLocation fireModeTexture = fireModeTexture(data.fireMode());
+        int iconX = Math.max(ammoLeft, currentX - Math.round(HELD_PANEL_ICON_SIZE * scale) - Math.round(5 * scale));
+        int iconY = top + Math.round(61 * scale);
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, HELD_PANEL_TEXT_ALPHA / 255.0F);
+        graphics.blit(fireModeTexture, iconX, iconY, Math.round(HELD_PANEL_ICON_SIZE * scale),
+                Math.round(HELD_PANEL_ICON_SIZE * scale), 0, 0, 128, 128, 128, 128);
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+        RenderSystem.disableBlend();
+
+        String reserve = data.reserveAmmoText();
+        float reserveScale = 0.92F * scale;
+        int reserveWidth = Math.round(font.width(reserve) * reserveScale);
+        int reserveX = ammoRight - reserveWidth;
+        int reserveY = bottom - Math.round(HELD_PANEL_IMAGE_Y * scale) - Math.round(font.lineHeight * reserveScale);
+        drawScaledPanelString(graphics, font, reserve, Math.max(ammoLeft, reserveX), reserveY,
+                reserveScale, withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA), 1.0F);
     }
 
-    private static Optional<ZombiesRarityDisplay.Entry> heldWeaponRarity(ItemStack stack, String roomKey) {
-        if (stack == null || stack.isEmpty() || stack.getTag() == null) {
-            return Optional.empty();
-        }
-        CompoundTag tag = stack.getTag();
-        String taggedRoom = tag.contains(ZombiesWeaponItemStackService.TAG_ROOM_ID, Tag.TAG_STRING)
-                ? tag.getString(ZombiesWeaponItemStackService.TAG_ROOM_ID).trim()
-                : "";
-        if (taggedRoom.isBlank() || !taggedRoom.equals(roomKey)) {
-            return Optional.empty();
-        }
-        String gunId = tag.contains(ZombiesWeaponItemStackService.TAG_GUN_ID, Tag.TAG_STRING)
-                ? tag.getString(ZombiesWeaponItemStackService.TAG_GUN_ID).trim()
-                : "";
-        String rarityId = tag.contains(ZombiesWeaponItemStackService.TAG_RARITY_ID, Tag.TAG_STRING)
-                ? tag.getString(ZombiesWeaponItemStackService.TAG_RARITY_ID).trim()
-                : "";
-        if (gunId.isBlank() || rarityId.isBlank()) {
-            return Optional.empty();
-        }
-        return ZombiesRarityDisplay.fromRarityId(rarityId);
-    }
-
-    private static void renderHeldWeaponUpgradeLevel(
+    private static void drawScaledPanelString(
             GuiGraphics graphics,
             Font font,
-            int screenWidth,
-            int screenHeight
+            String text,
+            int x,
+            int y,
+            float scale,
+            int color,
+            float shadow
     ) {
-        Minecraft minecraft = Minecraft.getInstance();
-        LocalPlayer player = minecraft.player;
-        String roomKey = ClientMatchState.roomContextName();
-        if (player == null || roomKey == null || roomKey.isBlank()) {
-            return;
-        }
-
-        int upgradeLevel = heldWeaponUpgradeLevel(player.getMainHandItem(), roomKey);
-        if (upgradeLevel <= 0) {
-            return;
-        }
-
-        String text = Integer.toString(upgradeLevel);
-        int textWidth = font.width(text);
-        int x = screenWidth - HELD_RARITY_RIGHT_MARGIN - textWidth;
-        int y = screenHeight - HELD_UPGRADE_LEVEL_BOTTOM_MARGIN - font.lineHeight;
-        if (x < 2 || y < 2) {
-            return;
-        }
-        graphics.drawString(font, text, x, y, TEXT_PRIMARY, true);
+        graphics.pose().pushPose();
+        graphics.pose().translate(x, y, 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, text, 0, 0, color, shadow > 0.0F);
+        graphics.pose().popPose();
     }
 
-    private static int heldWeaponUpgradeLevel(ItemStack stack, String roomKey) {
-        if (stack == null || stack.isEmpty() || stack.getTag() == null) {
-            return 0;
+    private static ResourceLocation fireModeTexture(FireMode fireMode) {
+        if (fireMode == FireMode.AUTO) {
+            return FIRE_MODE_AUTO;
+        }
+        if (fireMode == FireMode.BURST) {
+            return FIRE_MODE_BURST;
+        }
+        return FIRE_MODE_SEMI;
+    }
+
+    private static Optional<HeldWeaponPanelData> heldWeaponPanelData(ItemStack stack, String roomKey) {
+        if (stack == null || stack.isEmpty() || !TaczClientApi.isGun(stack)
+                || roomKey == null || roomKey.isBlank() || stack.getTag() == null) {
+            return Optional.empty();
         }
         CompoundTag tag = stack.getTag();
         String taggedRoom = tag.contains(ZombiesWeaponItemStackService.TAG_ROOM_ID, Tag.TAG_STRING)
-                ? tag.getString(ZombiesWeaponItemStackService.TAG_ROOM_ID).trim()
-                : "";
-        if (taggedRoom.isBlank() || !taggedRoom.equals(roomKey)) {
-            return 0;
-        }
+                ? tag.getString(ZombiesWeaponItemStackService.TAG_ROOM_ID).trim() : "";
         String gunId = tag.contains(ZombiesWeaponItemStackService.TAG_GUN_ID, Tag.TAG_STRING)
-                ? tag.getString(ZombiesWeaponItemStackService.TAG_GUN_ID).trim()
-                : "";
-        if (gunId.isBlank()) {
-            return 0;
+                ? tag.getString(ZombiesWeaponItemStackService.TAG_GUN_ID).trim() : "";
+        String rarityId = tag.contains(ZombiesWeaponItemStackService.TAG_RARITY_ID, Tag.TAG_STRING)
+                ? tag.getString(ZombiesWeaponItemStackService.TAG_RARITY_ID).trim() : "";
+        int weaponLevel = positiveIntTag(tag, ZombiesWeaponItemStackService.TAG_WEAPON_LEVEL);
+        if (!taggedRoom.equals(roomKey) || gunId.isBlank() || rarityId.isBlank() || weaponLevel <= 0) {
+            return Optional.empty();
         }
-        return positiveIntTag(tag, ZombiesWeaponItemStackService.TAG_UPGRADE_LEVEL);
+
+        IGun gun = IGun.getIGunOrNull(stack);
+        if (gun == null) {
+            return Optional.empty();
+        }
+        int currentAmmo = Math.max(0, gun.getCurrentAmmoCount(stack));
+        int magazineCapacity = Math.max(currentAmmo, TaczGatewayProvider.gateway().resolveMagazineAmmo(stack));
+        int reserveAmmo = Math.max(0, TaczClientApi.resolveReserveAmmo(stack));
+        ResourceLocation hudTexture = TaczClientApi.getGunHudTexture(stack);
+        int upgradeLevel = positiveIntTag(tag, ZombiesWeaponItemStackService.TAG_UPGRADE_LEVEL);
+        return Optional.of(new HeldWeaponPanelData(
+                stack,
+                hudTexture,
+                ZombiesRarityDisplay.fromRarityId(rarityId),
+                upgradeRoman(upgradeLevel),
+                formatAmmo(currentAmmo, 3),
+                formatAmmo(reserveAmmo, 4),
+                IGun.getMainHandFireMode(Minecraft.getInstance().player),
+                magazineCapacity > 0 && currentAmmo <= Math.max(1, Math.round(magazineCapacity * 0.25F))));
+    }
+
+    static String upgradeRoman(int value) {
+        int safe = Math.max(0, value);
+        if (safe == 0) {
+            return "";
+        }
+        if (safe > 3999) {
+            return Integer.toString(safe);
+        }
+        int[] values = {1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1};
+        String[] symbols = {"M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"};
+        StringBuilder roman = new StringBuilder();
+        for (int i = 0; i < values.length; i++) {
+            while (safe >= values[i]) {
+                safe -= values[i];
+                roman.append(symbols[i]);
+            }
+        }
+        return roman.toString();
+    }
+
+    static String formatAmmo(int value, int digits) {
+        return String.format(Locale.ROOT, "%0" + Math.max(1, digits) + "d", Math.max(0, value));
+    }
+
+    private record HeldWeaponPanelData(
+            ItemStack stack,
+            ResourceLocation hudTexture,
+            Optional<ZombiesRarityDisplay.Entry> rarity,
+            String upgradeRoman,
+            String currentAmmoText,
+            String reserveAmmoText,
+            FireMode fireMode,
+            boolean lowAmmo
+    ) {
     }
 
     private static int ammoCost(CompoundTag payload, int weaponLevel) {

@@ -6,14 +6,19 @@ import java.nio.file.Path;
 
 public final class ZombiesHudOverlayStaticContractCompatTest {
     private static final Path OVERLAY = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/client/gui/overlay/zombies/ZombiesHudOverlay.java");
+    private static final Path TACZ_SUPPRESSOR = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/event/client/zombies/ZombiesTaczHudSuppressor.java");
 
     private ZombiesHudOverlayStaticContractCompatTest() {
     }
 
     public static void main(String[] args) throws IOException {
         String overlay = Files.readString(OVERLAY);
+        String suppressor = Files.readString(TACZ_SUPPRESSOR);
 
         requireAbsent(overlay, "hud.codpattern.zombies.combat", "zombies overlay must not render combat K/A/D text");
+        requireAbsent(overlay, "renderHeldWeaponRarity", "zombies overlay must not render a separate rarity label");
+        requireAbsent(overlay, "renderHeldWeaponUpgradeLevel", "zombies overlay must not render a separate upgrade label");
+        requireAbsent(overlay, "HELD_RARITY_BOTTOM_MARGIN", "zombies overlay must not use the old rarity-only layout");
         requireAbsent(overlay, "renderPlayerStats", "zombies overlay must not render the bottom-right player stats panel");
         requireAbsent(overlay, "Power \"", "zombies overlay must not render the bottom-right power text");
         requireAbsent(overlay, "Buffs \"", "zombies overlay must not render the bottom-right buffs text");
@@ -71,24 +76,44 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "teammate points should render as a bare number");
         requireContains(overlay, "Integer.toString(Math.max(0, teammate.armorLevel()))",
                 "teammate armor should render as a right-aligned numeric value");
-        requireContains(overlay, "renderHeldWeaponRarity",
-                "zombies overlay must render the held weapon rarity marker");
+        requireContains(overlay, "renderHeldWeaponPanel",
+                "zombies overlay must render one combined held weapon panel");
+        requireContains(overlay, "HELD_PANEL_BASE_WIDTH = 320",
+                "held weapon panel must use the reference long-card width");
+        requireContains(overlay, "HELD_PANEL_BASE_HEIGHT = 90",
+                "held weapon panel must use the reference long-card height");
+        requireContains(overlay, "HELD_PANEL_LEFT_REGION_WIDTH = 224",
+                "held weapon panel must reserve the reference left weapon region");
         requireContains(overlay, "ZombiesWeaponItemStackService.TAG_RARITY_ID",
-                "held weapon rarity marker must read the explicit zombies rarity tag");
+                "held weapon panel must read the explicit zombies rarity tag");
         requireContains(overlay, "ZombiesRarityDisplay.fromRarityId(rarityId)",
-                "held weapon rarity marker must ignore blank or unsupported rarity ids");
+                "held weapon panel must resolve supported rarity colors");
         requireContains(overlay, "graphics.fillGradient(",
-                "held weapon rarity marker must use a translucent gradient color panel");
-        requireContains(overlay, "renderHeldWeaponUpgradeLevel",
-                "zombies overlay must render the held weapon upgrade level marker");
-        requireContains(overlay, "HELD_UPGRADE_LEVEL_BOTTOM_MARGIN = 28",
-                "held weapon upgrade level marker should stay in the lower-right corner below rarity");
-        requireContains(overlay, "int upgradeLevel = heldWeaponUpgradeLevel(player.getMainHandItem(), roomKey);",
-                "held weapon upgrade level marker must read the currently held weapon");
-        requireContains(overlay, "return positiveIntTag(tag, ZombiesWeaponItemStackService.TAG_UPGRADE_LEVEL);",
-                "held weapon upgrade level marker must use the explicit zombies upgrade-level tag");
-        requireContains(overlay, "graphics.drawString(font, text, x, y, TEXT_PRIMARY, true);",
-                "held weapon upgrade level marker must render as white text");
+                "held weapon panel must use a left-to-right translucent rarity gradient");
+        requireContains(overlay, "upgradeRoman(upgradeLevel)",
+                "held weapon panel must render the upgrade level as Roman numerals");
+        requireContains(overlay, "static String upgradeRoman(int value)",
+                "held weapon panel must expose a pure Roman numeral formatter");
+        requireContains(overlay, "static String formatAmmo(int value, int digits)",
+                "held weapon panel must expose a pure zero-padded ammo formatter");
+        requireContains(overlay, "IGun.getMainHandFireMode",
+                "held weapon panel must read the live TaCZ fire mode");
+        requireContains(overlay, "fire_mode_auto.png",
+                "held weapon panel must preserve the TaCZ auto fire icon");
+        requireContains(overlay, "fire_mode_burst.png",
+                "held weapon panel must preserve the TaCZ burst fire icon");
+        requireContains(overlay, "fire_mode_semi.png",
+                "held weapon panel must preserve the TaCZ semi fire icon");
+        requireContains(overlay, "IGun.getIGunOrNull(stack)",
+                "held weapon panel must read current magazine ammo from the live TaCZ gun");
+        requireContains(overlay, "TaczClientApi.resolveReserveAmmo(stack)",
+                "held weapon panel must read live TaCZ reserve ammo");
+        requireContains(overlay, "public static boolean shouldReplaceTaczGunHud()",
+                "TaCZ suppression must be gated by a drawable Zombies weapon panel");
+        requireContains(suppressor, "tac_gun_hud_overlay",
+                "Zombies HUD suppressor must target only the TaCZ gun overlay");
+        requireContains(suppressor, "ZombiesHudOverlay.shouldReplaceTaczGunHud()",
+                "TaCZ gun overlay suppression must use the drawable-panel predicate");
         requireContains(overlay, "renderInteractionPrompt",
                 "zombies overlay must render crosshair interaction prompts");
         requireContains(overlay, "ClientModeObjectState.roomStates(roomKey)",

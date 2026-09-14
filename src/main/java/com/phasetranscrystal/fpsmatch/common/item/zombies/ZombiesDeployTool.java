@@ -101,6 +101,9 @@ public class ZombiesDeployTool extends CreatorToolItem implements WorldToolItem 
     private void captureWorldClick(ServerPlayer player, ItemStack stack, BlockPos pos, boolean leftClick) {
         ZombiesDeployServiceResult<ZombiesDeploySnapshot> result = ZombiesDeployToolService.instance()
                 .captureWorldClick(player, stack, getDraft(stack), pos, leftClick);
+        result.value().ifPresent(snapshot -> FPSMatch.sendToPlayer(
+                player,
+                new com.phasetranscrystal.fpsmatch.common.packet.zombies.OpenZombiesDeployToolScreenS2CPacket(snapshot, false)));
         if (!result.messageKey().isBlank()) {
             player.displayClientMessage(Component.translatable(
                     result.messageKey(),

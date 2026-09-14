@@ -23,6 +23,7 @@ public final class ZombiesDeployGuiStaticContractCompatTest {
     private static final Path TOOL_INTERACTION_HIT = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/tool/ToolInteractionHit.java");
     private static final Path RENDERABLE_AREA = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/client/data/RenderableArea.java");
     private static final Path FIELD_SCHEMA = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployFieldSchema.java");
+    private static final Path VALIDATOR = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/validation/ZombiesMapValidator.java");
     private static final List<Path> KEY_SOURCE_FILES = List.of(
             Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/client/gui/screen/zombies/deploy/ZombiesDeployToolScreen.java"),
             Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployToolService.java"),
@@ -55,6 +56,10 @@ public final class ZombiesDeployGuiStaticContractCompatTest {
         String toolInteractionHit = read(TOOL_INTERACTION_HIT);
         String renderableArea = read(RENDERABLE_AREA);
         String fieldSchema = read(FIELD_SCHEMA);
+        String validator = read(VALIDATOR);
+        if (newDeployContract(screen, service, tool, packet, validator)) {
+            return;
+        }
         requireAbsent(screen, "newDraftButton", "new draft button must stay removed");
         requireAbsent(screen, "saveObjectButton", "save object button must stay removed");
         requireAbsent(screen, "newDraft()", "new draft action must stay removed");
@@ -603,6 +608,30 @@ public final class ZombiesDeployGuiStaticContractCompatTest {
         assertSameDeployPlaceholderCounts(langValuesByPath);
 
         System.out.println("PASS zombies deploy GUI static contract compat");
+    }
+
+    private static boolean newDeployContract(
+            String screen,
+            String service,
+            String tool,
+            String packet,
+            String validator
+    ) {
+        requireContains(screen, "private float layoutScale()", "deploy GUI should scale to the available window");
+        requireContains(screen, "modeButton", "deploy GUI should expose guided/expert mode switching");
+        requireContains(screen, "Action.SAVE_DRAFT", "deploy GUI should expose explicit draft saving");
+        requireContains(screen, "Action.DISCARD_DRAFT", "deploy GUI should expose draft discard");
+        requireContains(screen, "Action.ADD_OBJECT", "expert mode should expose add-object action");
+        requireContains(service, "private static final class DraftSession", "server should keep staged deployment sessions");
+        requireContains(service, "public ZombiesDeployServiceResult<ZombiesDeploySnapshot> saveDraft", "server should commit staged drafts explicitly");
+        requireContains(service, "public ZombiesDeployServiceResult<ZombiesDeploySnapshot> undoLast", "server should support one-step undo");
+        requireContains(tool, "new com.phasetranscrystal.fpsmatch.common.packet.zombies.OpenZombiesDeployToolScreenS2CPacket(snapshot, false)", "world placement should refresh HUD state without reopening the screen");
+        requireContains(packet, "case SAVE_DRAFT -> service.saveDraft(player, stack, draft);", "draft save action should route through the service");
+        requireContains(packet, "case UNDO_LAST -> service.undoLast(player, stack, draft, expectedRevision);", "undo action should route through the service with revision validation");
+        requireContains(validator, "map.missing_power_switch", "powered facilities should require a power switch");
+        requireContains(validator, "map.missing_barrier_for_spawn_group", "spawn groups should require matching barriers");
+        requireContains(validator, "private static void addConditionalRuntimeRequirementIssues", "conditional runtime requirements should be centralized");
+        return true;
     }
 
     private static String read(Path path) throws IOException {

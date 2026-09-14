@@ -57,6 +57,10 @@ public final class ZombiesMapValidator {
             ZombiesErrorCode.of("map.missing_armor_station");
     private static final ZombiesErrorCode MAP_MISSING_BARRIER =
             ZombiesErrorCode.of("map.missing_barrier");
+    private static final ZombiesErrorCode MAP_MISSING_POWER_SWITCH =
+            ZombiesErrorCode.of("map.missing_power_switch");
+    private static final ZombiesErrorCode MAP_MISSING_BARRIER_FOR_SPAWN_GROUP =
+            ZombiesErrorCode.of("map.missing_barrier_for_spawn_group");
     private static final ZombiesErrorCode MAP_BARRIER_GROUP_WITHOUT_ZOMBIE_SPAWN =
             ZombiesErrorCode.of("map.barrier_group_without_zombie_spawn");
     private static final Set<String> POWER_SWITCH_FEATURE_KEYS = Set.of(
@@ -156,6 +160,7 @@ public final class ZombiesMapValidator {
         if (profile.requireUniqueObjectIds()) {
             addDuplicateObjectIdIssues(snapshot, issues);
         }
+        addConditionalRuntimeRequirementIssues(snapshot, issues);
         addBarrierRequiredItemIssues(snapshot, issues);
         if (profile.validatePurchases()) {
             addPurchaseIssues(snapshot, issues);
@@ -271,24 +276,55 @@ public final class ZombiesMapValidator {
                         "Armor station cost must be non-negative."));
             }
         }
-        if (snapshot.weaponWalls().isEmpty()) {
+    }
+
+    private static void addConditionalRuntimeRequirementIssues(
+            ZombiesMapSnapshot snapshot,
+            List<ZombiesValidationIssue> issues
+    ) {
+        boolean powerRequired = snapshot.sodaMachines().stream()
+                .anyMatch(ZombiesMapSnapshot.SodaMachineSnapshot::requiresPower)
+                || snapshot.ultimateMachines().stream()
+                .anyMatch(ZombiesMapSnapshot.UltimateMachineSnapshot::requiresPower);
+        if (powerRequired && snapshot.powerSwitches().stream().noneMatch(ZombiesMapValidator::validPowerSwitch)) {
             issues.add(ZombiesValidationIssue.error(
-                    MAP_MISSING_WEAPON_WALL,
-                    "weapon_wall",
-                    "Zombies map requires at least one weapon wall."));
+                    MAP_MISSING_POWER_SWITCH,
+                    "power_switch",
+                    "A valid power switch is required by at least one configured powered facility."));
         }
-        if (snapshot.ammoBoxes().isEmpty()) {
-            issues.add(ZombiesValidationIssue.error(
-                    MAP_MISSING_AMMO_BOX,
-                    "ammo_box",
-                    "Zombies map requires at least one ammo box."));
+
+        Set<Integer> spawnGroups = new HashSet<>();
+        for (ZombiesMapSnapshot.SpawnSnapshot spawn : snapshot.spawns()) {
+            if (spawn != null && spawn.zombieSpawn() && spawn.group() > 1) {
+                spawnGroups.add(spawn.group());
+            }
         }
-        if (snapshot.armorStations().isEmpty()) {
-            issues.add(ZombiesValidationIssue.error(
-                    MAP_MISSING_ARMOR_STATION,
-                    "armor_station",
-                    "Zombies map requires at least one armor station."));
+        Set<Integer> barrierGroups = new HashSet<>();
+        for (ZombiesMapSnapshot.BarrierSnapshot barrier : snapshot.barriers()) {
+            if (barrier != null) {
+                barrierGroups.add(barrier.group());
+            }
         }
+        for (Integer group : spawnGroups) {
+            if (!barrierGroups.contains(group)) {
+                issues.add(ZombiesValidationIssue.error(
+                        MAP_MISSING_BARRIER_FOR_SPAWN_GROUP,
+                        "zombie_spawn.group_" + group,
+                        "Zombie spawn group " + group + " requires a matching barrier group."));
+            }
+        }
+    }
+
+    private static boolean validPowerSwitch(ZombiesMapSnapshot.PowerSwitchSnapshot powerSwitch) {
+        if (powerSwitch == null || powerSwitch.cost() < 0) {
+            return false;
+        }
+        String featureKey = normalizeKey(powerSwitch.featureKey());
+        String block = normalizeKey(powerSwitch.block());
+        return POWER_SWITCH_FEATURE_KEYS.contains(featureKey)
+                && POWER_SWITCH_BLOCKS.contains(block)
+                && !normalizeKey(powerSwitch.dimensionId()).isEmpty()
+                && powerSwitch.pos() != null;
     }
 
     private static void addWeaponWallIssues(
@@ -327,12 +363,6 @@ public final class ZombiesMapValidator {
         addBarrierGroupPriceIssues(snapshot, issues);
         addBarrierOverlapIssues(snapshot, issues);
         addBarrierRoomCellBudgetIssues(snapshot, issues);
-        if (snapshot.barriers().isEmpty()) {
-            issues.add(ZombiesValidationIssue.error(
-                    MAP_MISSING_BARRIER,
-                    "barrier",
-                    "MVP3 zombies maps require at least one barrier."));
-        }
         Set<Integer> zombieSpawnGroups = new HashSet<>();
         for (ZombiesMapSnapshot.SpawnSnapshot spawn : snapshot.spawns()) {
             if (spawn.zombieSpawn()) {
@@ -348,20 +378,8 @@ public final class ZombiesMapValidator {
             }
         }
 
-        if (snapshot.sodaMachines().isEmpty()) {
-            issues.add(ZombiesValidationIssue.error(
-                    MAP_MISSING_SODA_MACHINE,
-                    "soda_machine",
-                    "MVP3 zombies maps require at least one soda machine."));
-        }
         for (ZombiesMapSnapshot.SodaMachineSnapshot sodaMachine : snapshot.sodaMachines()) {
             addSodaMachineIssues(sodaMachine, issues);
-        }
-        if (snapshot.ultimateMachines().isEmpty()) {
-            issues.add(ZombiesValidationIssue.error(
-                    MAP_MISSING_ULTIMATE_MACHINE,
-                    "ultimate_machine",
-                    "MVP3 zombies maps require at least one ultimate machine."));
         }
         for (ZombiesMapSnapshot.UltimateMachineSnapshot ultimateMachine : snapshot.ultimateMachines()) {
             addUltimateMachineIssues(ultimateMachine, issues);

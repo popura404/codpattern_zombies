@@ -123,6 +123,7 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
 
     @Override
     public void render(ForgeGui gui, GuiGraphics graphics, float partialTick, int screenWidth, int screenHeight) {
+        ZombiesDeploySessionOverlay.render(graphics, Minecraft.getInstance().font, screenWidth, screenHeight);
         if (!ClientZombiesState.shouldRenderHud()) {
             return;
         }

@@ -15,16 +15,27 @@ public class OpenZombiesDeployToolScreenS2CPacket {
     public static final String CLIENT_ACTION_ID = "codpattern:zombies_deploy_tool_screen";
 
     private final ZombiesDeploySnapshot snapshot;
+    private final boolean openScreen;
 
     public OpenZombiesDeployToolScreenS2CPacket(ZombiesDeploySnapshot snapshot) {
+        this(snapshot, true);
+    }
+
+    public OpenZombiesDeployToolScreenS2CPacket(ZombiesDeploySnapshot snapshot, boolean openScreen) {
         this.snapshot = snapshot;
+        this.openScreen = openScreen;
     }
 
     public ZombiesDeploySnapshot snapshot() {
         return snapshot;
     }
 
+    public boolean openScreen() {
+        return openScreen;
+    }
+
     public void encode(FriendlyByteBuf buf) {
+        buf.writeBoolean(openScreen);
         writeStringList(buf, snapshot.availableMaps());
         buf.writeUtf(snapshot.workspaceStage());
         buf.writeUtf(snapshot.currentWorkflowStep());
@@ -110,6 +121,7 @@ public class OpenZombiesDeployToolScreenS2CPacket {
     }
 
     public static OpenZombiesDeployToolScreenS2CPacket decode(FriendlyByteBuf buf) {
+        boolean openScreen = buf.readBoolean();
         List<String> maps = readStringList(buf);
         String workspaceStage = buf.readUtf();
         String currentWorkflowStep = buf.readUtf();
@@ -235,7 +247,7 @@ public class OpenZombiesDeployToolScreenS2CPacket {
                 buf.readUtf(),
                 buf.readUtf(),
                 buf.readUtf());
-        return new OpenZombiesDeployToolScreenS2CPacket(snapshot);
+        return new OpenZombiesDeployToolScreenS2CPacket(snapshot, openScreen);
     }
 
     public void handle(Supplier<NetworkEvent.Context> ctx) {

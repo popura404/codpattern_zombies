@@ -24,6 +24,9 @@ public class ZombiesDeployToolActionC2SPacket {
     public enum Action {
         REFRESH,
         SAVE_SELECTIONS,
+        SAVE_DRAFT,
+        DISCARD_DRAFT,
+        UNDO_LAST,
         SELECT_MAP,
         SELECT_OBJECT_TYPE,
         SELECT_OBJECT,
@@ -47,13 +50,18 @@ public class ZombiesDeployToolActionC2SPacket {
     private final String issueObjectType;
     private final int issueTargetIndex;
     private final boolean issueMapStage;
+    private final int expectedRevision;
 
     public ZombiesDeployToolActionC2SPacket(Action action, ZombiesDeployDraft draft) {
-        this(action, draft, "", "", "", "", -1, false);
+        this(action, draft, "", "", "", "", -1, false, -1);
     }
 
     public ZombiesDeployToolActionC2SPacket(Action action, ZombiesDeployDraft draft, String fieldKey, String fieldValue) {
-        this(action, draft, fieldKey, fieldValue, "", "", -1, false);
+        this(action, draft, fieldKey, fieldValue, "", "", -1, false, -1);
+    }
+
+    public ZombiesDeployToolActionC2SPacket(Action action, ZombiesDeployDraft draft, int expectedRevision) {
+        this(action, draft, "", "", "", "", -1, false, expectedRevision);
     }
 
     public ZombiesDeployToolActionC2SPacket(
@@ -66,6 +74,20 @@ public class ZombiesDeployToolActionC2SPacket {
             int issueTargetIndex,
             boolean issueMapStage
     ) {
+        this(action, draft, fieldKey, fieldValue, issueWorkflowStep, issueObjectType, issueTargetIndex, issueMapStage, -1);
+    }
+
+    public ZombiesDeployToolActionC2SPacket(
+            Action action,
+            ZombiesDeployDraft draft,
+            String fieldKey,
+            String fieldValue,
+            String issueWorkflowStep,
+            String issueObjectType,
+            int issueTargetIndex,
+            boolean issueMapStage,
+            int expectedRevision
+    ) {
         this.action = action == null ? Action.REFRESH : action;
         this.draft = draft == null ? ZombiesDeployDraft.empty() : draft;
         this.fieldKey = fieldKey == null ? "" : fieldKey;
@@ -74,6 +96,7 @@ public class ZombiesDeployToolActionC2SPacket {
         this.issueObjectType = issueObjectType == null ? "" : issueObjectType;
         this.issueTargetIndex = Math.max(-1, issueTargetIndex);
         this.issueMapStage = issueMapStage;
+        this.expectedRevision = expectedRevision;
     }
 
     public void encode(FriendlyByteBuf buf) {
@@ -99,6 +122,7 @@ public class ZombiesDeployToolActionC2SPacket {
         buf.writeUtf(issueObjectType);
         buf.writeVarInt(issueTargetIndex);
         buf.writeBoolean(issueMapStage);
+        buf.writeVarInt(expectedRevision);
     }
 
     public static ZombiesDeployToolActionC2SPacket decode(FriendlyByteBuf buf) {
@@ -137,7 +161,8 @@ public class ZombiesDeployToolActionC2SPacket {
                 buf.readUtf(),
                 buf.readUtf(),
                 buf.readVarInt(),
-                buf.readBoolean());
+                buf.readBoolean(),
+                buf.readVarInt());
     }
 
     public static void sendScreen(ServerPlayer player, ItemStack stack, ZombiesDeployDraft request) {
@@ -171,7 +196,10 @@ public class ZombiesDeployToolActionC2SPacket {
                 return;
             }
             ZombiesDeployServiceResult<ZombiesDeploySnapshot> result = dispatch(player, stack);
-            result.value().ifPresent(snapshot -> FPSMatch.sendToPlayer(player, new OpenZombiesDeployToolScreenS2CPacket(snapshot)));
+            boolean openScreen = action != Action.UNDO_LAST
+                    && action != Action.SAVE_DRAFT
+                    && action != Action.DISCARD_DRAFT;
+            result.value().ifPresent(snapshot -> FPSMatch.sendToPlayer(player, new OpenZombiesDeployToolScreenS2CPacket(snapshot, openScreen)));
             if (!result.messageKey().isBlank()) {
                 List<String> args = result.arguments();
                 player.displayClientMessage(Component.translatable(result.messageKey(), args.toArray()), false);
@@ -192,6 +220,9 @@ public class ZombiesDeployToolActionC2SPacket {
                     "");
             case SELECT_OBJECT_TYPE -> service.selectObjectType(player, stack, draft);
             case SAVE_SELECTIONS -> service.saveSelections(player, stack, draft);
+            case SAVE_DRAFT -> service.saveDraft(player, stack, draft);
+            case DISCARD_DRAFT -> service.discardDraft(player, stack, draft);
+            case UNDO_LAST -> service.undoLast(player, stack, draft, expectedRevision);
             case SET_FIELD -> service.setField(player, stack, draft, fieldKey, fieldValue);
             case ADD_OBJECT -> service.addObject(player, stack, draft);
             case UPDATE_OBJECT -> service.updateObject(player, stack, draft);

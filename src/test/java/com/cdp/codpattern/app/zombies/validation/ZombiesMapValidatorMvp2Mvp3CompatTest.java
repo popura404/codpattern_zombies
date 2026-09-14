@@ -19,12 +19,14 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
 
     public static void main(String[] args) {
         mvp2WeaponWallOnlyRequiresLocation();
-        mvp3RequiresPowerSodaWithoutPowerSwitchIgnoresRequiresPowerFlag();
-        mvp3RequiresPowerUltimateWithoutPowerSwitchIgnoresRequiresPowerFlag();
+        mvp3RequiresPowerSodaWithoutPowerSwitchFails();
+        mvp3RequiresPowerUltimateWithoutPowerSwitchFails();
         mvp3NoPowerSwitchPasses();
+        zombieSpawnGroupWithoutBarrierFails();
+        orphanBarrierGroupIsNonBlocking();
         mvp3MultiplePowerSwitchesPass();
-        mvp3MissingSodaMachineFails();
-        mvp3MissingUltimateMachineFails();
+        mvp3MissingSodaMachinePasses();
+        mvp3MissingUltimateMachinePasses();
         mvp3InvalidSodaBuffFails();
         mvp3InvalidPowerSwitchIdentifierFails();
         playerInitialSpawnsMoreThanFourFails();
@@ -60,37 +62,61 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         requireNoIssue(report, "map.weapon_wall_missing_top_rarity_candidate");
     }
 
-    private static void mvp3RequiresPowerSodaWithoutPowerSwitchIgnoresRequiresPowerFlag() {
+    private static void mvp3RequiresPowerSodaWithoutPowerSwitchFails() {
         ZombiesMapSnapshot.SodaMachineSnapshot soda = validSoda();
 
         ZombiesMapValidationReport report = validate(
                 ZombiesMapValidationProfile.MVP3_FULL_INITIAL,
                 snapshot(List.of(), List.of(), List.of(soda), List.of(validUltimate())));
 
-        require(report.valid(), "MVP3 soda with requiresPower=true should pass without power switch: " + issueCodes(report));
-        requireNoIssue(report, "map.missing_power_switch");
-        requireNoIssue(report, "map.requires_power_without_switch");
+        require(report.hasErrors(), "powered soda without a power switch should fail: " + issueCodes(report));
+        requireIssue(report, "map.missing_power_switch");
     }
 
-    private static void mvp3RequiresPowerUltimateWithoutPowerSwitchIgnoresRequiresPowerFlag() {
+    private static void mvp3RequiresPowerUltimateWithoutPowerSwitchFails() {
         ZombiesMapSnapshot.UltimateMachineSnapshot ultimate = validUltimate();
 
         ZombiesMapValidationReport report = validate(
                 ZombiesMapValidationProfile.MVP3_FULL_INITIAL,
                 snapshot(List.of(), List.of(), List.of(validSoda()), List.of(ultimate)));
 
-        require(report.valid(), "MVP3 ultimate with requiresPower=true should pass without power switch: " + issueCodes(report));
-        requireNoIssue(report, "map.missing_power_switch");
-        requireNoIssue(report, "map.requires_power_without_switch");
+        require(report.hasErrors(), "powered ultimate without a power switch should fail: " + issueCodes(report));
+        requireIssue(report, "map.missing_power_switch");
     }
 
     private static void mvp3NoPowerSwitchPasses() {
+        ZombiesMapSnapshot.SodaMachineSnapshot soda = new ZombiesMapSnapshot.SodaMachineSnapshot(
+                "soda-1", "sodaMachine", "double_health", 1500, false, MAP_DIMENSION, new BlockPos(4, 1, 4));
+        ZombiesMapSnapshot.UltimateMachineSnapshot ultimate = new ZombiesMapSnapshot.UltimateMachineSnapshot(
+                "ultimate-1", "ultimateMachine", 3, Map.of(), false, MAP_DIMENSION, new BlockPos(5, 1, 5));
         ZombiesMapValidationReport report = validate(
                 ZombiesMapValidationProfile.MVP3_FULL_INITIAL,
-                snapshot(List.of(), List.of(), List.of(validSoda()), List.of(validUltimate())));
+                snapshot(List.of(), List.of(), List.of(soda), List.of(ultimate)));
 
         require(report.valid(), "MVP3 map without power switch should pass: " + issueCodes(report));
         requireNoIssue(report, "map.missing_power_switch");
+    }
+
+    private static void zombieSpawnGroupWithoutBarrierFails() {
+        ZombiesMapValidationReport report = validate(
+                ZombiesMapValidationProfile.MVP1_MINIMAL,
+                snapshot(
+                        List.of(initialSpawn(), zombieSpawn(), zombieSpawn("zombie-2", new BlockPos(2, 1, 2), 2)),
+                        List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
+        require(report.hasErrors(), "group > 1 zombie spawn should require a matching barrier");
+        requireIssue(report, "map.missing_barrier_for_spawn_group");
+    }
+
+    private static void orphanBarrierGroupIsNonBlocking() {
+        ZombiesMapValidationReport report = validate(
+                ZombiesMapValidationProfile.MVP1_MINIMAL,
+                snapshot(
+                        List.of(initialSpawn(), zombieSpawn()),
+                        List.of(new ZombiesMapSnapshot.BarrierSnapshot(
+                                "barrier-9", "barrier", 9, 0, MAP_DIMENSION,
+                                new BlockPos(6, 1, 6), new BlockPos(6, 1, 6), new BlockPos(6, 2, 6))),
+                        List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
+        require(report.valid(), "orphan barrier groups should remain non-blocking: " + issueCodes(report));
     }
 
     private static void mvp3MultiplePowerSwitchesPass() {
@@ -106,22 +132,22 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         requireNoIssue(report, "map.multiple_power_switches");
     }
 
-    private static void mvp3MissingSodaMachineFails() {
+    private static void mvp3MissingSodaMachinePasses() {
         ZombiesMapValidationReport report = validate(
                 ZombiesMapValidationProfile.MVP3_FULL_INITIAL,
                 snapshot(List.of(), List.of(powerSwitch("power-1")), List.of(), List.of(validUltimate())));
 
-        require(report.hasErrors(), "MVP3 full initial map without soda machine should fail");
-        requireIssue(report, "map.missing_soda_machine");
+        require(report.valid(), "missing soda machine should be optional: " + issueCodes(report));
+        requireNoIssue(report, "map.missing_soda_machine");
     }
 
-    private static void mvp3MissingUltimateMachineFails() {
+    private static void mvp3MissingUltimateMachinePasses() {
         ZombiesMapValidationReport report = validate(
                 ZombiesMapValidationProfile.MVP3_FULL_INITIAL,
                 snapshot(List.of(), List.of(powerSwitch("power-1")), List.of(validSoda()), List.of()));
 
-        require(report.hasErrors(), "MVP3 full initial map without ultimate machine should fail");
-        requireIssue(report, "map.missing_ultimate_machine");
+        require(report.valid(), "missing ultimate machine should be optional: " + issueCodes(report));
+        requireNoIssue(report, "map.missing_ultimate_machine");
     }
 
     private static void mvp3InvalidSodaBuffFails() {
@@ -568,11 +594,15 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
     }
 
     private static ZombiesMapSnapshot.SpawnSnapshot zombieSpawn(String objectId, BlockPos pos) {
+        return zombieSpawn(objectId, pos, 1);
+    }
+
+    private static ZombiesMapSnapshot.SpawnSnapshot zombieSpawn(String objectId, BlockPos pos, int group) {
         return new ZombiesMapSnapshot.SpawnSnapshot(
                 objectId,
                 "zombieSpawn",
                 "",
-                1,
+                group,
                 1.0D,
                 true,
                 MAP_DIMENSION,

@@ -14,9 +14,10 @@ public final class ZombiesDeployClientActionHandler {
             throw new IllegalArgumentException("Unexpected Zombies deploy screen payload: " + payload);
         }
         Minecraft minecraft = Minecraft.getInstance();
+        ZombiesDeployClientState.update(packet.snapshot());
         if (minecraft.screen instanceof ZombiesDeployToolScreen screen) {
             screen.applyData(packet);
-        } else {
+        } else if (packet.openScreen()) {
             minecraft.setScreen(new ZombiesDeployToolScreen(packet));
         }
     }

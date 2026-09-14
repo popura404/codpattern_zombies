@@ -46,12 +46,16 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ZombiesDeployToolService {
     private static final ZombiesDeployToolService INSTANCE = new ZombiesDeployToolService();
     private static final String LOOK_AT_X = "lookAtX";
     private static final String LOOK_AT_Y = "lookAtY";
     private static final String LOOK_AT_Z = "lookAtZ";
+    private static final long DRAFT_SESSION_TTL_MILLIS = 30L * 60L * 1000L;
+    private final Map<SessionKey, DraftSession> draftSessions = new ConcurrentHashMap<>();
 
     public static ZombiesDeployToolService instance() {
         return INSTANCE;
@@ -68,6 +72,7 @@ public final class ZombiesDeployToolService {
             String statusCode,
             String statusDetail
     ) {
+        cleanupExpiredDraftSessions();
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         return ZombiesDeployServiceResult.success(
                 buildSnapshot(player, draft, statusKey, statusCode, statusDetail),
@@ -158,6 +163,104 @@ public final class ZombiesDeployToolService {
                 "");
     }
 
+    public ZombiesDeployServiceResult<ZombiesDeploySnapshot> saveDraft(
+            ServerPlayer player,
+            ItemStack stack,
+            ZombiesDeployDraft request
+    ) {
+        ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
+        Optional<ZombiesMap> resolvedMap = resolveMap(draft.selectedMap());
+        if (resolvedMap.isEmpty()) {
+            return failure(player, stack, draft, "map.not_found", "message.codpattern.zombies.deploy.map_not_found", draft.selectedMap());
+        }
+        ZombiesMap map = resolvedMap.get();
+        DraftSession session = draftSessions.get(sessionKey(player, draft.selectedMap()));
+        if (session == null || Objects.equals(session.currentObjects(), map.objects())) {
+            return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.selections_saved", "draft.empty", "");
+        }
+        List<ZombiesDeploySnapshot.ValidationLine> errors = validationLines(
+                map,
+                session.currentObjects(),
+                ZombiesDeployFieldSchema.PROFILE_MVP3).stream()
+                .filter(line -> "error".equalsIgnoreCase(line.severity()))
+                .toList();
+        if (!errors.isEmpty()) {
+            ZombiesDeploySnapshot result = buildSnapshot(player, draft, "message.codpattern.zombies.deploy.validation_ran", "draft.validation_failed", Integer.toString(errors.size()));
+            return ZombiesDeployServiceResult.failure("draft.validation_failed", "message.codpattern.zombies.deploy.validation_ran", result, Integer.toString(errors.size()));
+        }
+        if (!Objects.equals(session.baseObjects(), map.objects())) {
+            ZombiesDeploySnapshot result = buildSnapshot(player, draft, "message.codpattern.zombies.deploy.refreshed", "draft.revision_conflict", "");
+            return ZombiesDeployServiceResult.failure("draft.revision_conflict", "message.codpattern.zombies.deploy.refreshed", result, "");
+        }
+        ZombiesMapObjects previous = session.baseObjects();
+        PlacementRollback placementRollback = null;
+        try {
+            map.applyObjects(session.currentObjects());
+            for (String type : List.of(
+                    ZombiesDeployFieldSchema.WEAPON_WALL,
+                    ZombiesDeployFieldSchema.AMMO_BOX,
+                    ZombiesDeployFieldSchema.ARMOR_STATION,
+                    ZombiesDeployFieldSchema.POWER_SWITCH,
+                    ZombiesDeployFieldSchema.SODA_MACHINE,
+                    ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
+                    ZombiesDeployFieldSchema.MYSTERY_BOX)) {
+                placementRollback = appendPlacementRollback(
+                        placementRollback,
+                        syncPurchasableBlocks(player.serverLevel(), type, previous, session.currentObjects(), ZombiesDeployObjectEditor.Operation.UPDATE));
+            }
+            PlacementRollback rollback = placementRollback;
+            CodMapPersistence.saveMapOrRollback(map, () -> {
+                map.applyObjects(previous);
+                restorePlacement(rollback);
+            });
+            draftSessions.remove(sessionKey(player, draft.selectedMap()));
+            map.syncToClient();
+            ZombiesDeployTool.saveDraft(stack, draft);
+            return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.object_saved", "draft.saved", "");
+        } catch (RuntimeException exception) {
+            map.applyObjects(previous);
+            restorePlacement(placementRollback);
+            return failure(player, stack, draft, "save_failed_rolled_back", "message.codpattern.zombies.deploy.save_failed_rollback", map.getMapName());
+        }
+    }
+
+    public ZombiesDeployServiceResult<ZombiesDeploySnapshot> discardDraft(
+            ServerPlayer player,
+            ItemStack stack,
+            ZombiesDeployDraft request
+    ) {
+        ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
+        draftSessions.remove(sessionKey(player, draft.selectedMap()));
+        ZombiesDeployTool.saveDraft(stack, draft);
+        return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "draft.discarded", "");
+    }
+
+    public ZombiesDeployServiceResult<ZombiesDeploySnapshot> undoLast(
+            ServerPlayer player,
+            ItemStack stack,
+            ZombiesDeployDraft request,
+            int expectedRevision
+    ) {
+        ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
+        DraftSession session = draftSessions.get(sessionKey(player, draft.selectedMap()));
+        if (session == null || session.previousObjects() == null) {
+            return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "undo.empty", "");
+        }
+        if (expectedRevision >= 0 && expectedRevision != session.revision()) {
+            return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "undo.revision_conflict", "");
+        }
+        session.undo();
+        return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "undo.applied", "");
+    }
+
+    public ZombiesDeployServiceResult<ZombiesDeploySnapshot> undoLast(
+            ServerPlayer player,
+            ItemStack stack,
+            ZombiesDeployDraft request
+    ) {
+        return undoLast(player, stack, request, -1);
+    }
+
     public ZombiesDeployServiceResult<ZombiesDeploySnapshot> saveAndValidateMvp1(
             ServerPlayer player,
             ItemStack stack,
@@ -190,7 +293,7 @@ public final class ZombiesDeployToolService {
         if (resolvedMap.isEmpty()) {
             return failure(player, stack, draft, "map.not_found", "message.codpattern.zombies.deploy.map_not_found", draft.selectedMap());
         }
-        ZombiesMapObjects objects = resolvedMap.get().objects();
+        ZombiesMapObjects objects = draftObjects(player, draft, resolvedMap.get());
         IssueTarget target = resolveIssueTarget(issueCode, issueSubject, draft, objects);
         return jumpToResolvedIssueTarget(player, stack, draft, objects, target, issueCode);
     }
@@ -211,7 +314,7 @@ public final class ZombiesDeployToolService {
         if (resolvedMap.isEmpty()) {
             return failure(player, stack, draft, "map.not_found", "message.codpattern.zombies.deploy.map_not_found", draft.selectedMap());
         }
-        ZombiesMapObjects objects = resolvedMap.get().objects();
+        ZombiesMapObjects objects = draftObjects(player, draft, resolvedMap.get());
         IssueTarget target = resolveProvidedIssueTarget(
                 workflowStep,
                 targetObjectType,
@@ -297,7 +400,7 @@ public final class ZombiesDeployToolService {
     ) {
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         ZombiesMapObjects objects = resolveMap(draft.selectedMap())
-                .map(ZombiesMap::objects)
+                .map(map -> draftObjects(player, draft, map))
                 .orElse(ZombiesMapObjects.EMPTY);
         ZombiesDeployDraft updated = applyWorkflowStep(player, draft, draft.workflowStep(), objects);
         ZombiesDeployTool.saveDraft(stack, updated);
@@ -312,7 +415,7 @@ public final class ZombiesDeployToolService {
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         String next = nextWorkflowStep(draft.workflowStep());
         ZombiesMapObjects objects = resolveMap(draft.selectedMap())
-                .map(ZombiesMap::objects)
+                .map(map -> draftObjects(player, draft, map))
                 .orElse(ZombiesMapObjects.EMPTY);
         ZombiesDeployDraft updated = applyWorkflowStep(player, draft, next, objects);
         ZombiesDeployTool.saveDraft(stack, updated);
@@ -402,7 +505,7 @@ public final class ZombiesDeployToolService {
             return failure(player, stack, draft, "map.not_found", "message.codpattern.zombies.deploy.map_not_found", draft.selectedMap());
         }
 
-        ZombiesMapObjects objects = resolvedMap.get().objects();
+        ZombiesMapObjects objects = draftObjects(player, draft, resolvedMap.get());
         String objectType = ZombiesDeployFieldSchema.normalizeObjectType(draft.objectType());
         if (!leftClick && isRightClickNoOp(objectType)) {
             ZombiesDeploySnapshot snapshot = buildSnapshot(
@@ -661,6 +764,7 @@ public final class ZombiesDeployToolService {
             ZombiesDeployObjectEditor.Operation operation,
             String successCode
     ) {
+        cleanupExpiredDraftSessions();
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         ZombiesDeployObjectEditor.Operation resolvedOperation = operation == null
                 ? ZombiesDeployObjectEditor.Operation.ADD
@@ -677,7 +781,10 @@ public final class ZombiesDeployToolService {
         }
 
         ZombiesMap map = resolvedMap.get();
-        ZombiesMapObjects previousObjects = map.objects();
+        DraftSession session = draftSessions.computeIfAbsent(
+                sessionKey(player, draft.selectedMap()),
+                ignored -> new DraftSession(map.objects()));
+        ZombiesMapObjects previousObjects = session.currentObjects();
         ZombiesDeployObjectEditor.EditResult edit = ZombiesDeployObjectEditor.edit(
                 previousObjects,
                 resolvedOperation,
@@ -730,51 +837,50 @@ public final class ZombiesDeployToolService {
             }
         }
 
-        map.applyObjects(edit.objects());
-        PlacementRollback placementRollback = null;
-        try {
-            if (shouldSyncPurchasableBlock(player, resolvedOperation, draft, previousObjects, edit.objects())) {
-                placementRollback = syncPurchasableBlocks(
-                        player.serverLevel(),
-                        ZombiesDeployFieldSchema.normalizeObjectType(draft.objectType()),
-                        previousObjects,
-                        edit.objects(),
-                        resolvedOperation);
-            }
-            PlacementRollback rollback = placementRollback;
-            CodMapPersistence.saveMapOrRollback(map, () -> {
-                map.applyObjects(previousObjects);
-                restorePlacement(rollback);
-            });
-        } catch (RuntimeException e) {
-            map.applyObjects(previousObjects);
-            if (placementRollback != null) {
-                restorePlacement(placementRollback);
-            }
-            ZombiesDeployTool.saveDraft(stack, resultDraft);
-            ZombiesDeploySnapshot snapshot = buildSnapshot(
-                    player,
-                    resultDraft,
-                    "message.codpattern.zombies.deploy.save_failed_rollback",
-                    "save_failed_rolled_back",
-                    map.getMapName());
-            return ZombiesDeployServiceResult.failure(
-                    "save_failed_rolled_back",
-                    "message.codpattern.zombies.deploy.save_failed_rollback",
-                    snapshot,
-                    map.getMapName());
-        }
-
-        map.syncToClient();
+        session.stage(edit.objects());
+        resultDraft = autoAdvanceDraft(player, resultDraft, edit.objects(), resolvedOperation);
         ZombiesDeployTool.saveDraft(stack, resultDraft);
-        boolean activeMap = ZombiesMapOccupancyService.instance().isOccupied(BuiltInGameModes.ZOMBIES, map.getMapName());
-        String statusKey = activeMap
-                ? "message.codpattern.zombies.deploy.saved_active_map"
-                : "message.codpattern.zombies.deploy.object_saved";
-        String statusCode = activeMap ? "ok.active_map_next_round" : successCode;
-        String statusDetail = activeMap ? draft.selectedMap() : Integer.toString(edit.affectedCount());
+        String statusKey = "message.codpattern.zombies.deploy.selections_saved";
+        String statusCode = "draft.staged";
+        String statusDetail = Integer.toString(edit.affectedCount());
         ZombiesDeploySnapshot snapshot = buildSnapshot(player, resultDraft, statusKey, statusCode, statusDetail);
         return ZombiesDeployServiceResult.success(snapshot, statusKey, statusDetail);
+    }
+
+    private ZombiesDeployDraft autoAdvanceDraft(
+            ServerPlayer player,
+            ZombiesDeployDraft draft,
+            ZombiesMapObjects objects,
+            ZombiesDeployObjectEditor.Operation operation
+    ) {
+        if (operation != ZombiesDeployObjectEditor.Operation.ADD || draft == null || objects == null) {
+            return draft;
+        }
+        String nextStep = "";
+        String nextType = "";
+        if (ZombiesDeployDraft.WORKFLOW_INITIAL.equals(draft.workflowStep()) && !objects.initialSpawns().isEmpty()) {
+            nextStep = ZombiesDeployDraft.WORKFLOW_ZOMBIE_SPAWN;
+            nextType = ZombiesDeployFieldSchema.ZOMBIE_SPAWN;
+        } else if (ZombiesDeployDraft.WORKFLOW_ZOMBIE_SPAWN.equals(draft.workflowStep())
+                && objects.zombieSpawns().stream().anyMatch(spawn -> spawn.group() == 1 && spawn.weight() > 0.0D)) {
+            nextStep = ZombiesDeployDraft.WORKFLOW_BARRIER;
+            nextType = ZombiesDeployFieldSchema.BARRIER;
+        }
+        if (nextStep.isBlank()) {
+            return draft;
+        }
+        return new ZombiesDeployDraft(
+                ZombiesDeployDraft.STAGE_OBJECT_MARKING,
+                nextStep,
+                draft.selectedMap(),
+                draft.draftMapName(),
+                draft.mapPos1(),
+                draft.mapPos2(),
+                nextType,
+                ZombiesDeployDraft.CAPTURE_DEFAULT,
+                -1,
+                draft.validationView(),
+                defaultFields(player, nextType));
     }
 
     private ZombiesDeployServiceResult<ZombiesDeploySnapshot> failure(
@@ -842,7 +948,7 @@ public final class ZombiesDeployToolService {
             String statusDetail
     ) {
         Optional<ZombiesMap> map = resolveMap(draft.selectedMap());
-        ZombiesMapObjects objects = map.map(ZombiesMap::objects).orElse(ZombiesMapObjects.EMPTY);
+        ZombiesMapObjects objects = map.map(value -> draftObjects(player, draft, value)).orElse(ZombiesMapObjects.EMPTY);
         List<ZombiesDeploySnapshot.ObjectSummary> summaries = objectSummaries(objects, draft.objectType());
         boolean activeMap = map
                 .map(value -> ZombiesMapOccupancyService.instance().isOccupied(BuiltInGameModes.ZOMBIES, value.getMapName()))
@@ -859,12 +965,16 @@ public final class ZombiesDeployToolService {
         boolean dirty = draftDirty(draft, map, objects);
         String nearestObjectHint = nearestObjectHint(player, draft, map, objects);
         List<ZombiesDeploySnapshot.ValidationLine> selectedValidationLines = map
-                .map(value -> validationLines(value, draft.validationView()))
+                .map(value -> validationLines(value, objects, draft.validationView()))
                 .orElse(List.of());
         List<ZombiesDeploySnapshot.IssueTarget> issueTargets = buildIssueTargets(
                 selectedValidationLines,
                 draft,
                 objects);
+        DraftSession draftSession = map.isPresent() ? draftSessions.get(sessionKey(player, draft.selectedMap())) : null;
+        int revision = draftSession == null
+                ? map.map(value -> Math.abs(Objects.hash(value.getMapName(), value.objects(), value.matchEndTeleportPoint()))).orElse(0)
+                : draftSession.revision();
         return new ZombiesDeploySnapshot(
                 availableMaps(),
                 draft.workspaceStage(),
@@ -891,13 +1001,13 @@ public final class ZombiesDeployToolService {
                 ZombiesDeployFieldSchema.profiles(),
                 selectedValidationLines,
                 issueTargets,
-                map.map(this::validationSummaries).orElse(List.of()),
+                map.map(value -> validationSummaries(value, objects)).orElse(List.of()),
                 objectCounts(objects),
                 stepStatuses(map.isPresent(), objects),
                 dirty,
                 nearestObjectHint,
                 activeMap,
-                map.map(value -> Math.abs(Objects.hash(value.getMapName(), value.objects(), value.matchEndTeleportPoint()))).orElse(0),
+                revision,
                 Objects.requireNonNullElse(statusKey, ""),
                 Objects.requireNonNullElse(statusCode, ""),
                 Objects.requireNonNullElse(statusDetail, ""));
@@ -1029,6 +1139,29 @@ public final class ZombiesDeployToolService {
                 .map(ZombiesMap.class::cast);
     }
 
+    private ZombiesMapObjects draftObjects(ServerPlayer player, ZombiesDeployDraft draft, ZombiesMap map) {
+        if (player == null || draft == null || map == null) {
+            return map == null ? ZombiesMapObjects.EMPTY : map.objects();
+        }
+        DraftSession session = draftSessions.get(sessionKey(player, draft.selectedMap()));
+        if (session == null) {
+            return map.objects();
+        }
+        session.touch();
+        return session.currentObjects();
+    }
+
+    private void cleanupExpiredDraftSessions() {
+        long now = System.currentTimeMillis();
+        draftSessions.entrySet().removeIf(entry -> now - entry.getValue().lastTouchedAt() > DRAFT_SESSION_TTL_MILLIS);
+    }
+
+    private SessionKey sessionKey(ServerPlayer player, String mapName) {
+        return new SessionKey(
+                player == null ? new UUID(0L, 0L) : player.getUUID(),
+                Objects.requireNonNullElse(mapName, "").trim());
+    }
+
     private String selectMap(String requested, String stored, List<String> maps) {
         if (maps.isEmpty()) {
             return "";
@@ -1158,6 +1291,14 @@ public final class ZombiesDeployToolService {
     }
 
     private List<ZombiesDeploySnapshot.ValidationLine> validationLines(ZombiesMap map, String profileKey) {
+        return validationLines(map, map == null ? ZombiesMapObjects.EMPTY : map.objects(), profileKey);
+    }
+
+    private List<ZombiesDeploySnapshot.ValidationLine> validationLines(
+            ZombiesMap map,
+            ZombiesMapObjects objects,
+            String profileKey
+    ) {
         try {
             ZombiesMapValidationProfile profile = switch (ZombiesDeployFieldSchema.normalizeProfile(profileKey)) {
                 case ZombiesDeployFieldSchema.PROFILE_MVP2 -> ZombiesMapValidationProfile.MVP2_PURCHASES;
@@ -1170,7 +1311,7 @@ public final class ZombiesDeployToolService {
                     map.matchEndTeleportPoint().isPresent(),
                     map.getServerLevel().dimension().location().toString(),
                     ZombiesMapSnapshot.BoundsSnapshot.fromAreaData(map.getMapArea()),
-                    map.objects());
+                    objects);
             ZombiesMapValidationReport report = new ZombiesMapValidator(profile).validate(snapshot);
             return report.issues().stream().map(this::validationLine).toList();
         } catch (RuntimeException e) {
@@ -1191,9 +1332,16 @@ public final class ZombiesDeployToolService {
     }
 
     private List<ZombiesDeploySnapshot.ValidationSummary> validationSummaries(ZombiesMap map) {
+        return validationSummaries(map, map == null ? ZombiesMapObjects.EMPTY : map.objects());
+    }
+
+    private List<ZombiesDeploySnapshot.ValidationSummary> validationSummaries(
+            ZombiesMap map,
+            ZombiesMapObjects objects
+    ) {
         List<ZombiesDeploySnapshot.ValidationSummary> summaries = new ArrayList<>();
         for (String profile : ZombiesDeployFieldSchema.profiles()) {
-            List<ZombiesDeploySnapshot.ValidationLine> lines = validationLines(map, profile);
+            List<ZombiesDeploySnapshot.ValidationLine> lines = validationLines(map, objects, profile);
             int errors = 0;
             int warnings = 0;
             for (ZombiesDeploySnapshot.ValidationLine line : lines) {
@@ -1250,21 +1398,11 @@ public final class ZombiesDeployToolService {
     }
 
     private boolean requiredForMvp2(String objectType) {
-        return switch (ZombiesDeployFieldSchema.normalizeObjectType(objectType)) {
-            case ZombiesDeployFieldSchema.WEAPON_WALL,
-                 ZombiesDeployFieldSchema.AMMO_BOX,
-                 ZombiesDeployFieldSchema.ARMOR_STATION -> true;
-            default -> false;
-        };
+        return false;
     }
 
     private boolean requiredForMvp3(String objectType) {
-        return switch (ZombiesDeployFieldSchema.normalizeObjectType(objectType)) {
-            case ZombiesDeployFieldSchema.BARRIER,
-                 ZombiesDeployFieldSchema.SODA_MACHINE,
-                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> true;
-            default -> false;
-        };
+        return false;
     }
 
     private List<ZombiesDeploySnapshot.StepStatus> stepStatuses(boolean hasMap, ZombiesMapObjects objects) {
@@ -1286,11 +1424,7 @@ public final class ZombiesDeployToolService {
         boolean hasPowerSwitch = resolved.powerSwitch().isPresent();
         boolean hasUltimateMachine = !resolved.ultimateMachines().isEmpty();
         boolean hasSodaMachine = !resolved.sodaMachines().isEmpty();
-        boolean interactionComplete = hasWeaponWall
-                && hasAmmoBox
-                && hasArmorStation
-                && hasUltimateMachine
-                && hasSodaMachine;
+        boolean interactionComplete = true;
         int interactionTotal = resolved.weaponWalls().size()
                 + resolved.ammoBoxes().size()
                 + resolved.armorStations().size()
@@ -1304,7 +1438,7 @@ public final class ZombiesDeployToolService {
                 + ";ultimateMachine=" + (hasUltimateMachine ? "1" : "0")
                 + ";sodaMachine=" + resolved.sodaMachines().size()
                 + ";total=" + interactionTotal;
-        boolean barrierComplete = !resolved.barriers().isEmpty();
+        boolean barrierComplete = true;
         String barrierDetail = "barrier=" + resolved.barriers().size()
                 + ";barrierGroups=" + formatGroupSet(barrierGroups)
                 + ";spawnGroups=" + formatGroupSet(zombieSpawnGroups)
@@ -1374,40 +1508,24 @@ public final class ZombiesDeployToolService {
             case ZombiesDeployDraft.WORKFLOW_ZOMBIE_SPAWN ->
                     resolved.zombieSpawns().isEmpty() ? "missing_zombie_spawn" : "";
             case ZombiesDeployDraft.WORKFLOW_BARRIER -> {
-                if (resolved.barriers().isEmpty()) {
-                    yield "missing_barrier";
-                }
                 yield "";
             }
             case ZombiesDeployDraft.WORKFLOW_INTERACT -> {
-                if (resolved.weaponWalls().isEmpty()) {
-                    yield "missing_weapon_wall";
-                }
-                if (resolved.ammoBoxes().isEmpty()) {
-                    yield "missing_ammo_box";
-                }
-                if (resolved.armorStations().isEmpty()) {
-                    yield "missing_armor_station";
-                }
-                boolean hasUltimate = !resolved.ultimateMachines().isEmpty();
-                boolean hasSoda = !resolved.sodaMachines().isEmpty();
-                if (!hasUltimate) {
-                    yield "missing_ultimate_machine";
-                }
-                if (!hasSoda) {
-                    yield "missing_soda_machine";
-                }
                 yield "";
             }
             case ZombiesDeployDraft.WORKFLOW_VALIDATE ->
-                    mvp1Errors(map.get()) > 0 ? "mvp1_has_errors" : "";
+                    mvp1Errors(map.get(), resolved) > 0 ? "mvp1_has_errors" : "";
             default -> "";
         };
     }
 
     private int mvp1Errors(ZombiesMap map) {
+        return mvp1Errors(map, map == null ? ZombiesMapObjects.EMPTY : map.objects());
+    }
+
+    private int mvp1Errors(ZombiesMap map, ZombiesMapObjects objects) {
         int errors = 0;
-        for (ZombiesDeploySnapshot.ValidationLine line : validationLines(map, ZombiesDeployFieldSchema.PROFILE_MVP1)) {
+        for (ZombiesDeploySnapshot.ValidationLine line : validationLines(map, objects, ZombiesDeployFieldSchema.PROFILE_MVP1)) {
             if ("error".equalsIgnoreCase(line.severity())) {
                 errors++;
             }
@@ -1455,6 +1573,9 @@ public final class ZombiesDeployToolService {
         }
         if (code.contains("barrier_group_without_zombie_spawn")) {
             return issueTargetForObject(false, ZombiesDeployDraft.WORKFLOW_BARRIER, ZombiesDeployFieldSchema.BARRIER, subjectObjectId, objects);
+        }
+        if (code.contains("missing_barrier_for_spawn_group")) {
+            return new IssueTarget(false, ZombiesDeployDraft.WORKFLOW_BARRIER, ZombiesDeployFieldSchema.BARRIER, -1);
         }
         if (code.contains("invalid_barrier")) {
             return issueTargetForObject(false, ZombiesDeployDraft.WORKFLOW_BARRIER, ZombiesDeployFieldSchema.BARRIER, subjectObjectId, objects);
@@ -1665,6 +1786,9 @@ public final class ZombiesDeployToolService {
             Optional<ZombiesMap> map,
             ZombiesMapObjects objects
     ) {
+        if (map.isPresent() && !Objects.equals(map.get().objects(), objects)) {
+            return true;
+        }
         if (ZombiesDeployDraft.STAGE_MAP_REGISTRATION.equals(draft.workspaceStage())) {
             if (map.isEmpty()) {
                 return !draft.draftMapName().isBlank()
@@ -2481,6 +2605,68 @@ public final class ZombiesDeployToolService {
     ) {
         private PlacementRollback(ServerLevel level, BlockPos pos, BlockState previousState) {
             this(level, pos, previousState, null);
+        }
+    }
+
+    private record SessionKey(UUID playerId, String mapName) {
+        private SessionKey {
+            playerId = playerId == null ? new UUID(0L, 0L) : playerId;
+            mapName = Objects.requireNonNullElse(mapName, "").trim();
+        }
+    }
+
+    private static final class DraftSession {
+        private final ZombiesMapObjects baseObjects;
+        private ZombiesMapObjects currentObjects;
+        private ZombiesMapObjects previousObjects;
+        private int revision;
+        private volatile long lastTouchedAt = System.currentTimeMillis();
+
+        private DraftSession(ZombiesMapObjects baseObjects) {
+            this.baseObjects = baseObjects == null ? ZombiesMapObjects.EMPTY : baseObjects;
+            this.currentObjects = this.baseObjects;
+        }
+
+        private ZombiesMapObjects baseObjects() {
+            return baseObjects;
+        }
+
+        private ZombiesMapObjects currentObjects() {
+            return currentObjects;
+        }
+
+        private ZombiesMapObjects previousObjects() {
+            return previousObjects;
+        }
+
+        private int revision() {
+            return revision;
+        }
+
+        private long lastTouchedAt() {
+            return lastTouchedAt;
+        }
+
+        private void touch() {
+            lastTouchedAt = System.currentTimeMillis();
+        }
+
+        private void stage(ZombiesMapObjects next) {
+            touch();
+            previousObjects = currentObjects;
+            currentObjects = next == null ? ZombiesMapObjects.EMPTY : next;
+            revision++;
+        }
+
+        private void undo() {
+            if (previousObjects == null) {
+                return;
+            }
+            ZombiesMapObjects next = currentObjects;
+            currentObjects = previousObjects;
+            previousObjects = null;
+            revision++;
+            touch();
         }
     }
 

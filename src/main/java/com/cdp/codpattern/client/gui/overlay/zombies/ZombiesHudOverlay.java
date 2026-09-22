@@ -14,6 +14,7 @@ import com.cdp.codpattern.common.block.CodPatternBlockRegister;
 import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.compat.tacz.client.TaczClientApi;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.tacz.guns.client.input.InteractKey;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.api.item.gun.FireMode;
@@ -24,6 +25,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
@@ -40,6 +42,7 @@ import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import org.lwjgl.opengl.GL11;
 
 public final class ZombiesHudOverlay implements IGuiOverlay {
     public static final ZombiesHudOverlay INSTANCE = new ZombiesHudOverlay();
@@ -92,28 +95,9 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     private static final int RESULT_PAGE_COUNT = 2;
     private static final long RESULT_PAGE_DURATION_MS = 5000L;
     private static final long RESULT_PAGE_FADE_MS = 550L;
-    private static final int HELD_PANEL_BASE_WIDTH = 320;
-    private static final int HELD_PANEL_BASE_HEIGHT = 90;
-    private static final int HELD_PANEL_RIGHT_MARGIN = 12;
-    private static final int HELD_PANEL_BOTTOM_MARGIN = 12;
-    private static final int HELD_PANEL_MIN_WIDTH = 220;
-    private static final int HELD_PANEL_LEFT_REGION_WIDTH = 224;
-    private static final int HELD_PANEL_BORDER_WIDTH = 2;
-    private static final int HELD_PANEL_IMAGE_X = 12;
-    private static final int HELD_PANEL_IMAGE_Y = 11;
-    private static final int HELD_PANEL_IMAGE_WIDTH = 196;
-    private static final int HELD_PANEL_IMAGE_HEIGHT = 66;
-    private static final int HELD_PANEL_AMMO_RIGHT_PADDING = 10;
-    // The magazine count is intentionally much larger than the reserve count,
-    // matching the long-card hierarchy in the acceptance preview.  Keep these
-    // as independent reference-space values so a four-digit reserve cannot
-    // accidentally inherit the magazine typography.
-    private static final float HELD_PANEL_CURRENT_SCALE = 2.25F;
-    private static final float HELD_PANEL_RESERVE_SCALE = 0.86F;
-    private static final int HELD_PANEL_CURRENT_Y = 10;
-    private static final int HELD_PANEL_FIRE_MODE_Y = 61;
-    private static final int HELD_PANEL_ICON_SIZE = 10;
     private static final int HELD_PANEL_TEXT_ALPHA = 204;
+    private static final int HELD_PANEL_RARITY_ALPHA = 41;
+    private static final int HELD_PANEL_BORDER_COLOR = 0xCCD9D9D9;
     private static final ResourceLocation FIRE_MODE_SEMI = ResourceLocation.fromNamespaceAndPath(
             "tacz", "textures/hud/fire_mode_semi.png");
     private static final ResourceLocation FIRE_MODE_AUTO = ResourceLocation.fromNamespaceAndPath(
@@ -936,23 +920,34 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
                 maxReserveAmmo));
     }
 
-    /** Returns whether the custom panel can replace the active TaCZ gun HUD. */
+    /** Returns whether the same layout used by the renderer is drawable now. */
     public static boolean shouldReplaceTaczGunHud() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (!ClientZombiesState.shouldRenderHud() || minecraft.player == null) {
+        if (!ClientZombiesState.shouldRenderHud() || minecraft.player == null
+                || isResultPhase(ClientZombiesState.phaseKey())) {
             return false;
         }
-        return heldWeaponPanelData(minecraft.player.getMainHandItem(), ClientMatchState.roomContextName()).isPresent();
+        return heldWeaponPanelData(minecraft.player.getMainHandItem(), ClientMatchState.roomContextName())
+                .flatMap(data -> heldWeaponPanelLayout(minecraft.font, data,
+                        minecraft.getWindow().getGuiScaledWidth(), minecraft.getWindow().getGuiScaledHeight()))
+                .isPresent();
+    }
+
+    private static Optional<ZombiesWeaponPanelLayout.Placement> heldWeaponPanelLayout(
+            Font font, HeldWeaponPanelData data, int screenWidth, int screenHeight) {
+        int digitAdvance = 1;
+        for (char digit = '0'; digit <= '9'; digit++) {
+            digitAdvance = Math.max(digitAdvance, font.width(String.valueOf(digit)));
+        }
+        return ZombiesWeaponPanelLayout.create(screenWidth, screenHeight,
+                com.cdp.codpattern.client.gui.GuiTextHelper.referenceScale(), font.lineHeight, digitAdvance,
+                data.currentAmmoText().length(), data.reserveAmmoText().length());
     }
 
     private static void renderHeldWeaponPanel(
-            GuiGraphics graphics,
-            Font font,
-            int screenWidth,
-            int screenHeight
+            GuiGraphics graphics, Font font, int screenWidth, int screenHeight
     ) {
-        Minecraft minecraft = Minecraft.getInstance();
-        LocalPlayer player = minecraft.player;
+        LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) {
             return;
         }
@@ -962,110 +957,122 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             return;
         }
         HeldWeaponPanelData data = dataOptional.get();
-        if (screenWidth < HELD_PANEL_MIN_WIDTH + HELD_PANEL_RIGHT_MARGIN * 2) {
+        Optional<ZombiesWeaponPanelLayout.Placement> placement =
+                heldWeaponPanelLayout(font, data, screenWidth, screenHeight);
+        if (placement.isEmpty()) {
             return;
         }
+        ZombiesWeaponPanelLayout.Placement layout = placement.get();
+        float[] previousColor = RenderSystem.getShaderColor().clone();
+        boolean previousBlend = GL11.glIsEnabled(GL11.GL_BLEND);
+        graphics.flush();
+        graphics.pose().pushPose();
+        try {
+            graphics.pose().translate(layout.left(), layout.top(), 0);
+            graphics.pose().scale(layout.scale(), layout.scale(), 1);
+            RenderSystem.setShaderColor(1, 1, 1, 1);
 
-        float scale = Math.min(
-                com.cdp.codpattern.client.gui.GuiTextHelper.referenceScale(),
-                Math.max(0.0F, (screenWidth - HELD_PANEL_RIGHT_MARGIN * 2.0F) / HELD_PANEL_BASE_WIDTH));
-        if (scale <= 0.0F) {
-            return;
+            if (data.hudTexture() != null) {
+                drawPanelTexture(graphics, data.hudTexture(),
+                        ZombiesWeaponPanelLayout.IMAGE_X, ZombiesWeaponPanelLayout.IMAGE_Y,
+                        ZombiesWeaponPanelLayout.IMAGE_WIDTH, ZombiesWeaponPanelLayout.IMAGE_HEIGHT, 384, 128);
+            } else {
+                float iconSize = ZombiesWeaponPanelLayout.IMAGE_HEIGHT;
+                graphics.pose().pushPose();
+                try {
+                    graphics.pose().translate(
+                            (ZombiesWeaponPanelLayout.IMAGE_WIDTH - iconSize) / 2,
+                            ZombiesWeaponPanelLayout.IMAGE_Y, 0);
+                    graphics.pose().scale(iconSize / 16, iconSize / 16, 1);
+                    graphics.renderItem(data.stack(), 0, 0);
+                } finally {
+                    graphics.pose().popPose();
+                }
+            }
+
+            // Match the SVG's faint rarity tint OVER the gun, before text and icons.
+            int rarityColor = data.rarity().map(ZombiesRarityDisplay.Entry::color).orElse(0xFF6B7280);
+            drawHorizontalRarityGradient(graphics, rarityColor);
+
+            int currentColor = data.lowAmmo() ? TEXT_DANGER : TEXT_PRIMARY;
+            drawScaledPanelString(graphics, font, data.currentAmmoText(),
+                    ZombiesWeaponPanelLayout.AMMO_RIGHT - font.width(data.currentAmmoText()) * layout.currentScale(),
+                    ZombiesWeaponPanelLayout.CURRENT_Y, layout.currentScale(),
+                    withAlpha(currentColor, HELD_PANEL_TEXT_ALPHA));
+            drawScaledPanelString(graphics, font, data.reserveAmmoText(),
+                    ZombiesWeaponPanelLayout.AMMO_RIGHT - font.width(data.reserveAmmoText()) * layout.reserveScale(),
+                    layout.reserveY(), layout.reserveScale(), withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA));
+
+            if (!data.upgradeRoman().isBlank()) {
+                float levelScale = layout.levelScale(font.width(data.upgradeRoman()));
+                drawScaledPanelString(graphics, font, data.upgradeRoman(),
+                        ZombiesWeaponPanelLayout.LEVEL_X,
+                        ZombiesWeaponPanelLayout.LEVEL_BOTTOM - layout.glyphHeight() * levelScale,
+                        levelScale, TEXT_PRIMARY);
+            }
+            // Flush text before immediate texture drawing; the icon never follows the ammo string.
+            graphics.flush();
+            drawPanelTexture(graphics, fireModeTexture(data.fireMode()),
+                    ZombiesWeaponPanelLayout.ICON_X, ZombiesWeaponPanelLayout.ICON_Y,
+                    ZombiesWeaponPanelLayout.ICON_SIZE, ZombiesWeaponPanelLayout.ICON_SIZE, 128, 128);
+            graphics.fill(0, 0, Math.round(ZombiesWeaponPanelLayout.BORDER_WIDTH),
+                    Math.round(ZombiesWeaponPanelLayout.HEIGHT), HELD_PANEL_BORDER_COLOR);
+            graphics.flush();
+        } finally {
+            graphics.pose().popPose();
+            RenderSystem.setShaderColor(previousColor[0], previousColor[1], previousColor[2], previousColor[3]);
+            if (previousBlend) {
+                RenderSystem.enableBlend();
+            } else {
+                RenderSystem.disableBlend();
+            }
         }
-        int panelWidth = Math.round(HELD_PANEL_BASE_WIDTH * scale);
-        int panelHeight = Math.round(HELD_PANEL_BASE_HEIGHT * scale);
-        if (screenHeight < panelHeight + HELD_PANEL_BOTTOM_MARGIN * 2) {
-            return;
-        }
-        int right = screenWidth - HELD_PANEL_RIGHT_MARGIN;
-        int bottom = screenHeight - HELD_PANEL_BOTTOM_MARGIN;
-        int left = right - panelWidth;
-        int top = bottom - panelHeight;
+    }
 
-        int rarityColor = data.rarity().map(ZombiesRarityDisplay.Entry::color).orElse(0xFF6B7280);
-        int borderWidth = Math.max(1, Math.round(HELD_PANEL_BORDER_WIDTH * scale));
-        graphics.fill(left, top, left + borderWidth, bottom, withAlpha(rarityColor, HELD_PANEL_TEXT_ALPHA));
-        graphics.fillGradient(
-                left + borderWidth,
-                top,
-                left + panelWidth,
-                bottom,
-                withAlpha(rarityColor, HELD_PANEL_TEXT_ALPHA),
-                withAlpha(rarityColor, 0));
+    private static void drawHorizontalRarityGradient(GuiGraphics graphics, int color) {
+        graphics.flush();
+        VertexConsumer vertices = graphics.bufferSource().getBuffer(RenderType.gui());
+        var pose = graphics.pose().last().pose();
+        int red = color >> 16 & 255;
+        int green = color >> 8 & 255;
+        int blue = color & 255;
+        // Top-left and bottom-left share alpha; only X changes the opacity.
+        vertices.vertex(pose, 0, 0, 0).color(red, green, blue, HELD_PANEL_RARITY_ALPHA).endVertex();
+        vertices.vertex(pose, 0, ZombiesWeaponPanelLayout.HEIGHT, 0)
+                .color(red, green, blue, HELD_PANEL_RARITY_ALPHA).endVertex();
+        vertices.vertex(pose, ZombiesWeaponPanelLayout.WIDTH, ZombiesWeaponPanelLayout.HEIGHT, 0)
+                .color(red, green, blue, 0).endVertex();
+        vertices.vertex(pose, ZombiesWeaponPanelLayout.WIDTH, 0, 0).color(red, green, blue, 0).endVertex();
+        graphics.flush();
+    }
 
-        int imageX = left + Math.round(HELD_PANEL_IMAGE_X * scale);
-        int imageY = top + Math.round(HELD_PANEL_IMAGE_Y * scale);
-        int imageWidth = Math.round(HELD_PANEL_IMAGE_WIDTH * scale);
-        int imageHeight = Math.round(HELD_PANEL_IMAGE_HEIGHT * scale);
-        if (data.hudTexture() != null) {
+    private static void drawPanelTexture(GuiGraphics graphics, ResourceLocation texture,
+                                         float x, float y, float width, float height, int sourceWidth, int sourceHeight) {
+        graphics.pose().pushPose();
+        try {
+            graphics.pose().translate(x, y, 0);
+            graphics.pose().scale(width / sourceWidth, height / sourceHeight, 1);
             RenderSystem.enableBlend();
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, HELD_PANEL_TEXT_ALPHA / 255.0F);
-            graphics.blit(data.hudTexture(), imageX, imageY, imageWidth, imageHeight,
-                    0, 0, 384, 128, 384, 128);
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-            RenderSystem.disableBlend();
-        } else {
-            int iconSize = Math.min(imageWidth, imageHeight);
-            graphics.pose().pushPose();
-            graphics.pose().translate(imageX + (imageWidth - iconSize) / 2.0F,
-                    imageY + (imageHeight - iconSize) / 2.0F, 0.0F);
-            graphics.pose().scale(iconSize / 16.0F, iconSize / 16.0F, 1.0F);
-            graphics.renderItem(data.stack(), 0, 0);
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.setShaderColor(1, 1, 1, 1);
+            graphics.blit(texture, 0, 0, 0, 0, sourceWidth, sourceHeight, sourceWidth, sourceHeight);
+        } finally {
             graphics.pose().popPose();
         }
-
-        if (!data.upgradeRoman().isBlank()) {
-            drawScaledPanelString(graphics, font, data.upgradeRoman(),
-                    left + Math.round(HELD_PANEL_IMAGE_X * scale),
-                    bottom - Math.round(HELD_PANEL_IMAGE_Y * scale) - Math.round(font.lineHeight * scale),
-                    scale, withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA), 1.0F);
-        }
-
-        int ammoLeft = left + Math.round(HELD_PANEL_LEFT_REGION_WIDTH * scale);
-        int ammoRight = right - Math.round(HELD_PANEL_AMMO_RIGHT_PADDING * scale);
-        String current = data.currentAmmoText();
-        float currentScale = HELD_PANEL_CURRENT_SCALE * scale;
-        int currentWidth = Math.round(font.width(current) * currentScale);
-        int currentX = ammoRight - currentWidth;
-        int currentY = top + Math.round(HELD_PANEL_CURRENT_Y * scale);
-        int currentColor = data.lowAmmo() ? withAlpha(TEXT_DANGER, HELD_PANEL_TEXT_ALPHA) : withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA);
-        drawScaledPanelString(graphics, font, current, Math.max(ammoLeft, currentX), currentY,
-                currentScale, currentColor, 1.0F);
-
-        ResourceLocation fireModeTexture = fireModeTexture(data.fireMode());
-        int iconX = Math.max(ammoLeft, currentX - Math.round(HELD_PANEL_ICON_SIZE * scale) - Math.round(5 * scale));
-        int iconY = top + Math.round(HELD_PANEL_FIRE_MODE_Y * scale);
-        RenderSystem.enableBlend();
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, HELD_PANEL_TEXT_ALPHA / 255.0F);
-        graphics.blit(fireModeTexture, iconX, iconY, Math.round(HELD_PANEL_ICON_SIZE * scale),
-                Math.round(HELD_PANEL_ICON_SIZE * scale), 0, 0, 128, 128, 128, 128);
-        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
-        RenderSystem.disableBlend();
-
-        String reserve = data.reserveAmmoText();
-        float reserveScale = HELD_PANEL_RESERVE_SCALE * scale;
-        int reserveWidth = Math.round(font.width(reserve) * reserveScale);
-        int reserveX = ammoRight - reserveWidth;
-        int reserveY = bottom - Math.round(HELD_PANEL_IMAGE_Y * scale) - Math.round(font.lineHeight * reserveScale);
-        drawScaledPanelString(graphics, font, reserve, Math.max(ammoLeft, reserveX), reserveY,
-                reserveScale, withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA), 1.0F);
     }
 
     private static void drawScaledPanelString(
-            GuiGraphics graphics,
-            Font font,
-            String text,
-            int x,
-            int y,
-            float scale,
-            int color,
-            float shadow
+            GuiGraphics graphics, Font font, String text, float x, float y, float scale, int color
     ) {
         graphics.pose().pushPose();
-        graphics.pose().translate(x, y, 0.0F);
-        graphics.pose().scale(scale, scale, 1.0F);
-        graphics.drawString(font, text, 0, 0, color, shadow > 0.0F);
-        graphics.pose().popPose();
+        try {
+            // The default bitmap glyph starts one unit below drawString's Y.
+            graphics.pose().translate(x, y - scale, 0);
+            graphics.pose().scale(scale, scale, 1);
+            graphics.drawString(font, text, 0, 0, color, false);
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 
     private static ResourceLocation fireModeTexture(FireMode fireMode) {

@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/** Per-room relative-tick scheduler for optional intermission chat sequences. */
+/** Per-room relative-tick scheduler for chat sequences spanning intermission and the active wave. */
 public final class ZombiesWaveTextScheduler {
     private Map<Integer, ZombiesWaveTextDefinition> definitionsByWave = Map.of();
     private List<ZombiesWaveTextMessage> activeMessages = List.of();
@@ -47,7 +47,7 @@ public final class ZombiesWaveTextScheduler {
         drainDue(Objects.requireNonNull(sender, "sender"));
     }
 
-    /** Advances exactly one relative intermission tick and sends all lines due on it. */
+    /** Advances exactly one relative wave-cycle tick and sends all lines due on it. */
     public void tick(Consumer<String> sender) {
         if (!active) {
             return;

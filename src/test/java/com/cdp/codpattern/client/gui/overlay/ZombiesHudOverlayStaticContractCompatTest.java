@@ -78,34 +78,18 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "teammate armor should render as a right-aligned numeric value");
         requireContains(overlay, "renderHeldWeaponPanel",
                 "zombies overlay must render one combined held weapon panel");
-        requireContains(overlay, "HELD_PANEL_BASE_WIDTH = 320",
-                "held weapon panel must use the reference long-card width");
-        requireContains(overlay, "HELD_PANEL_BASE_HEIGHT = 90",
-                "held weapon panel must use the reference long-card height");
-        requireContains(overlay, "HELD_PANEL_LEFT_REGION_WIDTH = 224",
-                "held weapon panel must reserve the reference left weapon region");
-        requireContains(overlay, "HELD_PANEL_CURRENT_SCALE = 2.25F",
-                "magazine ammo must use the larger acceptance-card typography");
-        requireContains(overlay, "HELD_PANEL_RESERVE_SCALE = 0.86F",
-                "reserve ammo must use the smaller acceptance-card typography");
-        requireContains(overlay, "float currentScale = HELD_PANEL_CURRENT_SCALE * scale",
-                "magazine ammo size must scale with the reference card");
-        requireContains(overlay, "float reserveScale = HELD_PANEL_RESERVE_SCALE * scale",
-                "reserve ammo size must scale independently from the magazine");
-        requireContains(overlay, "if (screenWidth < HELD_PANEL_MIN_WIDTH + HELD_PANEL_RIGHT_MARGIN * 2)",
-                "held weapon panel must skip layouts that cannot fit the card");
-        requireContains(overlay, "(screenWidth - HELD_PANEL_RIGHT_MARGIN * 2.0F) / HELD_PANEL_BASE_WIDTH",
-                "held weapon panel scale must clamp to the available width");
-        requireContains(overlay, "Math.max(ammoLeft, currentX)",
-                "magazine ammo must stay inside the right-hand card region");
-        requireContains(overlay, "Math.max(ammoLeft, reserveX)",
-                "reserve ammo must stay inside the right-hand card region");
+        requireContains(overlay, ".flatMap(data -> heldWeaponPanelLayout(minecraft.font, data,",
+                "TaCZ suppression must use the same drawable layout as rendering");
+        requireContains(overlay, "heldWeaponPanelLayout(font, data, screenWidth, screenHeight)",
+                "card rendering must use the shared viewport and typography layout");
+        requireContains(overlay, "ZombiesWeaponPanelLayout.ICON_X, ZombiesWeaponPanelLayout.ICON_Y",
+                "fire-mode icon must have a stable anchor independent of ammunition text");
         requireContains(overlay, "ZombiesWeaponItemStackService.TAG_RARITY_ID",
                 "held weapon panel must read the explicit zombies rarity tag");
         requireContains(overlay, "ZombiesRarityDisplay.fromRarityId(rarityId)",
                 "held weapon panel must resolve supported rarity colors");
-        requireContains(overlay, "graphics.fillGradient(",
-                "held weapon panel must use a left-to-right translucent rarity gradient");
+        requireContains(overlay, "drawHorizontalRarityGradient(graphics, rarityColor)",
+                "held weapon panel must use its horizontal gradient renderer");
         requireContains(overlay, "upgradeRoman(upgradeLevel)",
                 "held weapon panel must render the upgrade level as Roman numerals");
         requireContains(overlay, "static String upgradeRoman(int value)",

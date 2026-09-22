@@ -1635,14 +1635,6 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
         }
 
         @Override
-        public ZombiesServiceResult<Void> onExit(com.cdp.codpattern.app.zombies.runtime.ZombiesPhaseTransitionContext context) {
-            if ("INTERMISSION".equals(context.previousPhase())) {
-                waveTextScheduler.cancel();
-            }
-            return ZombiesServiceResult.ok();
-        }
-
-        @Override
         public ZombiesServiceResult<Void> onTick(com.cdp.codpattern.app.zombies.runtime.ZombiesPhaseTransitionContext context) {
             for (ServerPlayer player : survivorPlayers()) {
                 playerStateService.updateLastAliveTargetPos(player.getUUID(), player.blockPosition());
@@ -1651,7 +1643,8 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
             if (!timedOutPlayers.isEmpty()) {
                 markRosterDirty();
             }
-            if (runtimeState.phase() == ZombiesGamePhase.INTERMISSION) {
+            if (runtimeState.phase() == ZombiesGamePhase.INTERMISSION
+                    || runtimeState.phase() == ZombiesGamePhase.WAVE_ACTIVE) {
                 waveTextScheduler.tick(ZombiesMap.this::sendWaveText);
             }
             if (runtimeState.phase() == ZombiesGamePhase.WAVE_ACTIVE && waveDirector != null) {

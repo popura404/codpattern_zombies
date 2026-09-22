@@ -30,6 +30,7 @@ public final class ZombiesWaveTextCompatTest {
         formatterBuildsStructuredLegacyStyles();
         schedulerUsesRelativeTicksAndDrainsSameTickMessages();
         schedulersAreRoomIsolatedAndCancellationDropsPendingMessages();
+        startingNextWaveCutsOffPreviousWaveAtBoundary();
         mapLifecycleOwnsReloadBroadcastAndCancellationIntegration();
     }
 
@@ -240,6 +241,29 @@ public final class ZombiesWaveTextCompatTest {
         require(sentB.equals(List.of("one", "reloaded")), "next-game definitions should take effect after reload");
     }
 
+    private static void startingNextWaveCutsOffPreviousWaveAtBoundary() {
+        ZombiesWaveTextScheduler scheduler = new ZombiesWaveTextScheduler(List.of(
+                new ZombiesWaveTextDefinition(1, List.of(
+                        new ZombiesWaveTextMessage(2, "last-active-tick"),
+                        new ZombiesWaveTextMessage(1, "must-be-cut"))),
+                new ZombiesWaveTextDefinition(2, List.of(
+                        new ZombiesWaveTextMessage(0, "next-intermission")))));
+        List<String> sent = new ArrayList<>();
+
+        scheduler.startWave(1, sent::add);
+        scheduler.tick(sent::add);
+        scheduler.tick(sent::add);
+        require(sent.equals(List.of("last-active-tick")),
+                "a previous-wave line due on the final active tick should still send");
+
+        scheduler.startWave(2, sent::add);
+        require(sent.equals(List.of("last-active-tick", "next-intermission")),
+                "entering the next intermission should replace the previous sequence and send its zero-tick line");
+        scheduler.tick(sent::add);
+        require(sent.equals(List.of("last-active-tick", "next-intermission")),
+                "a previous-wave line pending at the next intermission must be discarded");
+    }
+
     private static void mapLifecycleOwnsReloadBroadcastAndCancellationIntegration() throws IOException {
         Path mapPath = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
         Path pathsPath = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/config/zombies/ZombiesConfigPaths.java");
@@ -254,10 +278,12 @@ public final class ZombiesWaveTextCompatTest {
                 "every game start should reload wave text after validating a real server/member snapshot");
         require(map.contains("waveTextScheduler.startWave(runtimeState.waveState().targetWave()"),
                 "INTERMISSION entry should start text for targetWave");
-        require(map.contains("if (runtimeState.phase() == ZombiesGamePhase.INTERMISSION) {\n                waveTextScheduler.tick"),
-                "only INTERMISSION ticks should advance pending text");
-        require(map.contains("if (\"INTERMISSION\".equals(context.previousPhase()))"),
-                "leaving INTERMISSION should cancel pending text");
+        require(map.contains("if (runtimeState.phase() == ZombiesGamePhase.INTERMISSION\n"
+                        + "                    || runtimeState.phase() == ZombiesGamePhase.WAVE_ACTIVE) {\n"
+                        + "                waveTextScheduler.tick"),
+                "INTERMISSION and WAVE_ACTIVE ticks should advance pending text");
+        require(!map.contains("if (\"INTERMISSION\".equals(context.previousPhase()))"),
+                "leaving the current INTERMISSION must not cancel pending text");
         require(map.contains("for (ServerPlayer player : survivorPlayers()) {\n            player.sendSystemMessage(message);"),
                 "delivery should resolve current online room survivors at send time and use system chat");
         require(map.contains("ZombiesLegacyTextFormatter.parse(text)"),

@@ -215,6 +215,15 @@ tasks.register('runZombiesDeployCompatSuite', JavaExec) {
     dependsOn mainProject.tasks.named('testClasses')
 }
 
+tasks.register('runZombiesWeaponHudCompat', JavaExec) {
+    group = 'verification'
+    description = 'Check weapon HUD geometry, formatting, and overlay integration.'
+    workingDir = mainProject.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.client.gui.overlay.zombies.ZombiesWeaponHudCompatSuite'
+    dependsOn tasks.named('testClasses')
+}
+
 tasks.register('runZombiesAddonPublicApiBoundaryCompat', JavaExec) {
     group = 'verification'
     description = 'Run the physical addon-to-main public API source-boundary audit.'

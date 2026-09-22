@@ -1,6 +1,7 @@
 package com.cdp.codpattern.client.zombies;
 
 import com.cdp.codpattern.client.gui.screen.zombies.deploy.ZombiesDeployToolScreen;
+import com.cdp.codpattern.client.gui.screen.zombies.deploy.ZombiesDeployUnsavedChangesScreen;
 import com.phasetranscrystal.fpsmatch.common.packet.zombies.OpenZombiesDeployToolScreenS2CPacket;
 import net.minecraft.client.Minecraft;
 
@@ -16,6 +17,8 @@ public final class ZombiesDeployClientActionHandler {
         Minecraft minecraft = Minecraft.getInstance();
         ZombiesDeployClientState.update(packet.snapshot());
         if (minecraft.screen instanceof ZombiesDeployToolScreen screen) {
+            screen.applyData(packet);
+        } else if (minecraft.screen instanceof ZombiesDeployUnsavedChangesScreen screen) {
             screen.applyData(packet);
         } else if (packet.openScreen()) {
             minecraft.setScreen(new ZombiesDeployToolScreen(packet));

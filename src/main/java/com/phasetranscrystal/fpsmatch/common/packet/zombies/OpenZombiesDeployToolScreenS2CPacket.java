@@ -16,14 +16,28 @@ public class OpenZombiesDeployToolScreenS2CPacket {
 
     private final ZombiesDeploySnapshot snapshot;
     private final boolean openScreen;
+    private final ZombiesDeployToolActionC2SPacket.Action responseAction;
+    private final long requestId;
 
     public OpenZombiesDeployToolScreenS2CPacket(ZombiesDeploySnapshot snapshot) {
         this(snapshot, true);
     }
 
     public OpenZombiesDeployToolScreenS2CPacket(ZombiesDeploySnapshot snapshot, boolean openScreen) {
+        this(snapshot, openScreen, ZombiesDeployToolActionC2SPacket.Action.REFRESH);
+    }
+
+    public OpenZombiesDeployToolScreenS2CPacket(
+            ZombiesDeploySnapshot snapshot, boolean openScreen, ZombiesDeployToolActionC2SPacket.Action responseAction) {
+        this(snapshot, openScreen, responseAction, -1L);
+    }
+
+    public OpenZombiesDeployToolScreenS2CPacket(
+            ZombiesDeploySnapshot snapshot, boolean openScreen, ZombiesDeployToolActionC2SPacket.Action responseAction, long requestId) {
         this.snapshot = snapshot;
         this.openScreen = openScreen;
+        this.responseAction = responseAction == null ? ZombiesDeployToolActionC2SPacket.Action.REFRESH : responseAction;
+        this.requestId = requestId;
     }
 
     public ZombiesDeploySnapshot snapshot() {
@@ -34,8 +48,18 @@ public class OpenZombiesDeployToolScreenS2CPacket {
         return openScreen;
     }
 
+    public ZombiesDeployToolActionC2SPacket.Action responseAction() {
+        return responseAction;
+    }
+
+    public long requestId() {
+        return requestId;
+    }
+
     public void encode(FriendlyByteBuf buf) {
         buf.writeBoolean(openScreen);
+        buf.writeEnum(responseAction);
+        buf.writeLong(requestId);
         writeStringList(buf, snapshot.availableMaps());
         buf.writeUtf(snapshot.workspaceStage());
         buf.writeUtf(snapshot.currentWorkflowStep());
@@ -122,6 +146,8 @@ public class OpenZombiesDeployToolScreenS2CPacket {
 
     public static OpenZombiesDeployToolScreenS2CPacket decode(FriendlyByteBuf buf) {
         boolean openScreen = buf.readBoolean();
+        ZombiesDeployToolActionC2SPacket.Action responseAction = buf.readEnum(ZombiesDeployToolActionC2SPacket.Action.class);
+        long requestId = buf.readLong();
         List<String> maps = readStringList(buf);
         String workspaceStage = buf.readUtf();
         String currentWorkflowStep = buf.readUtf();
@@ -247,7 +273,7 @@ public class OpenZombiesDeployToolScreenS2CPacket {
                 buf.readUtf(),
                 buf.readUtf(),
                 buf.readUtf());
-        return new OpenZombiesDeployToolScreenS2CPacket(snapshot, openScreen);
+        return new OpenZombiesDeployToolScreenS2CPacket(snapshot, openScreen, responseAction, requestId);
     }
 
     public void handle(Supplier<NetworkEvent.Context> ctx) {

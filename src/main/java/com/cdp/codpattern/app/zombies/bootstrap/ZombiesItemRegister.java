@@ -1,8 +1,8 @@
 package com.cdp.codpattern.app.zombies.bootstrap;
 
 import com.phasetranscrystal.fpsmatch.FPSMatch;
+import com.phasetranscrystal.fpsmatch.common.item.FPSMCreativeModeTabRegister;
 import com.phasetranscrystal.fpsmatch.common.item.zombies.ZombiesDeployTool;
-import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.registries.DeferredRegister;
@@ -22,7 +22,7 @@ public final class ZombiesItemRegister {
     }
 
     public static void onBuildCreativeModeTabContents(BuildCreativeModeTabContentsEvent event) {
-        if (CreativeModeTabs.TOOLS_AND_UTILITIES.equals(event.getTabKey())) {
+        if (FPSMCreativeModeTabRegister.CODPATTERN_TOOLS_AND_ITEMS_KEY.equals(event.getTabKey())) {
             event.accept(ZOMBIES_DEPLOY_TOOL);
         }
     }

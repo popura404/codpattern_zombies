@@ -104,7 +104,14 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     private static final int HELD_PANEL_IMAGE_WIDTH = 196;
     private static final int HELD_PANEL_IMAGE_HEIGHT = 66;
     private static final int HELD_PANEL_AMMO_RIGHT_PADDING = 10;
-    private static final float HELD_PANEL_CURRENT_SCALE = 2.0F;
+    // The magazine count is intentionally much larger than the reserve count,
+    // matching the long-card hierarchy in the acceptance preview.  Keep these
+    // as independent reference-space values so a four-digit reserve cannot
+    // accidentally inherit the magazine typography.
+    private static final float HELD_PANEL_CURRENT_SCALE = 2.25F;
+    private static final float HELD_PANEL_RESERVE_SCALE = 0.86F;
+    private static final int HELD_PANEL_CURRENT_Y = 10;
+    private static final int HELD_PANEL_FIRE_MODE_Y = 61;
     private static final int HELD_PANEL_ICON_SIZE = 10;
     private static final int HELD_PANEL_TEXT_ALPHA = 204;
     private static final ResourceLocation FIRE_MODE_SEMI = ResourceLocation.fromNamespaceAndPath(
@@ -1020,14 +1027,14 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         float currentScale = HELD_PANEL_CURRENT_SCALE * scale;
         int currentWidth = Math.round(font.width(current) * currentScale);
         int currentX = ammoRight - currentWidth;
-        int currentY = top + Math.round(10 * scale);
+        int currentY = top + Math.round(HELD_PANEL_CURRENT_Y * scale);
         int currentColor = data.lowAmmo() ? withAlpha(TEXT_DANGER, HELD_PANEL_TEXT_ALPHA) : withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA);
         drawScaledPanelString(graphics, font, current, Math.max(ammoLeft, currentX), currentY,
                 currentScale, currentColor, 1.0F);
 
         ResourceLocation fireModeTexture = fireModeTexture(data.fireMode());
         int iconX = Math.max(ammoLeft, currentX - Math.round(HELD_PANEL_ICON_SIZE * scale) - Math.round(5 * scale));
-        int iconY = top + Math.round(61 * scale);
+        int iconY = top + Math.round(HELD_PANEL_FIRE_MODE_Y * scale);
         RenderSystem.enableBlend();
         RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, HELD_PANEL_TEXT_ALPHA / 255.0F);
         graphics.blit(fireModeTexture, iconX, iconY, Math.round(HELD_PANEL_ICON_SIZE * scale),
@@ -1036,7 +1043,7 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         RenderSystem.disableBlend();
 
         String reserve = data.reserveAmmoText();
-        float reserveScale = 0.92F * scale;
+        float reserveScale = HELD_PANEL_RESERVE_SCALE * scale;
         int reserveWidth = Math.round(font.width(reserve) * reserveScale);
         int reserveX = ammoRight - reserveWidth;
         int reserveY = bottom - Math.round(HELD_PANEL_IMAGE_Y * scale) - Math.round(font.lineHeight * reserveScale);

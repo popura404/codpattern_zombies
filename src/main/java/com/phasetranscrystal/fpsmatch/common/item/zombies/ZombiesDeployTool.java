@@ -6,6 +6,7 @@ import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployPreviewService;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployServiceResult;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeploySnapshot;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployToolService;
+import com.cdp.codpattern.app.zombies.model.ZombiesModeItemText;
 import com.phasetranscrystal.fpsmatch.FPSMatch;
 import com.phasetranscrystal.fpsmatch.common.item.MapCreatorTool;
 import com.phasetranscrystal.fpsmatch.common.item.tool.CreatorToolItem;
@@ -52,6 +53,11 @@ public class ZombiesDeployTool extends CreatorToolItem implements WorldToolItem 
 
     public ZombiesDeployTool(Properties properties) {
         super(properties);
+    }
+
+    @Override
+    public Component getName(ItemStack stack) {
+        return ZombiesModeItemText.itemName("item.codpattern.zombies_deploy_tool");
     }
 
     @Override
@@ -346,6 +352,7 @@ public class ZombiesDeployTool extends CreatorToolItem implements WorldToolItem 
     @Override
     public void appendHoverText(ItemStack stack, Level level, List<Component> tooltip, TooltipFlag isAdvanced) {
         super.appendHoverText(stack, level, tooltip, isAdvanced);
+        tooltip.add(ZombiesModeItemText.applicableModeTooltip());
         tooltip.add(Component.translatable("tooltip.fpsm.separator").withStyle(ChatFormatting.GOLD));
         tooltip.add(Component.translatable("tooltip.codpattern.zombies_deploy.selected_map")
                 .append(": ")

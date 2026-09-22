@@ -163,7 +163,8 @@ public final class ZombiesDeployPreviewService {
             }
         }
 
-        String signature = buildSignature(player, map, request, draftPreview);
+        ZombiesMapObjects objects = ZombiesDeployToolService.instance().draftObjects(player, request.selectedMap(), map);
+        String signature = buildSignature(player, map, objects, request, draftPreview);
         CompoundTag data = player.getPersistentData();
         String previousSignature = data.getString(HELD_PREVIEW_STATE_TAG);
         if (signature.equals(previousSignature) && player.tickCount % HELD_PREVIEW_REFRESH_INTERVAL != 0) {
@@ -179,12 +180,12 @@ public final class ZombiesDeployPreviewService {
                 PreviewColorUtil.getMapPreviewColor(BuiltInGameModes.ZOMBIES),
                 map.getMapArea()));
 
-        sendCurrentObjectList(player, request, map.objects());
+        sendCurrentObjectList(player, request, objects);
         if (draftPreview != null) {
             sendDraft(player, request, draftPreview);
         }
-        sendSingletonStatusHint(player, map, request.selectedObjectType(), map.objects());
-        sendNearestObjectHint(player, request, map.objects());
+        sendSingletonStatusHint(player, map, request.selectedObjectType(), objects);
+        sendNearestObjectHint(player, request, objects);
 
         data.putString(HELD_PREVIEW_STATE_TAG, signature);
         return ZombiesDeployServiceResult.success(
@@ -581,6 +582,7 @@ public final class ZombiesDeployPreviewService {
     private String buildSignature(
             ServerPlayer player,
             ZombiesMap map,
+            ZombiesMapObjects objects,
             PreviewRequest request,
             DraftPreview draftPreview
     ) {
@@ -589,7 +591,7 @@ public final class ZombiesDeployPreviewService {
                 .append('|').append(request.selectedMap())
                 .append('|').append(request.selectedObjectType())
                 .append('|').append(request.selectedIndex())
-                .append('|').append(Objects.hash(map.objects()))
+                .append('|').append(Objects.hash(objects))
                 .append('|').append(map.getMapArea().pos1().asLong())
                 .append('|').append(map.getMapArea().pos2().asLong())
                 .append('|').append(draftPreview == null ? "no_draft" : draftPreview.signature());

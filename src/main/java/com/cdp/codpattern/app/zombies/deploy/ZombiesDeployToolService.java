@@ -174,8 +174,22 @@ public final class ZombiesDeployToolService {
             return failure(player, stack, draft, "map.not_found", "message.codpattern.zombies.deploy.map_not_found", draft.selectedMap());
         }
         ZombiesMap map = resolvedMap.get();
+        // Saving must also include an editor value that has not blurred yet.
+        ZombiesMapObjects currentObjects = draftObjects(player, draft, map);
+        if (!ZombiesDeployDraft.STAGE_MAP_REGISTRATION.equals(draft.workspaceStage())
+                && draft.selectedIndex() >= 0
+                && !mergeDefaults(draft.objectType(), draft.fields()).equals(mergeDefaults(
+                        draft.objectType(),
+                        ZombiesDeployObjectEditor.fieldsForSnapshotSelection(currentObjects, draft.objectType(), draft.selectedIndex())))) {
+            ZombiesDeployServiceResult<ZombiesDeploySnapshot> staged = updateObject(player, stack, draft);
+            if (!staged.success()) {
+                return staged;
+            }
+            draft = normalizeDraft(player, stack, ZombiesDeployTool.getDraft(stack));
+        }
         DraftSession session = draftSessions.get(sessionKey(player, draft.selectedMap()));
         if (session == null || Objects.equals(session.currentObjects(), map.objects())) {
+            ZombiesDeployTool.saveDraft(stack, draft);
             return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.selections_saved", "draft.empty", "");
         }
         List<ZombiesDeploySnapshot.ValidationLine> errors = validationLines(
@@ -231,6 +245,10 @@ public final class ZombiesDeployToolService {
     ) {
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         draftSessions.remove(sessionKey(player, draft.selectedMap()));
+        ZombiesMapObjects objects = resolveMap(draft.selectedMap()).map(ZombiesMap::objects).orElse(ZombiesMapObjects.EMPTY);
+        draft = restoreDraftFields(player, draft, objects).withMapDraft("", null, null);
+        ZombiesDeployTool.setAreaPos1(stack, null);
+        ZombiesDeployTool.setAreaPos2(stack, null);
         ZombiesDeployTool.saveDraft(stack, draft);
         return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "draft.discarded", "");
     }
@@ -250,6 +268,10 @@ public final class ZombiesDeployToolService {
             return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "undo.revision_conflict", "");
         }
         session.undo();
+        draft = restoreDraftFields(player, draft, session.currentObjects());
+        ZombiesDeployTool.setAreaPos1(stack, null);
+        ZombiesDeployTool.setAreaPos2(stack, null);
+        ZombiesDeployTool.saveDraft(stack, draft);
         return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "undo.applied", "");
     }
 
@@ -911,17 +933,10 @@ public final class ZombiesDeployToolService {
             workflowStep = ZombiesDeployDraft.workflowStepForObjectType(objectType);
         }
         Optional<ZombiesMap> selectedZombiesMap = resolveMap(selectedMap);
-        ZombiesMapObjects selectedObjects = selectedZombiesMap.map(ZombiesMap::objects).orElse(ZombiesMapObjects.EMPTY);
-        int count = objectSummaries(selectedObjects, objectType).size();
-        int selectedIndex = count <= 0 || base.selectedIndex() < 0
-                ? -1
-                : Math.min(base.selectedIndex(), count - 1);
-        Map<String, String> fields = base.fields().isEmpty()
-                ? (selectedIndex >= 0
-                        ? ZombiesDeployObjectEditor.fieldsForSnapshotSelection(selectedObjects, objectType, selectedIndex)
-                        : defaultFields(player, objectType))
-                : mergeDefaults(objectType, base.fields());
-        return new ZombiesDeployDraft(
+        ZombiesMapObjects selectedObjects = selectedZombiesMap
+                .map(map -> draftObjects(player, selectedMap, map))
+                .orElse(ZombiesMapObjects.EMPTY);
+        ZombiesDeployDraft draft = new ZombiesDeployDraft(
                 base.workspaceStage(),
                 workflowStep,
                 selectedMap,
@@ -930,14 +945,32 @@ public final class ZombiesDeployToolService {
                 base.mapPos2() == null ? stored.mapPos2() : base.mapPos2(),
                 objectType,
                 capturePreset,
-                selectedIndex,
+                base.selectedIndex(),
                 ZombiesDeployFieldSchema.normalizeProfile(base.validationView()),
-                fields);
+                base.fields());
+        return normalizeObjectSelection(player, draft, selectedObjects);
+    }
+
+    private ZombiesDeployDraft normalizeObjectSelection(ServerPlayer player, ZombiesDeployDraft draft, ZombiesMapObjects objects) {
+        int index = normalizeTargetIndex(objects, draft.objectType(), draft.selectedIndex());
+        Map<String, String> fields = draft.fields().isEmpty()
+                ? (index >= 0
+                        ? ZombiesDeployObjectEditor.fieldsForSnapshotSelection(objects, draft.objectType(), index)
+                        : defaultFields(player, draft.objectType()))
+                : mergeDefaults(draft.objectType(), draft.fields());
+        return new ZombiesDeployDraft(
+                draft.workspaceStage(), draft.workflowStep(), draft.selectedMap(), draft.draftMapName(),
+                draft.mapPos1(), draft.mapPos2(), draft.objectType(), draft.capturePreset(), index,
+                draft.validationView(), fields);
     }
 
     private ZombiesDeployDraft selectionStateDraft(ServerPlayer player, ItemStack stack, ZombiesDeployDraft request) {
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         return draft.selectedIndex() < 0 ? draft.withFields(Map.of()) : draft;
+    }
+
+    private ZombiesDeployDraft restoreDraftFields(ServerPlayer player, ZombiesDeployDraft draft, ZombiesMapObjects objects) {
+        return normalizeObjectSelection(player, draft.withFields(Map.of()), objects);
     }
 
     private ZombiesDeploySnapshot buildSnapshot(
@@ -1140,10 +1173,15 @@ public final class ZombiesDeployToolService {
     }
 
     private ZombiesMapObjects draftObjects(ServerPlayer player, ZombiesDeployDraft draft, ZombiesMap map) {
-        if (player == null || draft == null || map == null) {
+        return draftObjects(player, draft == null ? "" : draft.selectedMap(), map);
+    }
+
+    /** Shared object view for the editor and the held-tool world preview. */
+    ZombiesMapObjects draftObjects(ServerPlayer player, String mapName, ZombiesMap map) {
+        if (player == null || map == null) {
             return map == null ? ZombiesMapObjects.EMPTY : map.objects();
         }
-        DraftSession session = draftSessions.get(sessionKey(player, draft.selectedMap()));
+        DraftSession session = draftSessions.get(sessionKey(player, mapName));
         if (session == null) {
             return map.objects();
         }
@@ -2653,6 +2691,9 @@ public final class ZombiesDeployToolService {
 
         private void stage(ZombiesMapObjects next) {
             touch();
+            if (Objects.equals(currentObjects, next)) {
+                return;
+            }
             previousObjects = currentObjects;
             currentObjects = next == null ? ZombiesMapObjects.EMPTY : next;
             revision++;

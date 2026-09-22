@@ -12,9 +12,12 @@ public final class ZombiesWeaponPanelFormattingCompatTest {
         require("IV".equals(ZombiesHudOverlay.upgradeRoman(4)), "level four should use subtractive notation");
         require("IX".equals(ZombiesHudOverlay.upgradeRoman(9)), "level nine should use subtractive notation");
         require("MMXXVI".equals(ZombiesHudOverlay.upgradeRoman(2026)), "large normal levels should remain Roman");
+        require("4000".equals(ZombiesHudOverlay.upgradeRoman(4000)), "very large levels should stay readable");
         require("000".equals(ZombiesHudOverlay.formatAmmo(0, 3)), "current ammo should be three digits");
         require("030".equals(ZombiesHudOverlay.formatAmmo(30, 3)), "current ammo should be zero padded");
+        require("1234".equals(ZombiesHudOverlay.formatAmmo(1234, 3)), "large magazine counts should not truncate");
         require("0120".equals(ZombiesHudOverlay.formatAmmo(120, 4)), "reserve ammo should be four digits");
+        require("5".equals(ZombiesHudOverlay.formatAmmo(5, 1)), "single-digit formats should remain single digit");
         require("0000".equals(ZombiesHudOverlay.formatAmmo(-1, 4)), "negative ammo should clamp to zero");
         System.out.println("PASS zombies weapon panel formatting compat");
     }

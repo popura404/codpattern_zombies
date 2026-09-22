@@ -4,6 +4,7 @@ import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployDraft;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployFieldSchema;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeploySnapshot;
 import com.cdp.codpattern.client.zombies.ZombiesDeployClientState;
+import com.cdp.codpattern.client.zombies.ZombiesDeployCloseRequest;
 import com.phasetranscrystal.fpsmatch.FPSMatch;
 import com.phasetranscrystal.fpsmatch.common.packet.zombies.OpenZombiesDeployToolScreenS2CPacket;
 import com.phasetranscrystal.fpsmatch.common.packet.zombies.ZombiesDeployToolActionC2SPacket;
@@ -120,6 +121,7 @@ public class ZombiesDeployToolScreen extends Screen {
     private boolean fieldValueBoxWasFocused;
     private boolean expertMode;
     private boolean closingForDeployment;
+    private final ZombiesDeployCloseRequest closeRequest = new ZombiesDeployCloseRequest();
 
     public ZombiesDeployToolScreen(OpenZombiesDeployToolScreenS2CPacket packet) {
         super(Component.translatable("gui.codpattern.zombies.deploy.title"));
@@ -232,6 +234,21 @@ public class ZombiesDeployToolScreen extends Screen {
         applySnapshot(packet.snapshot());
         restoreFieldSelection(selectedField);
         updateWidgets();
+        switch (closeRequest.accept(packet.responseAction(), packet.requestId(), snapshot.statusCode(), snapshot.dirty())) {
+            case CLOSE -> Minecraft.getInstance().setScreen(null);
+            case KEEP_EDITING -> Minecraft.getInstance().setScreen(this);
+            case WAIT -> { }
+        }
+    }
+
+    public void applyCloseResponse(OpenZombiesDeployToolScreenS2CPacket packet) {
+        if (closeRequest.matches(packet.responseAction(), packet.requestId())) {
+            applyData(packet);
+        }
+    }
+
+    public void cancelCloseRequest() {
+        closeRequest.cancel();
     }
 
     @Override
@@ -250,6 +267,7 @@ public class ZombiesDeployToolScreen extends Screen {
         if (this.mapNameBox != null) {
             this.mapNameBox.tick();
         }
+        updateDraftButtons();
     }
 
     @Override
@@ -307,12 +325,19 @@ public class ZombiesDeployToolScreen extends Screen {
         int top = panelTop();
         mouseX = toLogicalX(mouseX, left, scale);
         mouseY = toLogicalY(mouseY, top, scale);
-        boolean fieldFocusedBefore = this.fieldValueBox != null && this.fieldValueBox.isFocused();
+        // Commit before a button changes the selection or sends the save request.
+        boolean reverting = this.discardDraftButton.active && this.discardDraftButton.isMouseOver(mouseX, mouseY)
+                || this.undoButton.active && this.undoButton.isMouseOver(mouseX, mouseY);
+        if (reverting && this.fieldValueBox != null) {
+            this.fieldValueBox.setFocused(false);
+            this.fieldValueBoxWasFocused = false;
+        } else {
+            blurAndCommitFieldEditorIfNeeded(mouseX, mouseY);
+        }
+        updateDraftButtons();
         if (super.mouseClicked(mouseX, mouseY, button)) {
-            commitFieldEditorOnBlur(fieldFocusedBefore);
             return true;
         }
-        blurAndCommitFieldEditorIfNeeded(mouseX, mouseY);
         if (!isInsidePanel(mouseX, mouseY)) {
             return false;
         }
@@ -423,19 +448,55 @@ public class ZombiesDeployToolScreen extends Screen {
 
     @Override
     public void onClose() {
-        if (!closingForDeployment && snapshot != null && snapshot.dirty()) {
+        if (!closingForDeployment && snapshot != null && (snapshot.dirty() || hasLocalEditorChanges())) {
+            rememberEditorDraft();
             Minecraft.getInstance().setScreen(new ZombiesDeployUnsavedChangesScreen(
                     this,
-                    () -> sendAction(ZombiesDeployToolActionC2SPacket.Action.SAVE_DRAFT),
-                    () -> sendAction(ZombiesDeployToolActionC2SPacket.Action.DISCARD_DRAFT)));
+                    () -> requestClose(ZombiesDeployToolActionC2SPacket.Action.SAVE_DRAFT),
+                    () -> requestClose(ZombiesDeployToolActionC2SPacket.Action.DISCARD_DRAFT)));
             return;
         }
         super.onClose();
     }
 
     private void closeForDeployment() {
+        setCurrentField();
         closingForDeployment = true;
         super.onClose();
+    }
+
+    private void requestClose(ZombiesDeployToolActionC2SPacket.Action action) {
+        long requestId = closeRequest.begin(action);
+        FPSMatch.sendToServer(new ZombiesDeployToolActionC2SPacket(action, draft(), requestId));
+    }
+
+    private void rememberEditorDraft() {
+        ZombiesDeployDraft current = draft();
+        this.draftFields.clear();
+        this.draftFields.putAll(current.fields());
+        this.draftMapName = current.draftMapName();
+    }
+
+    private boolean hasLocalEditorChanges() {
+        if (this.mapNameBox != null && !Objects.equals(this.mapNameBox.getValue(), snapshot.draftMapName())) {
+            return true;
+        }
+        if (!canEditObjectFields()) {
+            return false;
+        }
+        Map<String, String> fields = draft().fields();
+        return snapshot.fields().stream().anyMatch(field -> field.editable()
+                && !Objects.equals(field.value(), fields.get(field.key())));
+    }
+
+    private void updateDraftButtons() {
+        if (this.saveDraftButton == null) {
+            return;
+        }
+        boolean dirty = snapshot.dirty() || hasLocalEditorChanges();
+        this.saveDraftButton.active = dirty;
+        this.discardDraftButton.active = dirty;
+        this.undoButton.active = snapshot.dirty();
     }
 
     @Override
@@ -555,9 +616,6 @@ public class ZombiesDeployToolScreen extends Screen {
         this.deleteObjectButton.active = !inMapStage && hasObjects && this.selectedIndex >= 0;
         this.addObjectButton.active = !inMapStage && canEditObjectFields();
         this.duplicateObjectButton.active = !inMapStage && hasObjects && this.selectedIndex >= 0;
-        this.saveDraftButton.active = snapshot.dirty();
-        this.discardDraftButton.active = snapshot.dirty();
-        this.undoButton.active = snapshot.dirty();
         this.addObjectButton.visible = expertMode;
         this.duplicateObjectButton.visible = expertMode;
         this.deleteObjectButton.visible = expertMode;
@@ -581,6 +639,7 @@ public class ZombiesDeployToolScreen extends Screen {
         }
 
         updateFieldEditor();
+        updateDraftButtons();
     }
 
     private void updateFieldEditor() {
@@ -830,6 +889,9 @@ public class ZombiesDeployToolScreen extends Screen {
             return;
         }
         String value = this.fieldValueBox.getValue();
+        if (Objects.equals(value, this.draftFields.getOrDefault(field.key(), field.value()))) {
+            return;
+        }
         this.draftFields.put(field.key(), value);
         FPSMatch.sendToServer(new ZombiesDeployToolActionC2SPacket(
                 ZombiesDeployToolActionC2SPacket.Action.SET_FIELD,
@@ -958,6 +1020,9 @@ public class ZombiesDeployToolScreen extends Screen {
             return;
         }
         String value = serializeListRows(field.key(), rows, previousValue);
+        if (Objects.equals(value, previousValue)) {
+            return;
+        }
         this.draftFields.put(field.key(), value);
         Map<String, String> fields = new LinkedHashMap<>(this.draftFields);
         FPSMatch.sendToServer(new ZombiesDeployToolActionC2SPacket(
@@ -1087,7 +1152,9 @@ public class ZombiesDeployToolScreen extends Screen {
         int height = 34;
         guiGraphics.fill(left, top, left + width, top + height, 0xA014181D);
         drawBorder(guiGraphics, left, top, width, height, 0xFF39424B);
-        String saveState = snapshot.activeMap()
+        String saveState = snapshot.dirty() || hasLocalEditorChanges()
+                ? tr("gui.codpattern.zombies.deploy.status.unsaved")
+                : snapshot.activeMap()
                 ? tr("gui.codpattern.zombies.deploy.status.saved_active")
                 : tr("gui.codpattern.zombies.deploy.status.saved_ready");
         String line = saveState;
@@ -1484,13 +1551,23 @@ public class ZombiesDeployToolScreen extends Screen {
     }
 
     private void drawStatus(GuiGraphics guiGraphics, int left, int top, int width) {
+        if ("draft.validation_failed".equals(snapshot.statusCode())) {
+            guiGraphics.drawString(this.font, Component.literal(trimToWidth(
+                    ta("message.codpattern.zombies.deploy.save_validation_failed", snapshot.statusDetail()), width)), left, top, ERROR_TEXT, false);
+            return;
+        }
+        if ("draft.revision_conflict".equals(snapshot.statusCode())) {
+            guiGraphics.drawString(this.font, Component.literal(trimToWidth(
+                    tr("message.codpattern.zombies.deploy.save_revision_conflict"), width)), left, top, ERROR_TEXT, false);
+            return;
+        }
         String status = tr("gui.codpattern.zombies.deploy.ready");
         if (!snapshot.statusKey().isBlank()) {
-            status = tr(snapshot.statusKey());
+            status = ta(snapshot.statusKey(), snapshot.statusDetail());
         } else if (!snapshot.statusDetail().isBlank()) {
             status = snapshot.statusDetail();
         }
-        if (!snapshot.statusDetail().isBlank() && !snapshot.statusDetail().equals(status)) {
+        if (!snapshot.statusDetail().isBlank() && !status.contains(snapshot.statusDetail())) {
             status = status + " " + snapshot.statusDetail();
         }
         guiGraphics.drawString(this.font, Component.literal(trimToWidth(status, width)), left, top, INFO_TEXT, false);
@@ -2192,13 +2269,6 @@ public class ZombiesDeployToolScreen extends Screen {
             case "mvp1_has_errors" -> tr("gui.codpattern.zombies.deploy.blocking.mvp1_has_errors");
             default -> snapshot.blockingReason();
         };
-    }
-
-    private void commitFieldEditorOnBlur(boolean wasFocused) {
-        if (!wasFocused || this.fieldValueBox == null || this.fieldValueBox.isFocused()) {
-            return;
-        }
-        setCurrentField();
     }
 
     private void blurAndCommitFieldEditorIfNeeded(double mouseX, double mouseY) {

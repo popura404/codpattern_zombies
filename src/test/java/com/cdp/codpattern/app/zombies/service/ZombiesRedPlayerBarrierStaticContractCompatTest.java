@@ -6,6 +6,7 @@ import java.nio.file.Path;
 
 public final class ZombiesRedPlayerBarrierStaticContractCompatTest {
     private static final Path BLOCK = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/common/block/ZombiesRedPlayerBarrierBlock.java");
+    private static final Path ITEM = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/common/block/ZombiesRedPlayerBarrierItem.java");
     private static final Path REGISTRY = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/common/block/CodPatternBlockRegister.java");
     private static final Path BLOCKSTATE = Path.of("../zombies-addon/src/main/resources/assets/codpattern/blockstates/zombies_red_player_barrier.json");
     private static final Path BLOCK_MODEL = Path.of("../zombies-addon/src/main/resources/assets/codpattern/models/block/zombies_red_player_barrier.json");
@@ -18,6 +19,7 @@ public final class ZombiesRedPlayerBarrierStaticContractCompatTest {
 
     public static void main(String[] args) throws IOException {
         String block = Files.readString(BLOCK);
+        String item = Files.readString(ITEM);
         String registry = Files.readString(REGISTRY);
         String blockstate = Files.readString(BLOCKSTATE);
         String blockModel = Files.readString(BLOCK_MODEL);
@@ -44,10 +46,18 @@ public final class ZombiesRedPlayerBarrierStaticContractCompatTest {
                 "red player barrier registry id must be stable for commands");
         requireContains(registry, "RegistryObject<Item> ZOMBIES_RED_PLAYER_BARRIER_ITEM",
                 "red player barrier must have a BlockItem so /give can provide it");
-        requireContains(registry, "new BlockItem(ZOMBIES_RED_PLAYER_BARRIER.get(), new Item.Properties())",
-                "red player barrier item must place the registered block");
-        requireAbsent(registry, "event.accept(ZOMBIES_RED_PLAYER_BARRIER_ITEM);",
-                "red player barrier should remain command-obtainable without adding it to creative tabs");
+        requireContains(registry, "new ZombiesRedPlayerBarrierItem(ZOMBIES_RED_PLAYER_BARRIER.get(), new Item.Properties())",
+                "red player barrier must use its mode-aware BlockItem");
+        requireContains(item, "public final class ZombiesRedPlayerBarrierItem extends BlockItem",
+                "red player barrier item must remain a placeable BlockItem");
+        requireContains(item, "ZombiesModeItemText.itemName(\"item.codpattern.zombies_red_player_barrier\")",
+                "red player barrier item name must carry the Zombies mode label");
+        requireContains(item, "ZombiesModeItemText.applicableModeTooltip()",
+                "red player barrier tooltip must declare the applicable mode");
+        requireContains(registry, "FPSMCreativeModeTabRegister.CODPATTERN_TOOLS_AND_ITEMS_KEY.equals(event.getTabKey())",
+                "red player barrier must target the COD Pattern tools and items tab");
+        requireContains(registry, "event.accept(ZOMBIES_RED_PLAYER_BARRIER_ITEM);",
+                "red player barrier must be obtainable from the COD Pattern tools and items tab");
 
         requireContains(blockstate, "\"model\": \"codpattern:block/zombies_red_player_barrier\"",
                 "red player barrier blockstate must point at its block model");

@@ -51,6 +51,7 @@ public class ZombiesDeployToolActionC2SPacket {
     private final int issueTargetIndex;
     private final boolean issueMapStage;
     private final int expectedRevision;
+    private final long requestId;
 
     public ZombiesDeployToolActionC2SPacket(Action action, ZombiesDeployDraft draft) {
         this(action, draft, "", "", "", "", -1, false, -1);
@@ -62,6 +63,10 @@ public class ZombiesDeployToolActionC2SPacket {
 
     public ZombiesDeployToolActionC2SPacket(Action action, ZombiesDeployDraft draft, int expectedRevision) {
         this(action, draft, "", "", "", "", -1, false, expectedRevision);
+    }
+
+    public ZombiesDeployToolActionC2SPacket(Action action, ZombiesDeployDraft draft, long requestId) {
+        this(action, draft, "", "", "", "", -1, false, -1, requestId);
     }
 
     public ZombiesDeployToolActionC2SPacket(
@@ -88,6 +93,15 @@ public class ZombiesDeployToolActionC2SPacket {
             boolean issueMapStage,
             int expectedRevision
     ) {
+        this(action, draft, fieldKey, fieldValue, issueWorkflowStep, issueObjectType,
+                issueTargetIndex, issueMapStage, expectedRevision, -1L);
+    }
+
+    private ZombiesDeployToolActionC2SPacket(
+            Action action, ZombiesDeployDraft draft, String fieldKey, String fieldValue,
+            String issueWorkflowStep, String issueObjectType, int issueTargetIndex,
+            boolean issueMapStage, int expectedRevision, long requestId
+    ) {
         this.action = action == null ? Action.REFRESH : action;
         this.draft = draft == null ? ZombiesDeployDraft.empty() : draft;
         this.fieldKey = fieldKey == null ? "" : fieldKey;
@@ -97,6 +111,11 @@ public class ZombiesDeployToolActionC2SPacket {
         this.issueTargetIndex = Math.max(-1, issueTargetIndex);
         this.issueMapStage = issueMapStage;
         this.expectedRevision = expectedRevision;
+        this.requestId = requestId;
+    }
+
+    public long requestId() {
+        return requestId;
     }
 
     public void encode(FriendlyByteBuf buf) {
@@ -123,6 +142,7 @@ public class ZombiesDeployToolActionC2SPacket {
         buf.writeVarInt(issueTargetIndex);
         buf.writeBoolean(issueMapStage);
         buf.writeVarInt(expectedRevision);
+        buf.writeLong(requestId);
     }
 
     public static ZombiesDeployToolActionC2SPacket decode(FriendlyByteBuf buf) {
@@ -162,7 +182,8 @@ public class ZombiesDeployToolActionC2SPacket {
                 buf.readUtf(),
                 buf.readVarInt(),
                 buf.readBoolean(),
-                buf.readVarInt());
+                buf.readVarInt(),
+                buf.readLong());
     }
 
     public static void sendScreen(ServerPlayer player, ItemStack stack, ZombiesDeployDraft request) {
@@ -196,10 +217,9 @@ public class ZombiesDeployToolActionC2SPacket {
                 return;
             }
             ZombiesDeployServiceResult<ZombiesDeploySnapshot> result = dispatch(player, stack);
-            boolean openScreen = action != Action.UNDO_LAST
-                    && action != Action.SAVE_DRAFT
-                    && action != Action.DISCARD_DRAFT;
-            result.value().ifPresent(snapshot -> FPSMatch.sendToPlayer(player, new OpenZombiesDeployToolScreenS2CPacket(snapshot, openScreen)));
+            // Only sendScreen opens the editor; delayed action replies must not reopen it.
+            boolean openScreen = false;
+            result.value().ifPresent(snapshot -> FPSMatch.sendToPlayer(player, new OpenZombiesDeployToolScreenS2CPacket(snapshot, openScreen, action, requestId)));
             if (!result.messageKey().isBlank()) {
                 List<String> args = result.arguments();
                 player.displayClientMessage(Component.translatable(result.messageKey(), args.toArray()), false);

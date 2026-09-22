@@ -84,6 +84,22 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "held weapon panel must use the reference long-card height");
         requireContains(overlay, "HELD_PANEL_LEFT_REGION_WIDTH = 224",
                 "held weapon panel must reserve the reference left weapon region");
+        requireContains(overlay, "HELD_PANEL_CURRENT_SCALE = 2.25F",
+                "magazine ammo must use the larger acceptance-card typography");
+        requireContains(overlay, "HELD_PANEL_RESERVE_SCALE = 0.86F",
+                "reserve ammo must use the smaller acceptance-card typography");
+        requireContains(overlay, "float currentScale = HELD_PANEL_CURRENT_SCALE * scale",
+                "magazine ammo size must scale with the reference card");
+        requireContains(overlay, "float reserveScale = HELD_PANEL_RESERVE_SCALE * scale",
+                "reserve ammo size must scale independently from the magazine");
+        requireContains(overlay, "if (screenWidth < HELD_PANEL_MIN_WIDTH + HELD_PANEL_RIGHT_MARGIN * 2)",
+                "held weapon panel must skip layouts that cannot fit the card");
+        requireContains(overlay, "(screenWidth - HELD_PANEL_RIGHT_MARGIN * 2.0F) / HELD_PANEL_BASE_WIDTH",
+                "held weapon panel scale must clamp to the available width");
+        requireContains(overlay, "Math.max(ammoLeft, currentX)",
+                "magazine ammo must stay inside the right-hand card region");
+        requireContains(overlay, "Math.max(ammoLeft, reserveX)",
+                "reserve ammo must stay inside the right-hand card region");
         requireContains(overlay, "ZombiesWeaponItemStackService.TAG_RARITY_ID",
                 "held weapon panel must read the explicit zombies rarity tag");
         requireContains(overlay, "ZombiesRarityDisplay.fromRarityId(rarityId)",
@@ -108,6 +124,8 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "held weapon panel must read current magazine ammo from the live TaCZ gun");
         requireContains(overlay, "TaczClientApi.resolveReserveAmmo(stack)",
                 "held weapon panel must read live TaCZ reserve ammo");
+        requireContains(overlay, "TaczClientApi.getGunHudTexture(stack)",
+                "held weapon panel must render the live TaCZ HUD weapon texture");
         requireContains(overlay, "public static boolean shouldReplaceTaczGunHud()",
                 "TaCZ suppression must be gated by a drawable Zombies weapon panel");
         requireContains(suppressor, "tac_gun_hud_overlay",

@@ -1,6 +1,7 @@
 package com.cdp.codpattern.common.block;
 
 import com.cdp.codpattern.CodPatternConstants;
+import com.phasetranscrystal.fpsmatch.common.item.FPSMCreativeModeTabRegister;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
@@ -86,7 +87,7 @@ public final class CodPatternBlockRegister {
     );
     public static final RegistryObject<Item> ZOMBIES_RED_PLAYER_BARRIER_ITEM = ITEMS.register(
             "zombies_red_player_barrier",
-            () -> new BlockItem(ZOMBIES_RED_PLAYER_BARRIER.get(), new Item.Properties())
+            () -> new ZombiesRedPlayerBarrierItem(ZOMBIES_RED_PLAYER_BARRIER.get(), new Item.Properties())
     );
     public static final RegistryObject<Item> ZOMBIES_WEAPON_WALL_BOX_ITEM = ITEMS.register(
             "zombies_weapon_wall_box",
@@ -117,6 +118,10 @@ public final class CodPatternBlockRegister {
     }
 
     public static void onBuildCreativeModeTabContents(BuildCreativeModeTabContentsEvent event) {
+        if (FPSMCreativeModeTabRegister.CODPATTERN_TOOLS_AND_ITEMS_KEY.equals(event.getTabKey())) {
+            event.accept(ZOMBIES_RED_PLAYER_BARRIER_ITEM);
+            return;
+        }
         if (event.hasPermissions()
                 && (CreativeModeTabs.FUNCTIONAL_BLOCKS.equals(event.getTabKey())
                 || CreativeModeTabs.REDSTONE_BLOCKS.equals(event.getTabKey()))) {

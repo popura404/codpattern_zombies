@@ -33,6 +33,9 @@ final class ZombiesWeaponPanelLayout {
     static final float BORDER_WIDTH = 5.0F * SVG_SCALE;
     static final float AMMO_HEIGHT_RATIO = 8.0F / 3.0F;
     static final float LEVEL_HEIGHT_RATIO = 23.148F / 25.2F;
+    // Default ASCII digits have five visible columns and a six-unit advance.
+    // Only remove the final spacing column; internal character spacing stays intact.
+    private static final float DIGIT_TRAILING_SPACE = 1.0F;
 
     private ZombiesWeaponPanelLayout() {
     }
@@ -70,6 +73,19 @@ final class ZombiesWeaponPanelLayout {
 
     record Placement(float left, float top, float scale, float glyphHeight,
                      float currentScale, float reserveScale) {
+        float currentX(int textAdvance) {
+            return ammoX(textAdvance, currentScale);
+        }
+
+        float reserveX(int textAdvance) {
+            return ammoX(textAdvance, reserveScale);
+        }
+
+        private static float ammoX(int textAdvance, float textScale) {
+            // Calibrated for the existing bitmap font; custom fonts need their own ink bounds.
+            return AMMO_RIGHT - Math.max(0, textAdvance - DIGIT_TRAILING_SPACE) * textScale;
+        }
+
         float reserveY() {
             return RESERVE_CENTER_Y - glyphHeight * reserveScale / 2.0F;
         }

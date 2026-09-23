@@ -996,11 +996,11 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
 
             int currentColor = data.lowAmmo() ? TEXT_DANGER : TEXT_PRIMARY;
             drawScaledPanelString(graphics, font, data.currentAmmoText(),
-                    ZombiesWeaponPanelLayout.AMMO_RIGHT - font.width(data.currentAmmoText()) * layout.currentScale(),
+                    layout.currentX(font.width(data.currentAmmoText())),
                     ZombiesWeaponPanelLayout.CURRENT_Y, layout.currentScale(),
                     withAlpha(currentColor, HELD_PANEL_TEXT_ALPHA));
             drawScaledPanelString(graphics, font, data.reserveAmmoText(),
-                    ZombiesWeaponPanelLayout.AMMO_RIGHT - font.width(data.reserveAmmoText()) * layout.reserveScale(),
+                    layout.reserveX(font.width(data.reserveAmmoText())),
                     layout.reserveY(), layout.reserveScale(), withAlpha(TEXT_PRIMARY, HELD_PANEL_TEXT_ALPHA));
 
             if (!data.upgradeRoman().isBlank()) {
@@ -1067,8 +1067,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     ) {
         graphics.pose().pushPose();
         try {
-            // The default bitmap glyph starts one unit below drawString's Y.
-            graphics.pose().translate(x, y - scale, 0);
+            // Default ASCII ink starts at drawString's Y; do not subtract a font-scale unit.
+            graphics.pose().translate(x, y, 0);
             graphics.pose().scale(scale, scale, 1);
             // Half a reference-space unit, independent of the magazine/reserve font scale.
             float shadowOffset = 0.5F / scale;

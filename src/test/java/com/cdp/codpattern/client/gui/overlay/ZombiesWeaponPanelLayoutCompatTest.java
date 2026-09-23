@@ -67,14 +67,14 @@ public final class ZombiesWeaponPanelLayoutCompatTest {
             require(ZombiesWeaponPanelLayout.create(1920, 1080, scale, 9, 6, 3, 4).isEmpty(),
                     "invalid scale must not render");
         }
-        System.out.println("PASS zombies weapon panel layout: compact viewports, GUI scales, 8:3 ratio, overflow and fallback");
+        System.out.println("PASS zombies weapon panel layout: compact viewports, GUI scales, ink alignment, 8:3 ratio, overflow and fallback");
     }
 
     private static void checkAmmoBounds(ZombiesWeaponPanelLayout.Placement layout,
                                          int currentDigits, int reserveDigits, int advance) {
         near(layout.currentScale() / layout.reserveScale(), 8.0F / 3, "ammo height ratio");
-        float currentLeft = ZombiesWeaponPanelLayout.AMMO_RIGHT - currentDigits * advance * layout.currentScale();
-        float reserveLeft = ZombiesWeaponPanelLayout.AMMO_RIGHT - reserveDigits * advance * layout.reserveScale();
+        float currentLeft = layout.currentX(currentDigits * advance);
+        float reserveLeft = layout.reserveX(reserveDigits * advance);
         require(currentLeft >= ZombiesWeaponPanelLayout.AMMO_LEFT - 0.01F, "magazine overlaps gun");
         require(reserveLeft >= ZombiesWeaponPanelLayout.RESERVE_LEFT - 0.01F, "reserve overlaps icon");
         require(ZombiesWeaponPanelLayout.CURRENT_Y + layout.glyphHeight() * layout.currentScale()
@@ -85,6 +85,28 @@ public final class ZombiesWeaponPanelLayoutCompatTest {
         float longLevelScale = layout.levelScale(2000);
         require(ZombiesWeaponPanelLayout.LEVEL_X + 2000 * longLevelScale
                 < ZombiesWeaponPanelLayout.IMAGE_RIGHT, "long level overlaps ammo region");
+        if (advance == 6) {
+            checkDefaultDigitInkBounds(layout, currentDigits, reserveDigits);
+        }
+    }
+
+    private static void checkDefaultDigitInkBounds(ZombiesWeaponPanelLayout.Placement layout,
+                                                   int currentDigits, int reserveDigits) {
+        // Fixture verified against Minecraft 1.20.1 ascii.png and BitmapProvider:
+        // all digits 0..9 have ink [0,5) x [0,7), advance 6, and drawString top offset 0.
+        float currentInkWidth = (currentDigits - 1) * 6 + 5;
+        float reserveInkWidth = (reserveDigits - 1) * 6 + 5;
+        float currentRight = layout.currentX(currentDigits * 6) + currentInkWidth * layout.currentScale();
+        float reserveRight = layout.reserveX(reserveDigits * 6) + reserveInkWidth * layout.reserveScale();
+        near(currentRight, ZombiesWeaponPanelLayout.AMMO_RIGHT, "magazine ink right edge misses anchor");
+        near(reserveRight, currentRight, "magazine and reserve ink right edges differ");
+        near(layout.reserveY() + 7 * layout.reserveScale() / 2,
+                ZombiesWeaponPanelLayout.ICON_Y + ZombiesWeaponPanelLayout.ICON_SIZE / 2,
+                "reserve ink is not vertically centered with mode icon");
+        require(ZombiesWeaponPanelLayout.CURRENT_Y + 7 * layout.currentScale() < layout.reserveY(),
+                "actual digit ink rows overlap");
+        require(layout.reserveY() + 7 * layout.reserveScale() + 0.5F < ZombiesWeaponPanelLayout.HEIGHT,
+                "reserve ink or shadow exceeds card bottom");
     }
 
     private static void near(float actual, float expected, String message) {

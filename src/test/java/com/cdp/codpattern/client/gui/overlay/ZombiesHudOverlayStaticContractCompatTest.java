@@ -102,6 +102,16 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "ammo must retain the improved 95 percent opacity");
         requireContains(overlay, "ZombiesWeaponPanelLayout.IMAGE_RIGHT - iconSize",
                 "fallback item must preserve the full-image right anchor");
+        requireContains(overlay, "layout.currentX(font.width(data.currentAmmoText()))",
+                "magazine must use the tested visible-ink right alignment");
+        requireContains(overlay, "layout.reserveX(font.width(data.reserveAmmoText()))",
+                "reserve must use the tested visible-ink right alignment");
+        String panelTextRenderer = overlay.substring(overlay.indexOf("private static void drawScaledPanelString("),
+                overlay.indexOf("private static ResourceLocation fireModeTexture("));
+        requireContains(panelTextRenderer, "graphics.pose().translate(x, y, 0)",
+                "panel text must use the default bitmap ink top without a vertical correction");
+        requireAbsent(panelTextRenderer, "y - scale",
+                "panel text must not shift ink upwards by one scaled font unit");
         requireContains(overlay, "upgradeRoman(upgradeLevel)",
                 "held weapon panel must render the upgrade level as Roman numerals");
         requireContains(overlay, "static String upgradeRoman(int value)",

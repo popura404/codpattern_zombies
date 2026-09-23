@@ -17,9 +17,18 @@ public final class ZombiesDeployGameTestBootstrap {
 
     @SubscribeEvent
     public static void beforeWorldLoad(ServerAboutToStartEvent event) {
-        if (!(event.getServer() instanceof GameTestServer) || FPSMCore.initialized()) {
-            return;
+        if (!(event.getServer() instanceof GameTestServer)) { return; }
+        // Forge's transforming context loader hides jdk.random service providers on Java 17.
+        // Initialize the JDK factory before map constructors request its default generator.
+        Thread thread = Thread.currentThread();
+        ClassLoader loader = thread.getContextClassLoader();
+        try {
+            thread.setContextClassLoader(ClassLoader.getSystemClassLoader());
+            java.util.random.RandomGenerator.getDefault();
+        } finally {
+            thread.setContextClassLoader(loader);
         }
+        if (FPSMCore.initialized()) { return; }
         try {
             Constructor<FPSMCore> constructor = FPSMCore.class.getDeclaredConstructor(String.class);
             constructor.setAccessible(true);

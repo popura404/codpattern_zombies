@@ -13,7 +13,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.lwjgl.glfw.GLFW;
 
-/** World-only shortcut for undoing the last staged deploy operation. */
+/** World-only shortcuts for undo and redo in the deployment session. */
 @Mod.EventBusSubscriber(
         modid = ZombiesAddonConstants.MOD_ID,
         value = Dist.CLIENT,
@@ -29,15 +29,19 @@ public final class ZombiesDeployWorldInputHandler {
                 || event.getKey() != GLFW.GLFW_KEY_R
                 || minecraft.screen != null
                 || minecraft.player == null
-                || !ZombiesDeployClientState.current().dirty()) {
+                || ZombiesDeployClientState.snapshot() == null) {
             return;
         }
         ItemStack stack = minecraft.player.getMainHandItem();
         if (!(stack.getItem() instanceof ZombiesDeployTool)) {
             return;
         }
+        boolean redo = (event.getModifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
+        if (redo ? ZombiesDeployClientState.snapshot().redoCount() == 0 : ZombiesDeployClientState.snapshot().undoCount() == 0) {
+            return;
+        }
         FPSMatch.sendToServer(new ZombiesDeployToolActionC2SPacket(
-                ZombiesDeployToolActionC2SPacket.Action.UNDO_LAST,
+                redo ? ZombiesDeployToolActionC2SPacket.Action.REDO_LAST : ZombiesDeployToolActionC2SPacket.Action.UNDO_LAST,
                 ZombiesDeployTool.getDraft(stack),
                 ZombiesDeployClientState.current().revision()));
     }

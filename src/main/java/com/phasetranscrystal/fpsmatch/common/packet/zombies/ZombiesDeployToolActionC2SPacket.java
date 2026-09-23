@@ -9,13 +9,11 @@ import com.phasetranscrystal.fpsmatch.common.item.zombies.ZombiesDeployTool;
 import com.phasetranscrystal.fpsmatch.common.item.tool.ToolAccessHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -39,7 +37,8 @@ public class ZombiesDeployToolActionC2SPacket {
         SELECT_WORKSPACE_STAGE,
         CREATE_MAP,
         JUMP_TO_ISSUE,
-        JUMP_TO_ISSUE_TARGET
+        JUMP_TO_ISSUE_TARGET,
+        REDO_LAST
     }
 
     private final Action action;
@@ -95,6 +94,10 @@ public class ZombiesDeployToolActionC2SPacket {
     ) {
         this(action, draft, fieldKey, fieldValue, issueWorkflowStep, issueObjectType,
                 issueTargetIndex, issueMapStage, expectedRevision, -1L);
+    }
+
+    public ZombiesDeployToolActionC2SPacket(Action action, ZombiesDeployDraft draft, int expectedRevision, long requestId) {
+        this(action, draft, "", "", "", "", -1, false, expectedRevision, requestId);
     }
 
     private ZombiesDeployToolActionC2SPacket(
@@ -220,10 +223,7 @@ public class ZombiesDeployToolActionC2SPacket {
             // Only sendScreen opens the editor; delayed action replies must not reopen it.
             boolean openScreen = false;
             result.value().ifPresent(snapshot -> FPSMatch.sendToPlayer(player, new OpenZombiesDeployToolScreenS2CPacket(snapshot, openScreen, action, requestId)));
-            if (!result.messageKey().isBlank()) {
-                List<String> args = result.arguments();
-                player.displayClientMessage(Component.translatable(result.messageKey(), args.toArray()), false);
-            }
+
         });
         ctx.get().setPacketHandled(true);
     }
@@ -243,6 +243,7 @@ public class ZombiesDeployToolActionC2SPacket {
             case SAVE_DRAFT -> service.saveDraft(player, stack, draft);
             case DISCARD_DRAFT -> service.discardDraft(player, stack, draft);
             case UNDO_LAST -> service.undoLast(player, stack, draft, expectedRevision);
+            case REDO_LAST -> service.redoLast(player, stack, draft, expectedRevision);
             case SET_FIELD -> service.setField(player, stack, draft, fieldKey, fieldValue);
             case ADD_OBJECT -> service.addObject(player, stack, draft);
             case UPDATE_OBJECT -> service.updateObject(player, stack, draft);

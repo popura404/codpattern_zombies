@@ -57,6 +57,8 @@ minecraft {
         }
 
         gameTestServer {
+            // Forge's launch module graph must include the JDK random service providers.
+            jvmArgs '--add-modules=jdk.random'
             workingDirectory layout.buildDirectory.dir('gametest/run').get().asFile
             property 'forge.enabledGameTestNamespaces', 'codpattern'
             property 'mixin.env.remapRefMap', 'true'

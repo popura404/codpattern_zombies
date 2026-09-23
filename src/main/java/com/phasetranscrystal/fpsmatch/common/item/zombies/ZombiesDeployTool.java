@@ -110,11 +110,7 @@ public class ZombiesDeployTool extends CreatorToolItem implements WorldToolItem 
         result.value().ifPresent(snapshot -> FPSMatch.sendToPlayer(
                 player,
                 new com.phasetranscrystal.fpsmatch.common.packet.zombies.OpenZombiesDeployToolScreenS2CPacket(snapshot, false)));
-        if (!result.messageKey().isBlank()) {
-            player.displayClientMessage(Component.translatable(
-                    result.messageKey(),
-                    result.arguments().toArray()).withStyle(result.success() ? ChatFormatting.AQUA : ChatFormatting.RED), true);
-        }
+
     }
 
     private static boolean consumeBlockPlaceCooldown(ServerPlayer player, ItemStack stack) {

@@ -27,6 +27,10 @@ public final class ZombiesDeployDraftSessionCompatTest {
         stagedObjectsRemainSelectableAndLoadTheirCurrentFields();
         discardAndUndoRestoreFieldsAndClearRemovedSelections();
         unchangedFieldAcknowledgementsDoNotConsumeUndo();
+        historyIsBoundedAndRedoBranchesCorrectly();
+        saveKeepsHistoryAndMovesTheBaseline();
+        mixedObjectOperationsRoundTripThroughHistory();
+        editorIgnoresMismatchedResponses();
         closeWaitsForTheMatchingSuccessfulResponse();
         responseActionAndSnapshotSurvivePacketRoundTrip();
         System.out.println("PASS zombies deploy draft session compat");
@@ -66,10 +70,65 @@ public final class ZombiesDeployDraftSessionCompatTest {
         require(Integer.valueOf(1).equals(invokeSession(session, "revision")), "unchanged field submit must not advance revision");
         invokeSession(session, "undo");
         require(base.equals(invokeSession(session, "currentObjects")), "undo must restore the actual previous object state");
-        require(invokeSession(session, "previousObjects") == null, "undo should remain one step");
+        require(invokeSession(session, "previousObjects") == null, "a single staged edit should consume one undo");
         ZombiesDeployDraft restored = normalize("restoreDraftFields", draft(0, Map.of("buyCost", "750")),
                 (ZombiesMapObjects) invokeSession(session, "currentObjects"));
         require("500".equals(restored.fields().get("buyCost")), "undo editor fields must match the restored session");
+    }
+
+    private static Object newSession(ZombiesMapObjects objects) throws Exception {
+        Class<?> type = Class.forName(ZombiesDeployToolService.class.getName() + "$DraftSession");
+        Constructor<?> constructor = type.getDeclaredConstructor(ZombiesMapObjects.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(objects);
+    }
+
+    private static void historyIsBoundedAndRedoBranchesCorrectly() throws Exception {
+        Object session = newSession(objects(0));
+        for (int i = 1; i <= 12; i++) { invokeSession(session, "stage", objects(i)); }
+        require(Integer.valueOf(10).equals(invokeSession(session, "undoCount")), "only the latest ten edits are retained");
+        for (int i = 0; i < 11; i++) { invokeSession(session, "undo"); }
+        require(objects(2).equals(invokeSession(session, "currentObjects")), "oldest retained state should be edit two");
+        require(Integer.valueOf(10).equals(invokeSession(session, "redoCount")), "all ten undos must be redoable");
+        for (int i = 0; i < 10; i++) { invokeSession(session, "redo"); }
+        require(objects(12).equals(invokeSession(session, "currentObjects")), "redo must restore the latest state");
+        invokeSession(session, "undo");
+        invokeSession(session, "stage", objects(11));
+        require(Integer.valueOf(1).equals(invokeSession(session, "redoCount")), "no-op submit must preserve redo");
+        invokeSession(session, "stage", objects(40));
+        require(Integer.valueOf(0).equals(invokeSession(session, "redoCount")), "new edits must clear the redo branch");
+        int revision = (Integer) invokeSession(session, "revision");
+        invokeSession(session, "redo");
+        require(Integer.valueOf(revision).equals(invokeSession(session, "revision")), "empty redo must not advance revision");
+    }
+
+    private static void saveKeepsHistoryAndMovesTheBaseline() throws Exception {
+        Object session = newSession(objects(500));
+        invokeSession(session, "stage", objects(750));
+        invokeSession(session, "markSaved");
+        require(objects(750).equals(invokeSession(session, "baseObjects")), "saving moves the conflict/discard baseline");
+        require(Integer.valueOf(1).equals(invokeSession(session, "undoCount")), "saving must retain undo history");
+        invokeSession(session, "undo");
+        require(objects(500).equals(invokeSession(session, "currentObjects")), "saved edits must remain undoable");
+        require(!invokeSession(session, "currentObjects").equals(invokeSession(session, "baseObjects")), "undo after save must become dirty");
+        invokeSession(session, "redo");
+        require(invokeSession(session, "currentObjects").equals(invokeSession(session, "baseObjects")), "redo to saved baseline must become clean");
+        invokeSession(session, "undo");
+        invokeSession(session, "markSaved");
+        require(Integer.valueOf(1).equals(invokeSession(session, "redoCount")), "saving after undo must retain redo");
+    }
+
+    private static void mixedObjectOperationsRoundTripThroughHistory() throws Exception {
+        Object session = newSession(objects(500));
+        invokeSession(session, "stage", objects(500, 700)); // add
+        invokeSession(session, "stage", objects(500, 900)); // edit
+        invokeSession(session, "stage", objects(900)); // delete
+        invokeSession(session, "undo");
+        require(objects(500, 900).equals(invokeSession(session, "currentObjects")), "undo delete restores the object and its fields");
+        invokeSession(session, "undo");
+        require(objects(500, 700).equals(invokeSession(session, "currentObjects")), "undo edit restores the previous field");
+        invokeSession(session, "undo");
+        require(objects(500).equals(invokeSession(session, "currentObjects")), "undo add restores the object collection");
     }
 
     public static void closeWaitsForTheMatchingSuccessfulResponse() {
@@ -97,17 +156,7 @@ public final class ZombiesDeployDraftSessionCompatTest {
     }
 
     private static void responseActionAndSnapshotSurvivePacketRoundTrip() {
-        ZombiesDeploySnapshot snapshot = new ZombiesDeploySnapshot(
-                List.of("review-map"), ZombiesDeployDraft.STAGE_OBJECT_MARKING, ZombiesDeployDraft.WORKFLOW_INTERACT,
-                ZombiesDeployDraft.WORKFLOW_VALIDATE, "", "gui.codpattern.zombies.deploy.next_step", true,
-                "review-map", "", null, null,
-                List.of(new ZombiesDeploySnapshot.ObjectTypeOption(ZombiesDeployFieldSchema.ARMOR_STATION, "armor")),
-                ZombiesDeployFieldSchema.ARMOR_STATION, ZombiesDeployDraft.CAPTURE_DEFAULT, "pos", "", 0,
-                List.of(new ZombiesDeploySnapshot.ObjectSummary(0, ZombiesDeployFieldSchema.ARMOR_STATION, "station-0", "armor 1", "0,64,0")),
-                List.of(new ZombiesDeploySnapshot.FieldValue("buyCost", "cost", ZombiesDeployFieldSchema.FieldType.INTEGER, "500", true)),
-                ZombiesDeployFieldSchema.PROFILE_MVP3, List.of(ZombiesDeployFieldSchema.PROFILE_MVP3),
-                List.of(), List.of(), List.of(), List.of(), List.of(), false, "station-0|1.0", false, 2,
-                "message.codpattern.zombies.deploy.object_saved", "draft.saved", "");
+        ZombiesDeploySnapshot snapshot = snapshotFixture();
         FriendlyByteBuf request = new FriendlyByteBuf(Unpooled.buffer());
         try {
             new ZombiesDeployToolActionC2SPacket(Action.SAVE_DRAFT, draft(0, Map.of("buyCost", "950")), 42L).encode(request);
@@ -117,7 +166,7 @@ public final class ZombiesDeployDraftSessionCompatTest {
         } finally {
             request.release();
         }
-        for (Action action : List.of(Action.REFRESH, Action.SAVE_DRAFT, Action.DISCARD_DRAFT, Action.UNDO_LAST)) {
+        for (Action action : List.of(Action.REFRESH, Action.SAVE_DRAFT, Action.DISCARD_DRAFT, Action.UNDO_LAST, Action.REDO_LAST)) {
             boolean opens = action == Action.REFRESH;
             FriendlyByteBuf bytes = new FriendlyByteBuf(Unpooled.buffer());
             try {
@@ -132,6 +181,49 @@ public final class ZombiesDeployDraftSessionCompatTest {
                 bytes.release();
             }
         }
+    }
+
+    private static ZombiesDeploySnapshot snapshotFixture() {
+        return new ZombiesDeploySnapshot(
+                List.of("review-map"), ZombiesDeployDraft.STAGE_OBJECT_MARKING, ZombiesDeployDraft.WORKFLOW_INTERACT,
+                ZombiesDeployDraft.WORKFLOW_VALIDATE, "", "gui.codpattern.zombies.deploy.next_step", true,
+                "review-map", "", null, null,
+                List.of(new ZombiesDeploySnapshot.ObjectTypeOption(ZombiesDeployFieldSchema.ARMOR_STATION, "armor")),
+                ZombiesDeployFieldSchema.ARMOR_STATION, ZombiesDeployDraft.CAPTURE_DEFAULT, "pos", "", 0,
+                List.of(new ZombiesDeploySnapshot.ObjectSummary(0, ZombiesDeployFieldSchema.ARMOR_STATION, "station-0", "armor 1", "0,64,0")),
+                List.of(new ZombiesDeploySnapshot.FieldValue("buyCost", "cost", ZombiesDeployFieldSchema.FieldType.INTEGER, "500", true)),
+                ZombiesDeployFieldSchema.PROFILE_MVP3, List.of(ZombiesDeployFieldSchema.PROFILE_MVP3),
+                List.of(), List.of(), List.of(), List.of(), List.of(), false, "station-0|1.0", false, 2,
+                "message.codpattern.zombies.deploy.object_saved", "draft.saved", "", 7, 3);
+    }
+
+    private static void editorIgnoresMismatchedResponses() throws Exception {
+        Class<?> type = Class.forName("com.cdp.codpattern.client.gui.screen.zombies.deploy.ZombiesDeployEditorSession");
+        var constructor = type.getDeclaredConstructor(ZombiesDeploySnapshot.class);
+        constructor.setAccessible(true);
+        Object editor = constructor.newInstance(snapshotFixture());
+        var pending = type.getDeclaredField("pending"); pending.setAccessible(true); pending.set(editor, Action.DISCARD_DRAFT);
+        var id = type.getDeclaredField("requestId"); id.setAccessible(true); id.set(editor, 42L);
+        var matches = type.getDeclaredMethod("matches", OpenZombiesDeployToolScreenS2CPacket.class); matches.setAccessible(true);
+        require(Boolean.FALSE.equals(matches.invoke(editor, new OpenZombiesDeployToolScreenS2CPacket(snapshotFixture(), false, Action.SET_FIELD, 42L))), "unrelated field reply must not match pending close");
+        require(Boolean.FALSE.equals(matches.invoke(editor, new OpenZombiesDeployToolScreenS2CPacket(snapshotFixture(), false, Action.DISCARD_DRAFT, 41L))), "older close reply must not match");
+        require(Boolean.TRUE.equals(matches.invoke(editor, new OpenZombiesDeployToolScreenS2CPacket(snapshotFixture(), false, Action.DISCARD_DRAFT, 42L))), "matching reply must resolve the current request");
+        var complete = type.getDeclaredMethod("complete", OpenZombiesDeployToolScreenS2CPacket.class); complete.setAccessible(true);
+        var fields = type.getDeclaredField("fields"); fields.setAccessible(true);
+        @SuppressWarnings("unchecked") Map<String, String> local = (Map<String, String>) fields.get(editor);
+        local.put("buyCost", "950");
+        complete.invoke(editor, new OpenZombiesDeployToolScreenS2CPacket(snapshotFixture(), false, Action.SET_FIELD, 41L));
+        require("950".equals(local.get("buyCost")), "late replies must not overwrite local input");
+        pending.set(editor, Action.SAVE_DRAFT);
+        id.set(editor, 43L);
+        var callback = type.getDeclaredField("completion"); callback.setAccessible(true);
+        Runnable continuation = () -> { };
+        callback.set(editor, continuation);
+        require(complete.invoke(editor, new OpenZombiesDeployToolScreenS2CPacket(snapshotFixture(), false, Action.SAVE_DRAFT, 43L)) == continuation,
+                "a matching successful save must release the pending continuation");
+        var accepts = type.getDeclaredMethod("accepts", OpenZombiesDeployToolScreenS2CPacket.class); accepts.setAccessible(true);
+        require(Boolean.FALSE.equals(accepts.invoke(editor, new OpenZombiesDeployToolScreenS2CPacket(snapshotFixture(), false, Action.SAVE_DRAFT, 43L))),
+                "duplicate acknowledgements must not run a continuation twice");
     }
 
     private static ZombiesDeployDraft normalize(String methodName, ZombiesDeployDraft draft, ZombiesMapObjects objects) throws Exception {

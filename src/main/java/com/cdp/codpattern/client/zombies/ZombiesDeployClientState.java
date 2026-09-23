@@ -6,6 +6,12 @@ import com.cdp.codpattern.app.zombies.deploy.ZombiesDeploySnapshot;
 public final class ZombiesDeployClientState {
     private static volatile State state = State.EMPTY;
 
+    private static ZombiesDeploySnapshot lastSnapshot;
+    private static long noticeAt;
+    public static void reset() { state = State.EMPTY; lastSnapshot = null; }
+    public static ZombiesDeploySnapshot snapshot() { return lastSnapshot; }
+    public static long noticeAt() { return noticeAt; }
+
     private ZombiesDeployClientState() {
     }
 
@@ -13,6 +19,8 @@ public final class ZombiesDeployClientState {
         if (snapshot == null) {
             return;
         }
+        lastSnapshot = snapshot;
+        noticeAt = System.currentTimeMillis();
         int count = 0;
         int required = 0;
         for (ZombiesDeploySnapshot.ObjectTypeCount value : snapshot.objectCounts()) {

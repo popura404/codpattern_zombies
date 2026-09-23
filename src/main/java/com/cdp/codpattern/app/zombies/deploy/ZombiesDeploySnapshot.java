@@ -38,9 +38,94 @@ public record ZombiesDeploySnapshot(
         int revision,
         String statusKey,
         String statusCode,
-        String statusDetail
+        String statusDetail,
+        int undoCount,
+        int redoCount,
+        BlockPos registeredMapPos1,
+        BlockPos registeredMapPos2
 ) {
+    /** Compatibility constructor for existing snapshot producers. */
+    public ZombiesDeploySnapshot(
+        List<String> availableMaps,
+        String workspaceStage,
+        String currentWorkflowStep,
+        String nextWorkflowStep,
+        String blockingReason,
+        String nextActionLabel,
+        boolean nextActionEnabled,
+        String selectedMap,
+        String draftMapName,
+        BlockPos mapPos1,
+        BlockPos mapPos2,
+        List<ObjectTypeOption> objectTypes,
+        String selectedObjectType,
+        String capturePreset,
+        String captureSlotA,
+        String captureSlotB,
+        int selectedIndex,
+        List<ObjectSummary> objects,
+        List<FieldValue> fields,
+        String profileKey,
+        List<String> availableProfiles,
+        List<ValidationLine> validationLines,
+        List<IssueTarget> issueTargets,
+        List<ValidationSummary> validationSummaries,
+        List<ObjectTypeCount> objectCounts,
+        List<StepStatus> stepStatuses,
+        boolean dirty,
+        String nearestObjectHint,
+        boolean activeMap,
+        int revision,
+        String statusKey,
+        String statusCode,
+        String statusDetail
+    ) {
+        this(availableMaps, workspaceStage, currentWorkflowStep, nextWorkflowStep, blockingReason, nextActionLabel, nextActionEnabled, selectedMap, draftMapName, mapPos1, mapPos2, objectTypes, selectedObjectType, capturePreset, captureSlotA, captureSlotB, selectedIndex, objects, fields, profileKey, availableProfiles, validationLines, issueTargets, validationSummaries, objectCounts, stepStatuses, dirty, nearestObjectHint, activeMap, revision, statusKey, statusCode, statusDetail, 0, 0);
+    }
+
+    public ZombiesDeploySnapshot(
+        List<String> availableMaps,
+        String workspaceStage,
+        String currentWorkflowStep,
+        String nextWorkflowStep,
+        String blockingReason,
+        String nextActionLabel,
+        boolean nextActionEnabled,
+        String selectedMap,
+        String draftMapName,
+        BlockPos mapPos1,
+        BlockPos mapPos2,
+        List<ObjectTypeOption> objectTypes,
+        String selectedObjectType,
+        String capturePreset,
+        String captureSlotA,
+        String captureSlotB,
+        int selectedIndex,
+        List<ObjectSummary> objects,
+        List<FieldValue> fields,
+        String profileKey,
+        List<String> availableProfiles,
+        List<ValidationLine> validationLines,
+        List<IssueTarget> issueTargets,
+        List<ValidationSummary> validationSummaries,
+        List<ObjectTypeCount> objectCounts,
+        List<StepStatus> stepStatuses,
+        boolean dirty,
+        String nearestObjectHint,
+        boolean activeMap,
+        int revision,
+        String statusKey,
+        String statusCode,
+        String statusDetail,
+        int undoCount,
+        int redoCount
+    ) {
+        this(availableMaps, workspaceStage, currentWorkflowStep, nextWorkflowStep, blockingReason, nextActionLabel, nextActionEnabled, selectedMap, draftMapName, mapPos1, mapPos2, objectTypes, selectedObjectType, capturePreset, captureSlotA, captureSlotB, selectedIndex, objects, fields, profileKey, availableProfiles, validationLines, issueTargets, validationSummaries, objectCounts, stepStatuses, dirty, nearestObjectHint, activeMap, revision, statusKey, statusCode, statusDetail, undoCount, redoCount, null, null);
+    }
+
     public ZombiesDeploySnapshot {
+        undoCount = Math.max(0, Math.min(10, undoCount));
+        redoCount = Math.max(0, Math.min(10, redoCount));
         availableMaps = availableMaps == null ? List.of() : List.copyOf(availableMaps);
         workspaceStage = ZombiesDeployDraft.normalizeStage(workspaceStage);
         currentWorkflowStep = ZombiesDeployDraft.normalizeWorkflowStep(currentWorkflowStep);

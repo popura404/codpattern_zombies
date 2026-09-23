@@ -38,6 +38,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -56,6 +58,15 @@ public final class ZombiesDeployToolService {
     private static final String LOOK_AT_Z = "lookAtZ";
     private static final long DRAFT_SESSION_TTL_MILLIS = 30L * 60L * 1000L;
     private final Map<SessionKey, DraftSession> draftSessions = new ConcurrentHashMap<>();
+
+    private record ValidationCacheKey(ZombiesMapSnapshot snapshot, String profile) { }
+    private final Map<ValidationCacheKey, List<ZombiesDeploySnapshot.ValidationLine>> validationCache =
+            new LinkedHashMap<>(64, 0.75F, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<ValidationCacheKey, List<ZombiesDeploySnapshot.ValidationLine>> entry) {
+                    return size() > 64;
+                }
+            };
 
     public static ZombiesDeployToolService instance() {
         return INSTANCE;
@@ -152,6 +163,7 @@ public final class ZombiesDeployToolService {
             ItemStack stack,
             ZombiesDeployDraft request
     ) {
+        validationCache.clear();
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         ZombiesDeployTool.saveDraft(stack, draft);
         return snapshot(
@@ -168,6 +180,7 @@ public final class ZombiesDeployToolService {
             ItemStack stack,
             ZombiesDeployDraft request
     ) {
+        validationCache.clear();
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         Optional<ZombiesMap> resolvedMap = resolveMap(draft.selectedMap());
         if (resolvedMap.isEmpty()) {
@@ -190,7 +203,11 @@ public final class ZombiesDeployToolService {
         DraftSession session = draftSessions.get(sessionKey(player, draft.selectedMap()));
         if (session == null || Objects.equals(session.currentObjects(), map.objects())) {
             ZombiesDeployTool.saveDraft(stack, draft);
-            return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.selections_saved", "draft.empty", "");
+            boolean invalid = validationLines(map, currentObjects, ZombiesDeployFieldSchema.PROFILE_MVP3).stream()
+                    .anyMatch(line -> "error".equalsIgnoreCase(line.severity()));
+            return snapshot(player, stack, draft,
+                    invalid ? "message.codpattern.zombies.deploy.saved_invalid" : "message.codpattern.zombies.deploy.object_saved",
+                    "draft.empty", "");
         }
         List<ZombiesDeploySnapshot.ValidationLine> errors = validationLines(
                 map,
@@ -198,10 +215,6 @@ public final class ZombiesDeployToolService {
                 ZombiesDeployFieldSchema.PROFILE_MVP3).stream()
                 .filter(line -> "error".equalsIgnoreCase(line.severity()))
                 .toList();
-        if (!errors.isEmpty()) {
-            ZombiesDeploySnapshot result = buildSnapshot(player, draft, "message.codpattern.zombies.deploy.validation_ran", "draft.validation_failed", Integer.toString(errors.size()));
-            return ZombiesDeployServiceResult.failure("draft.validation_failed", "message.codpattern.zombies.deploy.validation_ran", result, Integer.toString(errors.size()));
-        }
         if (!Objects.equals(session.baseObjects(), map.objects())) {
             ZombiesDeploySnapshot result = buildSnapshot(player, draft, "message.codpattern.zombies.deploy.refreshed", "draft.revision_conflict", "");
             return ZombiesDeployServiceResult.failure("draft.revision_conflict", "message.codpattern.zombies.deploy.refreshed", result, "");
@@ -227,10 +240,12 @@ public final class ZombiesDeployToolService {
                 map.applyObjects(previous);
                 restorePlacement(rollback);
             });
-            draftSessions.remove(sessionKey(player, draft.selectedMap()));
             map.syncToClient();
+            session.markSaved();
             ZombiesDeployTool.saveDraft(stack, draft);
-            return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.object_saved", "draft.saved", "");
+            return snapshot(player, stack, draft,
+                    errors.isEmpty() ? "message.codpattern.zombies.deploy.object_saved" : "message.codpattern.zombies.deploy.saved_invalid",
+                    "draft.saved", "");
         } catch (RuntimeException exception) {
             map.applyObjects(previous);
             restorePlacement(placementRollback);
@@ -273,6 +288,28 @@ public final class ZombiesDeployToolService {
         ZombiesDeployTool.setAreaPos2(stack, null);
         ZombiesDeployTool.saveDraft(stack, draft);
         return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "undo.applied", "");
+    }
+
+    public ZombiesDeployServiceResult<ZombiesDeploySnapshot> redoLast(
+            ServerPlayer player,
+            ItemStack stack,
+            ZombiesDeployDraft request,
+            int expectedRevision
+    ) {
+        ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
+        DraftSession session = draftSessions.get(sessionKey(player, draft.selectedMap()));
+        if (session == null || session.redoCount() == 0) {
+            return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "redo.empty", "");
+        }
+        if (expectedRevision >= 0 && expectedRevision != session.revision()) {
+            return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "redo.revision_conflict", "");
+        }
+        session.redo();
+        draft = restoreDraftFields(player, draft, session.currentObjects());
+        ZombiesDeployTool.setAreaPos1(stack, null);
+        ZombiesDeployTool.setAreaPos2(stack, null);
+        ZombiesDeployTool.saveDraft(stack, draft);
+        return snapshot(player, stack, draft, "message.codpattern.zombies.deploy.refreshed", "redo.applied", "");
     }
 
     public ZombiesDeployServiceResult<ZombiesDeploySnapshot> undoLast(
@@ -466,13 +503,14 @@ public final class ZombiesDeployToolService {
                     snapshot,
                     created.arguments().toArray(String[]::new));
         }
+        draftSessions.remove(sessionKey(player, draft.selectedMap()));
         ZombiesDeployDraft updated = new ZombiesDeployDraft(
                 ZombiesDeployDraft.STAGE_OBJECT_MARKING,
                 ZombiesDeployDraft.WORKFLOW_INITIAL,
                 created.mapName(),
                 "",
-                draft.mapPos1(),
-                draft.mapPos2(),
+                null,
+                null,
                 ZombiesDeployFieldSchema.INITIAL,
                 ZombiesDeployDraft.CAPTURE_DEFAULT,
                 -1,
@@ -860,49 +898,12 @@ public final class ZombiesDeployToolService {
         }
 
         session.stage(edit.objects());
-        resultDraft = autoAdvanceDraft(player, resultDraft, edit.objects(), resolvedOperation);
         ZombiesDeployTool.saveDraft(stack, resultDraft);
         String statusKey = "message.codpattern.zombies.deploy.selections_saved";
         String statusCode = "draft.staged";
         String statusDetail = Integer.toString(edit.affectedCount());
         ZombiesDeploySnapshot snapshot = buildSnapshot(player, resultDraft, statusKey, statusCode, statusDetail);
         return ZombiesDeployServiceResult.success(snapshot, statusKey, statusDetail);
-    }
-
-    private ZombiesDeployDraft autoAdvanceDraft(
-            ServerPlayer player,
-            ZombiesDeployDraft draft,
-            ZombiesMapObjects objects,
-            ZombiesDeployObjectEditor.Operation operation
-    ) {
-        if (operation != ZombiesDeployObjectEditor.Operation.ADD || draft == null || objects == null) {
-            return draft;
-        }
-        String nextStep = "";
-        String nextType = "";
-        if (ZombiesDeployDraft.WORKFLOW_INITIAL.equals(draft.workflowStep()) && !objects.initialSpawns().isEmpty()) {
-            nextStep = ZombiesDeployDraft.WORKFLOW_ZOMBIE_SPAWN;
-            nextType = ZombiesDeployFieldSchema.ZOMBIE_SPAWN;
-        } else if (ZombiesDeployDraft.WORKFLOW_ZOMBIE_SPAWN.equals(draft.workflowStep())
-                && objects.zombieSpawns().stream().anyMatch(spawn -> spawn.group() == 1 && spawn.weight() > 0.0D)) {
-            nextStep = ZombiesDeployDraft.WORKFLOW_BARRIER;
-            nextType = ZombiesDeployFieldSchema.BARRIER;
-        }
-        if (nextStep.isBlank()) {
-            return draft;
-        }
-        return new ZombiesDeployDraft(
-                ZombiesDeployDraft.STAGE_OBJECT_MARKING,
-                nextStep,
-                draft.selectedMap(),
-                draft.draftMapName(),
-                draft.mapPos1(),
-                draft.mapPos2(),
-                nextType,
-                ZombiesDeployDraft.CAPTURE_DEFAULT,
-                -1,
-                draft.validationView(),
-                defaultFields(player, nextType));
     }
 
     private ZombiesDeployServiceResult<ZombiesDeploySnapshot> failure(
@@ -941,8 +942,8 @@ public final class ZombiesDeployToolService {
                 workflowStep,
                 selectedMap,
                 base.draftMapName(),
-                base.mapPos1() == null ? stored.mapPos1() : base.mapPos1(),
-                base.mapPos2() == null ? stored.mapPos2() : base.mapPos2(),
+                base.mapPos1(),
+                base.mapPos2(),
                 objectType,
                 capturePreset,
                 base.selectedIndex(),
@@ -965,8 +966,7 @@ public final class ZombiesDeployToolService {
     }
 
     private ZombiesDeployDraft selectionStateDraft(ServerPlayer player, ItemStack stack, ZombiesDeployDraft request) {
-        ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
-        return draft.selectedIndex() < 0 ? draft.withFields(Map.of()) : draft;
+        return normalizeDraft(player, stack, request);
     }
 
     private ZombiesDeployDraft restoreDraftFields(ServerPlayer player, ZombiesDeployDraft draft, ZombiesMapObjects objects) {
@@ -1043,7 +1043,11 @@ public final class ZombiesDeployToolService {
                 revision,
                 Objects.requireNonNullElse(statusKey, ""),
                 Objects.requireNonNullElse(statusCode, ""),
-                Objects.requireNonNullElse(statusDetail, ""));
+                Objects.requireNonNullElse(statusDetail, ""),
+                draftSession == null ? 0 : draftSession.undoCount(),
+                draftSession == null ? 0 : draftSession.redoCount(),
+                map.map(value -> value.getMapArea().pos1()).orElse(null),
+                map.map(value -> value.getMapArea().pos2()).orElse(null));
     }
 
     private List<ZombiesDeploySnapshot.IssueTarget> buildIssueTargets(
@@ -1350,8 +1354,9 @@ public final class ZombiesDeployToolService {
                     map.getServerLevel().dimension().location().toString(),
                     ZombiesMapSnapshot.BoundsSnapshot.fromAreaData(map.getMapArea()),
                     objects);
-            ZombiesMapValidationReport report = new ZombiesMapValidator(profile).validate(snapshot);
-            return report.issues().stream().map(this::validationLine).toList();
+            ValidationCacheKey cacheKey = new ValidationCacheKey(snapshot, profile.key());
+            return validationCache.computeIfAbsent(cacheKey, ignored ->
+                    new ZombiesMapValidator(profile).validate(snapshot).issues().stream().map(this::validationLine).toList());
         } catch (RuntimeException e) {
             return List.of(new ZombiesDeploySnapshot.ValidationLine(
                     "error",
@@ -1827,17 +1832,8 @@ public final class ZombiesDeployToolService {
         if (map.isPresent() && !Objects.equals(map.get().objects(), objects)) {
             return true;
         }
-        if (ZombiesDeployDraft.STAGE_MAP_REGISTRATION.equals(draft.workspaceStage())) {
-            if (map.isEmpty()) {
-                return !draft.draftMapName().isBlank()
-                        || draft.mapPos1() != null
-                        || draft.mapPos2() != null;
-            }
-            if (draft.mapPos1() == null || draft.mapPos2() == null) {
-                return false;
-            }
-            AreaData area = map.get().getMapArea();
-            return !draft.mapPos1().equals(area.pos1()) || !draft.mapPos2().equals(area.pos2());
+        if (!draft.draftMapName().isBlank() || draft.mapPos1() != null || draft.mapPos2() != null) {
+            return true;
         }
         if (map.isEmpty() || draft.selectedIndex() < 0) {
             return false;
@@ -2654,9 +2650,11 @@ public final class ZombiesDeployToolService {
     }
 
     private static final class DraftSession {
-        private final ZombiesMapObjects baseObjects;
+        private static final int HISTORY_LIMIT = 10;
+        private ZombiesMapObjects baseObjects;
         private ZombiesMapObjects currentObjects;
-        private ZombiesMapObjects previousObjects;
+        private final Deque<ZombiesMapObjects> undoHistory = new ArrayDeque<>();
+        private final Deque<ZombiesMapObjects> redoHistory = new ArrayDeque<>();
         private int revision;
         private volatile long lastTouchedAt = System.currentTimeMillis();
 
@@ -2664,49 +2662,40 @@ public final class ZombiesDeployToolService {
             this.baseObjects = baseObjects == null ? ZombiesMapObjects.EMPTY : baseObjects;
             this.currentObjects = this.baseObjects;
         }
-
-        private ZombiesMapObjects baseObjects() {
-            return baseObjects;
-        }
-
-        private ZombiesMapObjects currentObjects() {
-            return currentObjects;
-        }
-
-        private ZombiesMapObjects previousObjects() {
-            return previousObjects;
-        }
-
-        private int revision() {
-            return revision;
-        }
-
-        private long lastTouchedAt() {
-            return lastTouchedAt;
-        }
-
-        private void touch() {
-            lastTouchedAt = System.currentTimeMillis();
-        }
-
+        private ZombiesMapObjects baseObjects() { return baseObjects; }
+        private ZombiesMapObjects currentObjects() { return currentObjects; }
+        private ZombiesMapObjects previousObjects() { return undoHistory.peekLast(); }
+        private int undoCount() { return undoHistory.size(); }
+        private int redoCount() { return redoHistory.size(); }
+        private int revision() { return revision; }
+        private long lastTouchedAt() { return lastTouchedAt; }
+        private void touch() { lastTouchedAt = System.currentTimeMillis(); }
         private void stage(ZombiesMapObjects next) {
             touch();
-            if (Objects.equals(currentObjects, next)) {
-                return;
-            }
-            previousObjects = currentObjects;
-            currentObjects = next == null ? ZombiesMapObjects.EMPTY : next;
+            next = next == null ? ZombiesMapObjects.EMPTY : next;
+            if (Objects.equals(currentObjects, next)) { return; }
+            undoHistory.addLast(currentObjects);
+            if (undoHistory.size() > HISTORY_LIMIT) { undoHistory.removeFirst(); }
+            redoHistory.clear();
+            currentObjects = next;
             revision++;
         }
-
         private void undo() {
-            if (previousObjects == null) {
-                return;
-            }
-            ZombiesMapObjects next = currentObjects;
-            currentObjects = previousObjects;
-            previousObjects = null;
+            if (undoHistory.isEmpty()) { return; }
+            redoHistory.addLast(currentObjects);
+            currentObjects = undoHistory.removeLast();
             revision++;
+            touch();
+        }
+        private void redo() {
+            if (redoHistory.isEmpty()) { return; }
+            undoHistory.addLast(currentObjects);
+            currentObjects = redoHistory.removeLast();
+            revision++;
+            touch();
+        }
+        private void markSaved() {
+            baseObjects = currentObjects;
             touch();
         }
     }

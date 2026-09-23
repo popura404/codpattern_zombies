@@ -117,14 +117,23 @@ public final class ZombiesDeployGuiStaticContractCompatTest {
             String packet,
             String validator
     ) {
-        requireContains(screen, "private float layoutScale()", "deploy GUI should scale to the available window");
-        requireContains(screen, "modeButton", "deploy GUI should expose guided/expert mode switching");
+        requireAbsent(screen, "layoutScale()", "full-screen editor must not scale a fixed window");
+        requireAbsent(screen, "modeButton", "guided/expert split must be removed");
+        requireAbsent(screen, "fieldValueBox", "fields must be editable inline");
+        requireContains(screen, "session.mapScroll", "map list must scroll independently");
+        requireContains(screen, "button(name, 12", "map rows should contain only their names");
+        requireContains(screen, "ZombiesDeployMapScreen(session)", "map registration must have its own screen");
+        requireContains(screen, "Action.REDO_LAST", "editor must expose redo");
+        requireAbsent(packet, "player.displayClientMessage", "editor actions must not write to chat");
+        requireAbsent(tool, "player.displayClientMessage", "world actions must use the deployment HUD");
+        requireAbsent(service, "autoAdvanceDraft", "placement must keep the selected type");
+        requireAbsent(service, "draft.validation_failed", "validation errors must not block saving");
         requireContains(screen, "Action.SAVE_DRAFT", "deploy GUI should expose explicit draft saving");
-        requireContains(screen, "Action.DISCARD_DRAFT", "deploy GUI should expose draft discard");
-        requireContains(screen, "Action.ADD_OBJECT", "expert mode should expose add-object action");
+        requireContains(screen, "Action.DISCARD_DRAFT", "confirmed close must clear the draft");
+        requireContains(screen, "Action.ADD_OBJECT", "editor should expose add-object action");
         requireContains(service, "private static final class DraftSession", "server should keep staged deployment sessions");
         requireContains(service, "public ZombiesDeployServiceResult<ZombiesDeploySnapshot> saveDraft", "server should commit staged drafts explicitly");
-        requireContains(service, "public ZombiesDeployServiceResult<ZombiesDeploySnapshot> undoLast", "server should support one-step undo");
+        requireContains(service, "public ZombiesDeployServiceResult<ZombiesDeploySnapshot> undoLast", "server should support undo");
         requireContains(tool, "new com.phasetranscrystal.fpsmatch.common.packet.zombies.OpenZombiesDeployToolScreenS2CPacket(snapshot, false)", "world placement should refresh HUD state without reopening the screen");
         requireContains(packet, "case SAVE_DRAFT -> service.saveDraft(player, stack, draft);", "draft save action should route through the service");
         requireContains(packet, "case UNDO_LAST -> service.undoLast(player, stack, draft, expectedRevision);", "undo action should route through the service with revision validation");

@@ -142,6 +142,10 @@ public class OpenZombiesDeployToolScreenS2CPacket {
         buf.writeUtf(snapshot.statusKey());
         buf.writeUtf(snapshot.statusCode());
         buf.writeUtf(snapshot.statusDetail());
+        buf.writeVarInt(snapshot.undoCount());
+        buf.writeVarInt(snapshot.redoCount());
+        writeNullableBlockPos(buf, snapshot.registeredMapPos1());
+        writeNullableBlockPos(buf, snapshot.registeredMapPos2());
     }
 
     public static OpenZombiesDeployToolScreenS2CPacket decode(FriendlyByteBuf buf) {
@@ -272,7 +276,11 @@ public class OpenZombiesDeployToolScreenS2CPacket {
                 buf.readVarInt(),
                 buf.readUtf(),
                 buf.readUtf(),
-                buf.readUtf());
+                buf.readUtf(),
+                buf.readVarInt(),
+                buf.readVarInt(),
+                readNullableBlockPos(buf),
+                readNullableBlockPos(buf));
         return new OpenZombiesDeployToolScreenS2CPacket(snapshot, openScreen, responseAction, requestId);
     }
 

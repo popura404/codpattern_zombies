@@ -1,75 +1,44 @@
 package com.cdp.codpattern.client.gui.screen.zombies.deploy;
 
-import com.phasetranscrystal.fpsmatch.common.packet.zombies.OpenZombiesDeployToolScreenS2CPacket;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-/** Three-way save/discard/cancel prompt used when leaving a dirty deployment editor. */
+/** Confirmation is used only to end an editing session, never to collapse it. */
 public final class ZombiesDeployUnsavedChangesScreen extends Screen {
     private final ZombiesDeployToolScreen parent;
-    private final Runnable save;
-    private final Runnable discard;
+    private final Runnable confirm;
     private boolean waiting;
-    private Button cancelButton;
 
-    ZombiesDeployUnsavedChangesScreen(ZombiesDeployToolScreen parent, Runnable save, Runnable discard) {
+    ZombiesDeployUnsavedChangesScreen(ZombiesDeployToolScreen parent, Runnable confirm) {
         super(Component.translatable("gui.codpattern.zombies.deploy.unsaved_title"));
         this.parent = parent;
-        this.save = save;
-        this.discard = discard;
+        this.confirm = confirm;
     }
 
-    @Override
-    protected void init() {
-        int x = width / 2 - 104;
-        int y = height / 2 + 18;
-        addRenderableWidget(Button.builder(Component.translatable("gui.codpattern.zombies.deploy.save_draft"), ignored -> {
-            waitForResponse();
-            save.run();
-        }).bounds(x, y, 66, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.codpattern.zombies.deploy.discard_draft"), ignored -> {
-            waitForResponse();
-            discard.run();
-        }).bounds(x + 70, y, 66, 20).build());
-        cancelButton = addRenderableWidget(Button.builder(Component.translatable("gui.codpattern.zombies.deploy.cancel"), ignored ->
-                onClose()).bounds(x + 140, y, 66, 20).build());
-        if (waiting) {
-            waitForResponse();
-        }
+    @Override protected void init() {
+        int buttonWidth = Math.min(120, (width - 40) / 2);
+        int x = width / 2 - buttonWidth - 4;
+        addRenderableWidget(Button.builder(Component.translatable("gui.codpattern.zombies.deploy.editor.confirm_close"), ignored -> {
+            waiting = true;
+            children().forEach(child -> { if (child instanceof Button button) { button.active = false; } });
+            confirm.run();
+        }).bounds(x, height / 2 + 20, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.translatable("gui.codpattern.zombies.deploy.editor.return_editing"), ignored -> onClose())
+                .bounds(x + buttonWidth + 8, height / 2 + 20, buttonWidth, 20).build());
     }
 
-    private void waitForResponse() {
-        waiting = true;
-        children().forEach(child -> {
-            if (child instanceof Button button) {
-                button.active = button == cancelButton;
-            }
-        });
-    }
-
-    public void applyData(OpenZombiesDeployToolScreenS2CPacket packet) {
-        // Earlier field acknowledgements must not overwrite the edit captured at close.
-        if (waiting) {
-            parent.applyCloseResponse(packet);
-        }
-    }
-
-    @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(graphics);
-        graphics.drawCenteredString(font, title, width / 2, height / 2 - 24, 0xFFFFFFFF);
-        graphics.drawCenteredString(font, Component.translatable(waiting
-                ? "gui.codpattern.zombies.deploy.waiting_response"
-                : "gui.codpattern.zombies.deploy.unsaved_message"), width / 2, height / 2 - 6, 0xFFC9D1D9);
+    @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        graphics.fill(0, 0, width, height, 0xCF12191D);
+        graphics.drawCenteredString(font, title, width / 2, height / 2 - 34, 0xFFFFFFFF);
+        Component message = Component.translatable(waiting ? "gui.codpattern.zombies.deploy.waiting_response" : "gui.codpattern.zombies.deploy.editor.close_warning");
+        graphics.drawWordWrap(font, message, Math.max(12, width / 2 - 150), height / 2 - 12, Math.min(300, width - 24), 0xFFFFCD78);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 
-    @Override
-    public void onClose() {
-        parent.cancelCloseRequest();
-        Minecraft.getInstance().setScreen(parent);
+    @Override public void onClose() {
+        if (!waiting) { minecraft.setScreen(parent); }
     }
+    @Override public boolean isPauseScreen() { return false; }
 }

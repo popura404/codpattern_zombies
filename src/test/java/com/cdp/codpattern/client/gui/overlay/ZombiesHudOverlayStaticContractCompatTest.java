@@ -90,6 +90,18 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "held weapon panel must resolve supported rarity colors");
         requireContains(overlay, "drawHorizontalRarityGradient(graphics, rarityColor)",
                 "held weapon panel must use its horizontal gradient renderer");
+        if (overlay.indexOf("drawHorizontalRarityGradient(graphics, rarityColor)")
+                >= overlay.indexOf("drawPanelTexture(graphics, data.hudTexture()")) {
+            throw new AssertionError("rarity gradient must render behind the weapon texture");
+        }
+        requireContains(overlay, "graphics.blit(texture, 0, 0, 0, 0, 1, 1, 1, 1)",
+                "panel textures must sample full UV 0..1 regardless of source resolution");
+        requireContains(overlay, "graphics.pose().scale(width, height, 1)",
+                "full texture must map to the layout's display size");
+        requireContains(overlay, "HELD_PANEL_TEXT_ALPHA = 242",
+                "ammo must retain the improved 95 percent opacity");
+        requireContains(overlay, "ZombiesWeaponPanelLayout.IMAGE_RIGHT - iconSize",
+                "fallback item must preserve the full-image right anchor");
         requireContains(overlay, "upgradeRoman(upgradeLevel)",
                 "held weapon panel must render the upgrade level as Roman numerals");
         requireContains(overlay, "static String upgradeRoman(int value)",

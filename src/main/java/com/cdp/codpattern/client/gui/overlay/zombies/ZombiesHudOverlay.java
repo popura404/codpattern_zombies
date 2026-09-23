@@ -95,7 +95,7 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     private static final int RESULT_PAGE_COUNT = 2;
     private static final long RESULT_PAGE_DURATION_MS = 5000L;
     private static final long RESULT_PAGE_FADE_MS = 550L;
-    private static final int HELD_PANEL_TEXT_ALPHA = 204;
+    private static final int HELD_PANEL_TEXT_ALPHA = 242;
     private static final int HELD_PANEL_RARITY_ALPHA = 41;
     private static final int HELD_PANEL_BORDER_COLOR = 0xCCD9D9D9;
     private static final ResourceLocation FIRE_MODE_SEMI = ResourceLocation.fromNamespaceAndPath(
@@ -972,16 +972,20 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             graphics.pose().scale(layout.scale(), layout.scale(), 1);
             RenderSystem.setShaderColor(1, 1, 1, 1);
 
+            // Keep rarity behind the gun so its original texture colors remain intact.
+            int rarityColor = data.rarity().map(ZombiesRarityDisplay.Entry::color).orElse(0xFF6B7280);
+            drawHorizontalRarityGradient(graphics, rarityColor);
+
             if (data.hudTexture() != null) {
                 drawPanelTexture(graphics, data.hudTexture(),
                         ZombiesWeaponPanelLayout.IMAGE_X, ZombiesWeaponPanelLayout.IMAGE_Y,
-                        ZombiesWeaponPanelLayout.IMAGE_WIDTH, ZombiesWeaponPanelLayout.IMAGE_HEIGHT, 384, 128);
+                        ZombiesWeaponPanelLayout.IMAGE_WIDTH, ZombiesWeaponPanelLayout.IMAGE_HEIGHT);
             } else {
                 float iconSize = ZombiesWeaponPanelLayout.IMAGE_HEIGHT;
                 graphics.pose().pushPose();
                 try {
                     graphics.pose().translate(
-                            (ZombiesWeaponPanelLayout.IMAGE_WIDTH - iconSize) / 2,
+                            ZombiesWeaponPanelLayout.IMAGE_RIGHT - iconSize,
                             ZombiesWeaponPanelLayout.IMAGE_Y, 0);
                     graphics.pose().scale(iconSize / 16, iconSize / 16, 1);
                     graphics.renderItem(data.stack(), 0, 0);
@@ -989,10 +993,6 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
                     graphics.pose().popPose();
                 }
             }
-
-            // Match the SVG's faint rarity tint OVER the gun, before text and icons.
-            int rarityColor = data.rarity().map(ZombiesRarityDisplay.Entry::color).orElse(0xFF6B7280);
-            drawHorizontalRarityGradient(graphics, rarityColor);
 
             int currentColor = data.lowAmmo() ? TEXT_DANGER : TEXT_PRIMARY;
             drawScaledPanelString(graphics, font, data.currentAmmoText(),
@@ -1014,7 +1014,7 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             graphics.flush();
             drawPanelTexture(graphics, fireModeTexture(data.fireMode()),
                     ZombiesWeaponPanelLayout.ICON_X, ZombiesWeaponPanelLayout.ICON_Y,
-                    ZombiesWeaponPanelLayout.ICON_SIZE, ZombiesWeaponPanelLayout.ICON_SIZE, 128, 128);
+                    ZombiesWeaponPanelLayout.ICON_SIZE, ZombiesWeaponPanelLayout.ICON_SIZE);
             graphics.fill(0, 0, Math.round(ZombiesWeaponPanelLayout.BORDER_WIDTH),
                     Math.round(ZombiesWeaponPanelLayout.HEIGHT), HELD_PANEL_BORDER_COLOR);
             graphics.flush();
@@ -1040,22 +1040,23 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         vertices.vertex(pose, 0, 0, 0).color(red, green, blue, HELD_PANEL_RARITY_ALPHA).endVertex();
         vertices.vertex(pose, 0, ZombiesWeaponPanelLayout.HEIGHT, 0)
                 .color(red, green, blue, HELD_PANEL_RARITY_ALPHA).endVertex();
-        vertices.vertex(pose, ZombiesWeaponPanelLayout.WIDTH, ZombiesWeaponPanelLayout.HEIGHT, 0)
+        vertices.vertex(pose, ZombiesWeaponPanelLayout.RARITY_FADE_END, ZombiesWeaponPanelLayout.HEIGHT, 0)
                 .color(red, green, blue, 0).endVertex();
-        vertices.vertex(pose, ZombiesWeaponPanelLayout.WIDTH, 0, 0).color(red, green, blue, 0).endVertex();
+        vertices.vertex(pose, ZombiesWeaponPanelLayout.RARITY_FADE_END, 0, 0).color(red, green, blue, 0).endVertex();
         graphics.flush();
     }
 
     private static void drawPanelTexture(GuiGraphics graphics, ResourceLocation texture,
-                                         float x, float y, float width, float height, int sourceWidth, int sourceHeight) {
+                                         float x, float y, float width, float height) {
         graphics.pose().pushPose();
         try {
             graphics.pose().translate(x, y, 0);
-            graphics.pose().scale(width / sourceWidth, height / sourceHeight, 1);
+            graphics.pose().scale(width, height, 1);
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
             RenderSystem.setShaderColor(1, 1, 1, 1);
-            graphics.blit(texture, 0, 0, 0, 0, sourceWidth, sourceHeight, sourceWidth, sourceHeight);
+            // A unit quad with UV 0..1 samples the full canvas at any source resolution.
+            graphics.blit(texture, 0, 0, 0, 0, 1, 1, 1, 1);
         } finally {
             graphics.pose().popPose();
         }
@@ -1069,6 +1070,15 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             // The default bitmap glyph starts one unit below drawString's Y.
             graphics.pose().translate(x, y - scale, 0);
             graphics.pose().scale(scale, scale, 1);
+            // Half a reference-space unit, independent of the magazine/reserve font scale.
+            float shadowOffset = 0.5F / scale;
+            graphics.pose().pushPose();
+            try {
+                graphics.pose().translate(shadowOffset, shadowOffset, 0);
+                graphics.drawString(font, text, 0, 0, 0x60000000, false);
+            } finally {
+                graphics.pose().popPose();
+            }
             graphics.drawString(font, text, 0, 0, color, false);
         } finally {
             graphics.pose().popPose();

@@ -9,18 +9,25 @@ final class ZombiesWeaponPanelLayout {
     static final float WIDTH = 246.0F;
     static final float HEIGHT = 156.0F * SVG_SCALE;
     static final float MARGIN = 12.0F;
-    static final float IMAGE_X = 0.0F;
-    static final float IMAGE_Y = 13.0F * SVG_SCALE;
-    static final float IMAGE_WIDTH = 384.0F * SVG_SCALE;
-    static final float IMAGE_HEIGHT = 128.0F * SVG_SCALE;
+    // Anchor the full texture canvas, including transparent padding, not the gun silhouette.
+    static final float IMAGE_RIGHT = 384.0F * SVG_SCALE;
+    static final float IMAGE_CENTER_Y = 77.0F * SVG_SCALE;
+    static final float IMAGE_SCALE = 0.94F;
+    static final float IMAGE_WIDTH = 384.0F * SVG_SCALE * IMAGE_SCALE;
+    static final float IMAGE_HEIGHT = 128.0F * SVG_SCALE * IMAGE_SCALE;
+    static final float IMAGE_X = IMAGE_RIGHT - IMAGE_WIDTH;
+    static final float IMAGE_Y = IMAGE_CENTER_Y - IMAGE_HEIGHT / 2.0F;
     static final float AMMO_LEFT = 386.88F * SVG_SCALE;
     static final float AMMO_RIGHT = 546.003F * SVG_SCALE + 6.0F;
     static final float CURRENT_Y = 29.8F * SVG_SCALE;
     static final float RESERVE_CENTER_Y = 117.4F * SVG_SCALE;
-    static final float ICON_X = AMMO_LEFT;
     static final float ICON_Y = 95.9F * SVG_SCALE;
     static final float ICON_SIZE = 43.0F * SVG_SCALE;
-    static final float RESERVE_LEFT = ICON_X + ICON_SIZE + 6.0F;
+    // One nominal small-digit advance; keep the four-digit field and mode icon stable.
+    static final float RESERVE_ICON_GAP = 6.0F * (25.2F * SVG_SCALE / 7.0F);
+    static final float RESERVE_LEFT = AMMO_RIGHT - 4.0F * RESERVE_ICON_GAP;
+    static final float ICON_X = RESERVE_LEFT - RESERVE_ICON_GAP - ICON_SIZE;
+    static final float RARITY_FADE_END = WIDTH * 0.80F;
     static final float LEVEL_X = 17.922F * SVG_SCALE;
     static final float LEVEL_BOTTOM = 147.0F * SVG_SCALE;
     static final float BORDER_WIDTH = 5.0F * SVG_SCALE;
@@ -69,7 +76,7 @@ final class ZombiesWeaponPanelLayout {
 
         float levelScale(int textWidth) {
             return Math.min(reserveScale * LEVEL_HEIGHT_RATIO,
-                    (IMAGE_WIDTH - LEVEL_X - 6.0F) / Math.max(1, textWidth));
+                    (IMAGE_RIGHT - LEVEL_X - 6.0F) / Math.max(1, textWidth));
         }
     }
 }

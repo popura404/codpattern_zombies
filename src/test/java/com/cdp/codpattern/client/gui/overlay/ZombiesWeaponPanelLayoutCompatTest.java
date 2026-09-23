@@ -3,6 +3,25 @@ package com.cdp.codpattern.client.gui.overlay.zombies;
 /** Geometry checks need no Minecraft bootstrap or graphics context. */
 public final class ZombiesWeaponPanelLayoutCompatTest {
     public static void main(String[] args) {
+        near(ZombiesWeaponPanelLayout.WIDTH, 246, "card width must not grow");
+        near(ZombiesWeaponPanelLayout.HEIGHT, 156.0F * 240 / 586, "card height must not grow");
+        near(ZombiesWeaponPanelLayout.IMAGE_X + ZombiesWeaponPanelLayout.IMAGE_WIDTH,
+                384.0F * 240 / 586, "full-image right edge moved");
+        near(ZombiesWeaponPanelLayout.IMAGE_Y + ZombiesWeaponPanelLayout.IMAGE_HEIGHT / 2,
+                77.0F * 240 / 586, "full-image vertical center moved");
+        near(ZombiesWeaponPanelLayout.IMAGE_WIDTH / ZombiesWeaponPanelLayout.IMAGE_HEIGHT,
+                3, "gun image aspect ratio changed");
+        near(ZombiesWeaponPanelLayout.IMAGE_WIDTH / (384.0F * 240 / 586),
+                0.94F, "gun image should shrink by 6 percent");
+        require(ZombiesWeaponPanelLayout.IMAGE_X > ZombiesWeaponPanelLayout.BORDER_WIDTH,
+                "gun image must leave space after the left bar");
+        require(ZombiesWeaponPanelLayout.ICON_X >= ZombiesWeaponPanelLayout.IMAGE_RIGHT,
+                "mode icon overlaps gun image");
+        near(ZombiesWeaponPanelLayout.ICON_X + ZombiesWeaponPanelLayout.ICON_SIZE
+                        + ZombiesWeaponPanelLayout.RESERVE_ICON_GAP,
+                ZombiesWeaponPanelLayout.RESERVE_LEFT, "mode icon gap does not match reserved field");
+        near(ZombiesWeaponPanelLayout.RARITY_FADE_END / ZombiesWeaponPanelLayout.WIDTH,
+                0.80F, "rarity must fade before the right edge");
         for (int width : new int[]{800, 1024, 1280, 1920, 2560, 3840}) {
             int height = width * 9 / 16;
             Float physicalWidth = null;
@@ -29,6 +48,8 @@ public final class ZombiesWeaponPanelLayoutCompatTest {
         var normal = ZombiesWeaponPanelLayout.create(1920, 1080, 2, 9, 6, 3, 4).orElseThrow();
         near(normal.glyphHeight() * normal.currentScale(), 67.2F * 240 / 586,
                 "normal magazine is unnecessarily shrunk");
+        near(ZombiesWeaponPanelLayout.AMMO_RIGHT - 4 * 6 * normal.reserveScale(),
+                ZombiesWeaponPanelLayout.RESERVE_LEFT, "normal reserve does not fill reserved field");
         for (int digits = 4; digits <= 10; digits++) {
             var overflow = ZombiesWeaponPanelLayout.create(1920, 1080, 2, 9, 6,
                     digits, digits).orElseThrow();
@@ -63,7 +84,7 @@ public final class ZombiesWeaponPanelLayoutCompatTest {
                 "reserve is not centered with mode icon");
         float longLevelScale = layout.levelScale(2000);
         require(ZombiesWeaponPanelLayout.LEVEL_X + 2000 * longLevelScale
-                < ZombiesWeaponPanelLayout.IMAGE_WIDTH, "long level overlaps ammo region");
+                < ZombiesWeaponPanelLayout.IMAGE_RIGHT, "long level overlaps ammo region");
     }
 
     private static void near(float actual, float expected, String message) {

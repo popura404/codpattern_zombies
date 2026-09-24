@@ -32,14 +32,15 @@ public final class ZombiesConfigRepository {
     public static ZombiesServerConfig loadOrCreate(Path root, String mapName) { return loadResult(root, mapName).config(); }
 
     public static LoadResult loadResult(MinecraftServer server, String mapName) {
-        if (server == null) return loadResult(Path.of("serverconfig", "codpattern", "zombies_rules", ZombiesConfigPaths.safeMapConfigName(mapName)), mapName);
+        if (server == null) return new LoadResult(ZombiesServerConfig.defaults(mapName), List.of());
         return loadResult(ZombiesConfigPaths.zombiesMapRulesRoot(server, mapName), mapName);
     }
 
     public static LoadResult loadResult(Path root) { return loadResult(root, root == null ? "default" : root.getFileName().toString()); }
 
     public static synchronized LoadResult loadResult(Path root, String mapName) {
-        Path resolved = root == null ? Path.of("serverconfig", "codpattern", "zombies_rules", "default") : root;
+        if (root == null) return new LoadResult(ZombiesServerConfig.defaults(mapName), List.of());
+        Path resolved = root;
         List<FileStatus> statuses = new ArrayList<>();
         ZombiesRoomConfig room = read(resolved.resolve("room.json"), ZombiesRoomConfig.class, ZombiesRoomConfig::defaults, statuses);
         ZombiesWeaponRulesConfig weaponRules = read(resolved.resolve("weapon_rules.json"), ZombiesWeaponRulesConfig.class, ZombiesWeaponRulesConfig::defaults, statuses);

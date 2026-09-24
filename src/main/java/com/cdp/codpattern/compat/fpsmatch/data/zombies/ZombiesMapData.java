@@ -154,7 +154,16 @@ public class ZombiesMapData {
                 .isGlobal(false)
                 .build();
 
-        event.registerData(MapData.class, BuiltInGameModes.ZOMBIES, saveHolder);
+        event.registerMapData(MapData.class, new com.cdp.codpattern.config.storage.MapStorageRegistration(
+                BuiltInGameModes.ZOMBIES, "codpattern_zombies", "zombies", java.util.List.of("zombies"), json -> {
+                    saveHolder.decodeFromJson(json);
+                    if (json.has("gameType") && !"zombies".equals(json.get("gameType").getAsString())) {
+                        throw new IllegalArgumentException("Wrong map mode");
+                    }
+                }, new com.cdp.codpattern.config.storage.MapStorageRegistration.LegacyRules(
+                        "serverconfig/codpattern/zombies_rules",
+                        com.cdp.codpattern.config.zombies.ZombiesConfigPaths::safeMapConfigName,
+                        com.cdp.codpattern.config.zombies.ZombiesStorageMigration::validate)), saveHolder);
     }
 
     private static void loadMap(MapData data) {

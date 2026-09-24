@@ -290,6 +290,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
 
     @Override
     public void startGame() {
+        if (!com.cdp.codpattern.config.storage.ServerMapStorage.canUse(getGameType())) return;
         startGame(survivorPlayerIds());
     }
 

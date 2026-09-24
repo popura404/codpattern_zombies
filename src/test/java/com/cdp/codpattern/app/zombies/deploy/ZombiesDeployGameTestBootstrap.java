@@ -30,11 +30,11 @@ public final class ZombiesDeployGameTestBootstrap {
         }
         if (FPSMCore.initialized()) { return; }
         try {
-            Constructor<FPSMCore> constructor = FPSMCore.class.getDeclaredConstructor(String.class);
+            Constructor<FPSMCore> constructor = FPSMCore.class.getDeclaredConstructor(net.minecraft.server.MinecraftServer.class);
             constructor.setAccessible(true);
             Field instance = FPSMCore.class.getDeclaredField("INSTANCE");
             instance.setAccessible(true);
-            instance.set(null, constructor.newInstance("zombies_deploy_gametest"));
+            instance.set(null, constructor.newInstance(event.getServer()));
         } catch (ReflectiveOperationException error) {
             throw new IllegalStateException("Cannot initialize the GameTest-only FPSM registry", error);
         }

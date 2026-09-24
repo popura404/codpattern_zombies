@@ -1,13 +1,11 @@
 package com.cdp.codpattern.config.zombies;
 
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Path;
 
-/** Addon-owned construction of the existing map-scoped Zombies config paths. */
+/** Addon-owned filenames over the shared world-local map storage. */
 public final class ZombiesConfigPaths {
-    private static final String SERVER_ZOMBIES_RULES_ROOT = "serverconfig/codpattern/zombies_rules";
     private static final String ZOMBIES_ROOM_FILE = "room.json";
     private static final String ZOMBIES_WEAPON_RULES_FILE = "weapon_rules.json";
     private static final String ZOMBIES_WEAPON_WALL_FILE = "weapon_wall.json";
@@ -24,9 +22,13 @@ public final class ZombiesConfigPaths {
     }
 
     public static Path zombiesMapRulesRoot(MinecraftServer server, String mapName) {
-        return server.getWorldPath(LevelResource.ROOT)
-                .resolve(SERVER_ZOMBIES_RULES_ROOT)
-                .resolve(safeMapConfigName(mapName));
+        var storage = com.cdp.codpattern.config.storage.ServerMapStorage.get(server);
+        storage.requireAvailable("zombies");
+        if (storage.migration().blocksMap("zombies", mapName)) throw new IllegalStateException("Zombies rules require migration");
+        Path root = storage.paths().rules("zombies", mapName);
+        try { com.cdp.codpattern.config.storage.StorageFiles.checkPath(root); }
+        catch (java.io.IOException e) { throw new IllegalStateException("Unsafe Zombies rules directory", e); }
+        return root;
     }
 
     public static Path zombiesMapRulesConfig(MinecraftServer server, String mapName) {

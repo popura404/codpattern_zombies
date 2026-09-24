@@ -36,8 +36,8 @@ public final class ZombiesMapScopedConfigStaticContractCompatTest {
         String spawnService = read(SPAWN_SERVICE);
 
         requireContains(configPath,
-                "SERVER_ZOMBIES_RULES_ROOT = \"serverconfig/codpattern/zombies_rules\"",
-                "map-scoped zombies configs must live below zombies_rules");
+                "storage.paths().rules(\"zombies\", mapName)",
+                "map-scoped zombies configs must use the shared map rules path");
         requireContains(configPath,
                 "public static Path zombiesMapRulesConfig(MinecraftServer server, String mapName)",
                 "rules config path must be map-scoped");
@@ -54,8 +54,8 @@ public final class ZombiesMapScopedConfigStaticContractCompatTest {
                 "zombies_backpack_config.json",
                 "starter weapon must not generate a separate backpack config file");
         requireContains(configPath,
-                "safeMapConfigName(mapName)",
-                "map-scoped config paths must sanitize map names");
+                "storage.paths().rules(\"zombies\", mapName)",
+                "map-scoped config paths must use the common name encoding");
         requireAbsent(configPath,
                 "SERVER_ZOMBIES_RULES_CONFIG",
                 "old global zombies rules config path must not remain");

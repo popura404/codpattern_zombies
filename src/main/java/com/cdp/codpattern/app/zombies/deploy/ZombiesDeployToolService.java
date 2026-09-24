@@ -1166,6 +1166,7 @@ public final class ZombiesDeployToolService {
     }
 
     private Optional<ZombiesMap> resolveMap(String mapName) {
+        if (!com.cdp.codpattern.config.storage.ServerMapStorage.canUse(BuiltInGameModes.ZOMBIES)) return Optional.empty();
         String selected = Objects.requireNonNullElse(mapName, "").trim();
         if (selected.isEmpty()) {
             return Optional.empty();

@@ -180,14 +180,18 @@ public final class ZombiesMobSpawnService {
         attachWaveRewardMetadata(mob, mobId.get(), waveDefinition);
         attachRecycleCountMetadata(mob, mobId.get(), waveState);
 
+        ownershipRegistry.register(roomId, mob);
         if (!level.addFreshEntity(mob)) {
+            mob.discard();
+            ownershipRegistry.unregister(mob);
+            com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current()
+                    .ifPresent(service -> service.acknowledgeEntity(mob.getUUID()));
             return SpawnResult.failure(SpawnFailureReason.ENTITY_ADD_FAILED);
         }
         if (!waveState.consumeBudget(mobId.get())) {
             mob.discard();
             return SpawnResult.failure(SpawnFailureReason.NO_BUDGET);
         }
-        ownershipRegistry.register(roomId, mob);
         waveState.registerActiveZombie(mob.getUUID());
         activeMobCounter.register(roomId, mob.getUUID());
         return SpawnResult.spawned(mob, mobId.get(), spawn.objectId());

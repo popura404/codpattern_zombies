@@ -71,7 +71,7 @@ final class ZombiesRoomHandleFactory {
                 new ZombiesPlayerCombatEventAdapter.RoundState() {
                     @Override
                     public boolean isStarted() {
-                        return map.runtimeState().phase().isRoundRunning();
+                        return !map.recoveryBlocked() && map.runtimeState().phase().isRoundRunning();
                     }
 
                     @Override
@@ -122,6 +122,11 @@ final class ZombiesRoomHandleFactory {
         }
 
         @Override
+        public com.cdp.codpattern.app.match.runtime.termination.ModeForceEndHandler forceEndHandler() {
+            return map.forceEndHandler();
+        }
+
+        @Override
         public RoomId roomId() {
             return map.roomId();
         }
@@ -148,12 +153,12 @@ final class ZombiesRoomHandleFactory {
 
         @Override
         public boolean isJoinable() {
-            return map.runtimeState().phase() == ZombiesGamePhase.WAITING && !map.isSurvivorTeamFull();
+            return !map.recoveryBlocked() && map.runtimeState().phase() == ZombiesGamePhase.WAITING && !map.isSurvivorTeamFull();
         }
 
         @Override
         public boolean isRunning() {
-            return map.runtimeState().phase().isRoundRunning();
+            return !map.recoveryBlocked() && map.runtimeState().phase().isRoundRunning();
         }
 
         @Override
@@ -191,6 +196,8 @@ final class ZombiesRoomHandleFactory {
             if (player == null) {
                 return JoinRoomResult.failure(roomId(), CODE_PLAYER_MISSING, "");
             }
+            if (!com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.get(player.server).canJoin(roomId(), player.getUUID()))
+                return JoinRoomResult.failure(roomId(), "RECOVERY_PENDING", "message.codpattern.force_end.pending");
             if (map.checkGameHasPlayer(player.getUUID()) || map.checkSpecHasPlayer(player)) {
                 return JoinRoomResult.success(roomId(), CODE_ALREADY_JOINED);
             }

@@ -39,6 +39,63 @@ public final class ZombiesBarrierBlockRuntimeService {
     private final ConcurrentMap<RoomObjectKey, Set<CellKey>> cellsByObject = new ConcurrentHashMap<>();
     private final ConcurrentMap<RoomGroupKey, Set<CellKey>> cellsByGroup = new ConcurrentHashMap<>();
 
+    private net.minecraft.server.MinecraftServer ledgerServer;
+    private java.nio.file.Path ledgerPath;
+    private RuntimeException ledgerFailure;
+    private static final com.google.gson.Gson LEDGER_JSON = new com.google.gson.Gson();
+
+    private record StoredCell(String room, String dimension, int x, int y, int z, String object, int group) { }
+
+    private void loadLedger() {
+        var server = net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server == null) return;
+        if (ledgerServer == server) {
+            if (ledgerFailure != null) throw ledgerFailure;
+            return;
+        }
+        ledgerServer = server;
+        ledgerFailure = null;
+        ledgerPath = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                .resolve("data/codpattern/zombies-barriers.json");
+        cells.clear(); cellsByLocation.clear(); cellsByObject.clear(); cellsByGroup.clear();
+        try {
+            if (!java.nio.file.Files.exists(ledgerPath)) return;
+            StoredCell[] saved = LEDGER_JSON.fromJson(java.nio.file.Files.readString(ledgerPath), StoredCell[].class);
+            if (saved == null) throw new IllegalStateException("Invalid barrier recovery ledger");
+            for (StoredCell stored : saved) {
+                BarrierCell cell = new BarrierCell(RoomId.decode(stored.room()),
+                        com.cdp.codpattern.app.match.runtime.termination.PlayerRecoveryExecutor.dimension(stored.dimension()),
+                        new BlockPos(stored.x(), stored.y(), stored.z()), stored.object(), stored.group());
+                cells.put(cell.key(), cell);
+                cellsByLocation.computeIfAbsent(cell.locationKey(), ignored -> ConcurrentHashMap.newKeySet()).add(cell.key());
+                indexCell(cell);
+            }
+        } catch (Exception failure) {
+            ledgerFailure = new IllegalStateException("Cannot load required barrier recovery", failure);
+            throw ledgerFailure;
+        }
+    }
+
+    private void saveLedger() {
+        if (ledgerPath == null) return; // No server in pure geometry/contract fixtures.
+        if (ledgerFailure != null) throw ledgerFailure;
+        try {
+            var saved = cells.values().stream().map(cell -> new StoredCell(cell.roomId().encode(),
+                    cell.dimension().location().toString(), cell.pos().getX(), cell.pos().getY(), cell.pos().getZ(),
+                    cell.objectId(), cell.group())).toList();
+            java.nio.file.Files.createDirectories(ledgerPath.getParent());
+            var temporary = java.nio.file.Files.createTempFile(ledgerPath.getParent(), "barrier-recovery-", ".tmp");
+            try {
+                java.nio.file.Files.writeString(temporary, LEDGER_JSON.toJson(saved));
+                try (var channel = java.nio.channels.FileChannel.open(temporary, java.nio.file.StandardOpenOption.WRITE)) { channel.force(true); }
+                try { java.nio.file.Files.move(temporary, ledgerPath, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+                catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                    java.nio.file.Files.move(temporary, ledgerPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally { java.nio.file.Files.deleteIfExists(temporary); }
+        } catch (java.io.IOException failure) { throw new IllegalStateException("Cannot persist barrier recovery", failure); }
+    }
+
     public static ZombiesBarrierBlockRuntimeService instance() {
         return INSTANCE;
     }
@@ -49,6 +106,7 @@ public final class ZombiesBarrierBlockRuntimeService {
             Predicate<ZombiesBarrierData> barrierClearedPredicate,
             Function<ResourceKey<Level>, ServerLevel> levelResolver
     ) {
+        loadLedger();
         Objects.requireNonNull(roomId, "roomId");
         clearRoom(roomId, levelResolver);
         int plannedCells = 0;
@@ -73,14 +131,15 @@ public final class ZombiesBarrierBlockRuntimeService {
                     skippedNonAir++;
                     continue;
                 }
+                BarrierCell cell = BarrierCell.from(roomId, barrier, pos);
+                CellKey key = cell.key();
+                cells.put(key, cell);
+                cellsByLocation.computeIfAbsent(cell.locationKey(), ignored -> ConcurrentHashMap.newKeySet()).add(key);
+                indexCell(cell);
+                saveLedger(); // Record the footprint before modifying world blocks.
                 boolean barrierAlreadyPresent = currentState.is(CodPatternBlockRegister.ZOMBIES_PLAYER_BARRIER.get());
                 if (barrierAlreadyPresent
                         || level.setBlock(pos, CodPatternBlockRegister.ZOMBIES_PLAYER_BARRIER.get().defaultBlockState(), Block.UPDATE_ALL)) {
-                    BarrierCell cell = BarrierCell.from(roomId, barrier, pos);
-                    CellKey key = cell.key();
-                    cells.put(key, cell);
-                    cellsByLocation.computeIfAbsent(cell.locationKey(), ignored -> ConcurrentHashMap.newKeySet()).add(key);
-                    indexCell(cell);
                     placedCells++;
                 }
             }
@@ -94,6 +153,7 @@ public final class ZombiesBarrierBlockRuntimeService {
             Predicate<ZombiesBarrierData> barrierClearedPredicate,
             Function<ResourceKey<Level>, ServerLevel> levelResolver
     ) {
+        loadLedger();
         Objects.requireNonNull(roomId, "roomId");
         int scannedCells = 0;
         int fillableAirCells = 0;
@@ -127,6 +187,7 @@ public final class ZombiesBarrierBlockRuntimeService {
             int group,
             Function<ResourceKey<Level>, ServerLevel> levelResolver
     ) {
+        loadLedger();
         Objects.requireNonNull(roomId, "roomId");
         Set<CellKey> keys = new LinkedHashSet<>();
         for (Map.Entry<RoomGroupKey, Set<CellKey>> entry : cellsByGroup.entrySet()) {
@@ -143,12 +204,13 @@ public final class ZombiesBarrierBlockRuntimeService {
             String objectId,
             Function<ResourceKey<Level>, ServerLevel> levelResolver
     ) {
+        loadLedger();
         Objects.requireNonNull(roomId, "roomId");
         String normalizedObjectId = normalizeObjectId(objectId);
         if (normalizedObjectId.isEmpty()) {
             return CleanupSummary.empty(roomId);
         }
-        Set<CellKey> keys = cellsByObject.remove(new RoomObjectKey(roomId, normalizedObjectId));
+        Set<CellKey> keys = cellsByObject.get(new RoomObjectKey(roomId, normalizedObjectId));
         return clearKeys(roomId, keys, levelResolver);
     }
 
@@ -156,6 +218,7 @@ public final class ZombiesBarrierBlockRuntimeService {
             RoomId roomId,
             Function<ResourceKey<Level>, ServerLevel> levelResolver
     ) {
+        loadLedger();
         Objects.requireNonNull(roomId, "roomId");
         Set<CellKey> keys = new LinkedHashSet<>();
         for (Map.Entry<CellKey, BarrierCell> entry : cells.entrySet()) {
@@ -167,6 +230,7 @@ public final class ZombiesBarrierBlockRuntimeService {
     }
 
     public CleanupSummary clearAll(Function<ResourceKey<Level>, ServerLevel> levelResolver) {
+        loadLedger();
         Set<CellKey> keys = new LinkedHashSet<>(cells.keySet());
         CleanupSummary summary = clearKeys(null, keys, levelResolver);
         cellsByLocation.clear();
@@ -180,6 +244,7 @@ public final class ZombiesBarrierBlockRuntimeService {
             Collection<ZombiesBarrierData> barriers,
             Function<ResourceKey<Level>, ServerLevel> levelResolver
     ) {
+        loadLedger();
         Objects.requireNonNull(roomId, "roomId");
         int removed = 0;
         int scanned = 0;
@@ -300,10 +365,12 @@ public final class ZombiesBarrierBlockRuntimeService {
             Function<ResourceKey<Level>, ServerLevel> levelResolver
     ) {
         if (keys == null || keys.isEmpty()) {
+            saveLedger();
             return CleanupSummary.empty(requestedRoomId);
         }
         int scanned = 0;
         int removed = 0;
+        List<String> pending = new ArrayList<>();
         for (CellKey key : List.copyOf(keys)) {
             BarrierCell cell = cells.get(key);
             if (cell == null || requestedRoomId != null && !requestedRoomId.equals(cell.roomId())) {
@@ -313,13 +380,19 @@ public final class ZombiesBarrierBlockRuntimeService {
             scanned++;
             ServerLevel level = resolveLevel(levelResolver, key.dimension());
             boolean sharedLocation = hasOtherCellAt(key);
-            if (!sharedLocation && level != null && isBarrierBlock(level, key.pos())) {
-                if (level.setBlock(key.pos(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)) {
-                    removed++;
+            if (!sharedLocation) {
+                if (level == null) { pending.add(key.toString()); continue; }
+                level.getChunkAt(key.pos());
+                if (isBarrierBlock(level, key.pos())) {
+                    if (level.setBlock(key.pos(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
+                            && !isBarrierBlock(level, key.pos())) removed++;
+                    else { pending.add(key.toString()); continue; }
                 }
             }
             removeIndex(key);
         }
+        saveLedger();
+        if (!pending.isEmpty()) throw new IllegalStateException("Barrier cleanup pending: " + pending);
         return new CleanupSummary(requestedRoomId, scanned, removed);
     }
 

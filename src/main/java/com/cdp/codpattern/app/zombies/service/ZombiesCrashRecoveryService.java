@@ -135,10 +135,16 @@ public final class ZombiesCrashRecoveryService {
                     continue;
                 }
                 zombiesTaggedEntities++;
+                var shared = com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.get(server);
+                if (entity.getPersistentData().hasUUID("codpattern_match_generation")) {
+                    shared.reclaimLoadedEntity(entity);
+                } else {
+                    entity.remove(Entity.RemovalReason.DISCARDED);
+                }
+                if (!entity.isRemoved()) continue;
                 ownershipRegistry.unregister(entity);
                 activeMobCounter.unregister(decodedRoom, entity.getUUID());
-                entity.getPersistentData().remove(ROOM_KEY_TAG);
-                entity.remove(Entity.RemovalReason.DISCARDED);
+                shared.acknowledgeEntity(entity.getUUID());
                 removedEntities++;
                 if (releaseOccupancy) {
                     occupancyService.forceRelease(decodedRoom.gameType(), decodedRoom.mapName());

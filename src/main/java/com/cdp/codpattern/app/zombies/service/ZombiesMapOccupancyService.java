@@ -35,6 +35,12 @@ public final class ZombiesMapOccupancyService {
 
     public ZombiesServiceResult<Void> acquire(String gameType, String mapName, RoomId roomId) {
         Objects.requireNonNull(roomId, "roomId");
+        var shared = com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current();
+        if (shared.isPresent()) {
+            var service = shared.get();
+            return service.acquireLease(roomId, service.generation(roomId)) ? ZombiesServiceResult.ok()
+                    : ZombiesServiceResult.failure(ZombiesErrorCode.of("map.occupied"), Map.of(), "Map occupancy unavailable");
+        }
         OccupancyKey key = OccupancyKey.of(gameType, mapName);
         RoomId canonicalOwner = RoomId.of(key.gameType(), key.mapName());
         RoomId existing = owners.putIfAbsent(key, canonicalOwner);
@@ -65,14 +71,19 @@ public final class ZombiesMapOccupancyService {
     public boolean release(String gameType, String mapName, RoomId roomId) {
         Objects.requireNonNull(roomId, "roomId");
         OccupancyKey key = OccupancyKey.of(gameType, mapName);
+        var shared = com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current();
+        if (shared.isPresent()) return false; // No generation token: only the shared coordinator may release.
         return owners.remove(key, RoomId.of(key.gameType(), key.mapName()));
     }
 
     public Optional<RoomId> forceRelease(String gameType, String mapName) {
+        if (com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current().isPresent()) return Optional.empty();
         return Optional.ofNullable(owners.remove(OccupancyKey.of(gameType, mapName)));
     }
 
     public boolean isOccupied(String gameType, String mapName) {
+        var shared = com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current();
+        if (shared.isPresent()) return shared.get().hasLease(RoomId.of(gameType, mapName));
         return owners.containsKey(OccupancyKey.of(gameType, mapName));
     }
 
@@ -82,6 +93,8 @@ public final class ZombiesMapOccupancyService {
     }
 
     public Optional<RoomId> owner(String gameType, String mapName) {
+        var shared = com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current();
+        if (shared.isPresent()) return shared.get().hasLease(RoomId.of(gameType, mapName)) ? Optional.of(RoomId.of(gameType, mapName)) : Optional.empty();
         return Optional.ofNullable(owners.get(OccupancyKey.of(gameType, mapName)));
     }
 

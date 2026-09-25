@@ -47,11 +47,11 @@ public final class ZombiesBuffRuntimeEffectService {
         if (!Double.isFinite(multiplier) || multiplier <= 1.0D) {
             return;
         }
-        movementSpeed.addTransientModifier(new AttributeModifier(
-                SPEED_BOOST_MODIFIER_ID,
-                SPEED_BOOST_MODIFIER_NAME,
-                multiplier - 1.0D,
-                AttributeModifier.Operation.MULTIPLY_TOTAL));
+        AttributeModifier modifier = new AttributeModifier(SPEED_BOOST_MODIFIER_ID, SPEED_BOOST_MODIFIER_NAME,
+                multiplier - 1.0D, AttributeModifier.Operation.MULTIPLY_TOTAL);
+        com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.get(player.server)
+                .registerAttribute(player, "minecraft:generic.movement_speed", modifier);
+        movementSpeed.addTransientModifier(modifier);
     }
 
     private double speedMultiplier(UUID playerId) {

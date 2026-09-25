@@ -30,6 +30,8 @@ public final class ZombiesLoginRecoveryContributor implements ModePlayerLoginCon
     }
 
     public static ZombiesReconnectRecoveryService.LoginRecoveryResult recover(ServerPlayer player) {
+        if (player != null && com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.get(player.server)
+                .ownsRecovery(player.getUUID())) return ZombiesReconnectRecoveryService.LoginRecoveryResult.none();
         return ZombiesReconnectRecoveryService.instance().recoverPlayer(player, new ZombiesLoginRecoveryResolver());
     }
 

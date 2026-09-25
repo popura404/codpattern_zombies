@@ -51,7 +51,9 @@ public class ZombiesCleanupService {
                 new ZombiesCleanupParticipant.ZombiesCleanupContext(roomId, reason, revision);
 
         hooks.beforeCleanup(context);
-        EntityCleanupSummary entitySummary = cleanupEntities(roomId, levelResolver);
+        // Shared termination retains resource evidence and deletes entities independently of these hooks.
+        EntityCleanupSummary entitySummary = new EntityCleanupSummary(
+                ownershipRegistry.entitiesInRoom(roomId).size(), 0, 0);
         CleanupCoordinator.Result<ZombiesServiceResult<Void>, CleanupSummary> result =
                 coordinator.execute(new CleanupWork(context, entitySummary));
         if (!result.success()) {
@@ -70,21 +72,27 @@ public class ZombiesCleanupService {
 
     public EntityCleanupSummary cleanupEntities(RoomId roomId, LevelResolver levelResolver) {
         Objects.requireNonNull(roomId, "roomId");
-        List<ModeEntityOwnershipRegistry.Entry> entries = ownershipRegistry.clearRoom(roomId);
+        List<ModeEntityOwnershipRegistry.Entry> entries = ownershipRegistry.entitiesInRoom(roomId);
         int removedEntities = 0;
         int missingEntities = 0;
         for (ModeEntityOwnershipRegistry.Entry entry : entries) {
             ServerLevel level = levelResolver == null ? null : levelResolver.level(entry.dimension());
             Entity entity = level == null ? null : level.getEntity(entry.entityId());
             if (entity == null) {
-                hooks.onMissingEntityCleanup(entry);
+                try { hooks.onMissingEntityCleanup(entry); }
+                catch (RuntimeException failure) { com.mojang.logging.LogUtils.getLogger().warn("Missing entity notification failed", failure); }
                 missingEntities++;
                 continue;
             }
-            hooks.onEntityCleanup(entity);
-            entity.getPersistentData().remove("codpattern_room_key");
+            try { hooks.onEntityCleanup(entity); }
+            catch (RuntimeException failure) { com.mojang.logging.LogUtils.getLogger().warn("Entity notification failed", failure); }
             entity.remove(Entity.RemovalReason.DISCARDED);
-            removedEntities++;
+            if (entity.isRemoved()) {
+                ownershipRegistry.unregister(entity);
+                com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current()
+                        .ifPresent(service -> service.acknowledgeEntity(entity.getUUID()));
+                removedEntities++;
+            }
         }
         return new EntityCleanupSummary(entries.size(), removedEntities, missingEntities);
     }
@@ -112,7 +120,8 @@ public class ZombiesCleanupService {
         hooks.clearStartVote(context);
         hooks.clearLifecycleRuntime(context);
         hooks.clearHudState(context);
-        boolean occupancyReleased = occupancyService.release(context.roomId());
+        boolean occupancyReleased = com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current().isEmpty()
+                && occupancyService.release(context.roomId()); // Pure fixtures only; live completion belongs to the main mod.
         hooks.afterOccupancyReleased(context, occupancyReleased);
         hooks.afterCleanup(context);
         return new CleanupSummary(context.cleanupRevision(), work.entitySummary(), occupancyReleased);

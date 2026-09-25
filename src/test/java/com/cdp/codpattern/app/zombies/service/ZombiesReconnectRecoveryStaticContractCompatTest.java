@@ -35,6 +35,8 @@ public final class ZombiesReconnectRecoveryStaticContractCompatTest {
         requireContains(loginContributor,
                 ".map(map -> map.restoreActiveRoundReconnect(player))",
                 "addon login recovery contributor should delegate active-round restore to the owning zombies map");
+        requireContains(loginContributor, "ownsRecovery(player.getUUID())",
+                "shared recovery must take priority over legacy reconnect handling");
         requireContains(playerStateService,
                 "public boolean canRestoreActiveRoundPlayer(UUID playerId)",
                 "reconnect restore eligibility should require an existing runtime state");
@@ -45,8 +47,8 @@ public final class ZombiesReconnectRecoveryStaticContractCompatTest {
                 "public boolean restoreActiveRoundReconnect(ServerPlayer player)",
                 "zombies map should own the active-round reconnect restore path");
         requireContains(zombiesMap,
-                "if (player == null || !isStart || !runtimeState.phase().isRoundRunning())",
-                "active-round reconnect restore should only run while the room is still in-game");
+                "if (recoveryBlocked() || player == null || termination().playerPending(player.getUUID()) || !isStart || !runtimeState.phase().isRoundRunning())",
+                "active-round reconnect must reject pending recovery as well as stopped rooms");
         requireContains(zombiesMap,
                 "if (!playerStateService.canRestoreActiveRoundPlayer(playerId))",
                 "active-round reconnect restore must reject players without preserved runtime state");

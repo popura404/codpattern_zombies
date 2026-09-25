@@ -75,16 +75,19 @@ public final class ZombiesRoomLobbyFlowStaticContractCompatTest {
                 "offline survivor slots should be released before reconnect state is cleared");
         String beforeCleanup = methodBody(zombiesMap,
                 "public void beforeCleanup(ZombiesCleanupParticipant.ZombiesCleanupContext context)");
-        requireContains(beforeCleanup, "preparePostGameTeleportPending(context);",
-                "cleanup should record offline survivor recovery before reset releases their team slots");
-        requireContains(zombiesMap, "() -> runtimeState.phase().allowsPurchases()",
+        requireNotContains(beforeCleanup, "preparePostGameTeleportPending(context);",
+                "mode cleanup must leave basic offline recovery to the shared durable ledger");
+        requireContains(methodBody(zombiesMap, "private void runCleanup(String reason)"),
+                "termination().finishNormally(this);",
+                "normal cleanup must use the same core termination and recovery coordinator");
+        requireContains(zombiesMap, "runtimeState.phase().allowsPurchases()",
                 "object interactions should be phase-gated by the zombies runtime phase");
 
         requireContains(objectInteractionService, "BooleanSupplier purchasesAllowedSupplier",
                 "object interaction service should accept a purchase phase gate");
         requireContains(objectInteractionService,
-                "if (!purchasesAllowedSupplier.getAsBoolean()) {\n            sendMessage(player, FAILURE_PHASE_LOCKED, target.objectId());\n            return InteractionResult.FAIL;\n        }",
-                "object interactions should fail before mutation when the phase does not allow purchases");
+                "if (!paidClaim && !purchasesAllowedSupplier.getAsBoolean()) {\n            sendMessage(player, FAILURE_PHASE_LOCKED, target.objectId());\n            return InteractionResult.FAIL;\n        }",
+                "unpaid object interactions should fail before mutation when the phase does not allow purchases");
         requireContains(objectInteractionService,
                 "purchasesAllowedSupplier.getAsBoolean() && canHandleBoxStyleInteraction(target, context)",
                 "box prompts should become non-interactable while purchases are phase-locked");
@@ -111,7 +114,7 @@ public final class ZombiesRoomLobbyFlowStaticContractCompatTest {
     }
 
     private static String read(Path path) throws IOException {
-        return Files.readString(path);
+        return Files.readString(path).replace("\r\n", "\n");
     }
 
     private static String methodBody(String source, String signature) {

@@ -61,7 +61,7 @@ minecraft {
             // Forge's launch module graph must include the JDK random service providers.
             jvmArgs '--add-modules=jdk.random'
             workingDirectory gameTestRunDirectory
-            property 'forge.enabledGameTestNamespaces', 'codpattern'
+            property 'forge.enabledGameTestNamespaces', findProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'
             property 'mixin.env.remapRefMap', 'true'
             property 'mixin.env.refMapRemappingFile', layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
             environment 'MOD_CLASSES', [
@@ -194,6 +194,16 @@ def splitCompatTestClasspath = files(
         sourceSets.main.output,
         mainTestOutput,
         mainRuntimeOutput) + sourceSets.test.compileClasspath
+
+tasks.register('runZombiesForceEndCompatSuite', JavaExec) {
+    group = 'verification'
+    description = 'Run focused addon regressions for shared room termination.'
+    workingDir = mainProject.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.service.ZombiesForceEndCompatTestSuite'
+    dependsOn tasks.named('testClasses')
+    dependsOn mainProject.tasks.named('testClasses')
+}
 
 tasks.register('runZombiesMvp123CompatSuite', JavaExec) {
     group = 'verification'

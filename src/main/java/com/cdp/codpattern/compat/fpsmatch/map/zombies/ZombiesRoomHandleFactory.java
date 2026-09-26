@@ -28,6 +28,7 @@ import com.cdp.codpattern.app.zombies.sync.ZombiesRuntimeStateKeys;
 import com.cdp.codpattern.fpsmatch.room.PlayerInfo;
 import com.cdp.codpattern.network.match.RoomPreviewRosterPacket;
 import com.cdp.codpattern.network.match.TeamPlayerListPacket;
+import com.phasetranscrystal.fpsmatch.core.data.SpawnPointData;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.GameType;
 
@@ -189,6 +190,16 @@ final class ZombiesRoomHandleFactory {
         @Override
         public String dimensionId() {
             return map.getServerLevel().dimension().location().toString();
+        }
+
+        @Override
+        public boolean supportsConfiguredEndPoint() {
+            return true;
+        }
+
+        @Override
+        public Optional<SpawnPointData> configuredEndPoint() {
+            return map.matchEndTeleportPoint();
         }
 
         @Override

@@ -3,6 +3,9 @@ package com.cdp.codpattern.compat.fpsmatch.data.zombies;
 import com.cdp.codpattern.app.match.BuiltInGameModes;
 import com.cdp.codpattern.app.match.persistence.CommonModeMapData;
 import com.cdp.codpattern.app.match.persistence.ModeMapPersistenceProvider;
+import com.cdp.codpattern.app.match.persistence.ModeMapMutationProvider;
+import com.cdp.codpattern.app.match.persistence.MapDefinitionCodec;
+import com.google.gson.JsonObject;
 import com.cdp.codpattern.app.zombies.map.ZombiesMapObjects;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesAmmoBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesArmorStationData;
@@ -215,7 +218,7 @@ public class ZombiesMapData {
         return new ZombiesMapPersistenceSupport.ZombiesPayload(data.endtp(), data.objects());
     }
 
-    private static final class ZombiesPersistenceProvider implements ModeMapPersistenceProvider {
+    private static final class ZombiesPersistenceProvider implements ModeMapMutationProvider {
         @Override
         public String gameType() {
             return BuiltInGameModes.ZOMBIES;
@@ -250,6 +253,33 @@ public class ZombiesMapData {
         @Override
         public FPSMDataManager.DeleteStatus delete(String mapName, FPSMDataManager manager) {
             return manager.deleteData(MapData.class, mapName);
+        }
+
+        @Override
+        public JsonObject captureDefinition(BaseMap map) {
+            return MapDefinitionCodec.encode(MapData.CODEC, mapToData(zombiesMap(map)));
+        }
+
+        @Override
+        public BaseMap createRenamed(ServerLevel level, JsonObject definition, String newName) {
+            MapData data = MapDefinitionCodec.decode(MapData.CODEC,
+                    MapDefinitionCodec.withName(definition, newName));
+            if (!data.levelName().equals(level.dimension().location().toString())) {
+                throw new IllegalArgumentException("Map dimension changed during rename");
+            }
+            return createMap(level, toCommonData(data), toPayload(data));
+        }
+
+        @Override
+        public boolean hasPendingResources(net.minecraft.server.MinecraftServer server,
+                                           com.cdp.codpattern.app.match.model.RoomId room) {
+            return com.cdp.codpattern.app.zombies.service.ZombiesBarrierBlockRuntimeService.instance().hasPendingRoom(room);
+        }
+
+        @Override
+        public void retire(BaseMap map) {
+            zombiesMap(map); // Preserve the provider's concrete-type check.
+            map.getMapTeams().retireCreatedScoreboardTeams();
         }
 
         private ZombiesMap zombiesMap(BaseMap map) {

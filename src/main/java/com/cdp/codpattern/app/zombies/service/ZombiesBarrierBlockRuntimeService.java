@@ -96,6 +96,12 @@ public final class ZombiesBarrierBlockRuntimeService {
         } catch (java.io.IOException failure) { throw new IllegalStateException("Cannot persist barrier recovery", failure); }
     }
 
+    /** Read-only guard used before changing or reusing a map identity. */
+    public boolean hasPendingRoom(RoomId room) {
+        loadLedger();
+        return cells.values().stream().anyMatch(cell -> cell.roomId().encode().equalsIgnoreCase(room.encode()));
+    }
+
     public static ZombiesBarrierBlockRuntimeService instance() {
         return INSTANCE;
     }

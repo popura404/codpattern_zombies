@@ -185,6 +185,9 @@ tasks.named('jar', Jar).configure {
     finalizedBy 'reobfJar'
 }
 
+// Use the shared snapshot task with this addon's archive name and version.
+apply from: mainProject.file('gradle/snapshot.gradle')
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }

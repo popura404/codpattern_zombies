@@ -65,6 +65,52 @@ public final class ZombiesForceEndGameTests {
     }
 
     @GameTest(template = "empty", batch = "zombies_management", timeoutTicks = 200)
+    public static void deploymentCreatesZombiesWhileBuiltinToolRejectsThem(GameTestHelper helper) {
+        var core = FPSMCore.getInstance();
+        var server = helper.getLevel().getServer();
+        var player = new net.minecraftforge.common.util.FakePlayer(helper.getLevel(),
+                new com.mojang.authlib.GameProfile(UUID.randomUUID(), "zombie-tool-test")) {
+            @Override public boolean hasPermissions(int permission) { return permission <= 2; }
+        };
+        String name = "deploy-scope-" + UUID.randomUUID().toString().substring(0, 8);
+        var stack = new net.minecraft.world.item.ItemStack(com.phasetranscrystal.fpsmatch.common.item.FPSMItemRegister.MAP_CREATOR_TOOL.get());
+        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
+        com.phasetranscrystal.fpsmatch.common.item.MapCreatorTool.setDraftMapName(stack, "preserve");
+        var original = stack.getTag().copy();
+        helper.assertTrue(core.checkGameType("zombies"), "fixture must have a registered Zombies factory");
+        helper.assertTrue(com.phasetranscrystal.fpsmatch.common.item.MapCreatorToolModes.availableTypes()
+                .equals(List.of("teamdeathmatch", "frontline")), "addon registration does not expand built-in creation choices");
+        for (var action : com.phasetranscrystal.fpsmatch.common.packet.MapCreatorToolActionC2SPacket.Action.values()) {
+            new com.phasetranscrystal.fpsmatch.common.packet.MapCreatorToolActionC2SPacket(action, "zombies", name,
+                    BlockPos.ZERO, new BlockPos(8, 8, 8)).process(player);
+            helper.assertTrue(original.equals(stack.getTag()), "rejected addon request preserves the old draft");
+        }
+        var folder = ServerMapStorage.get(server).paths().map("zombies", name);
+        helper.assertTrue(core.getMapByTypeWithName("zombies", name).isEmpty() && !Files.exists(folder),
+                "built-in tool cannot create an addon map or its directory");
+        var deploy = new net.minecraft.world.item.ItemStack(com.cdp.codpattern.app.zombies.bootstrap.ZombiesItemRegister.ZOMBIES_DEPLOY_TOOL.get());
+        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, deploy);
+        try {
+            var draft = com.cdp.codpattern.app.zombies.deploy.ZombiesDeployDraft.empty()
+                    .withMapDraft(name, BlockPos.ZERO, new BlockPos(8, 8, 8));
+            var result = com.cdp.codpattern.app.zombies.deploy.ZombiesDeployToolService.instance().createMap(player, deploy, draft);
+            helper.assertTrue(result.success(), "dedicated Zombies deployment still creates maps: " + result.code());
+            helper.assertTrue(core.getMapByTypeWithName("zombies", name).isPresent() && Files.isDirectory(folder),
+                    "deployment persists the addon map");
+            helper.assertTrue(MapManagementService.modes(server).stream().map(row -> row.id()).toList()
+                    .containsAll(List.of("teamdeathmatch", "frontline", "zombies")), "management still discovers all three modes");
+            helper.assertTrue(MapManagementService.list(server).stream().anyMatch(row -> row.roomId().equals(RoomId.of("zombies", name))),
+                    "management discovers maps created through the addon deployment tool");
+            helper.succeed();
+        } finally {
+            core.getMapByTypeWithName("zombies", name).ifPresent(map -> {
+                core.unregisterMap(map);
+                map.getMapTeams().retireCreatedScoreboardTeams();
+            });
+        }
+    }
+
+    @GameTest(template = "empty", batch = "zombies_management", timeoutTicks = 200)
     public static void managementRenameLoadsPreservedRules(GameTestHelper helper) throws Exception {
         var server = helper.getLevel().getServer();
         String name = "manage-z-" + UUID.randomUUID().toString().substring(0, 8);

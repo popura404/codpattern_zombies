@@ -109,7 +109,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
+public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, com.cdp.codpattern.app.match.ModeRoomBackedMap {
     static final int SURVIVOR_LIMIT = 4;
     private static final int COMBAT_REGEN_DELAY_TICKS = 120;
     private static final float COMBAT_REGEN_HALF_HEARTS_PER_SECOND = 5.0F;
@@ -455,6 +455,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
         return true;
     }
 
+    @Override
     public ModeRoomHandle roomHandle() {
         return roomHandle;
     }

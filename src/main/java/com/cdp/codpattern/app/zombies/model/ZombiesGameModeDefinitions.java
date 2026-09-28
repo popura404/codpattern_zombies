@@ -1,6 +1,7 @@
 package com.cdp.codpattern.app.zombies.model;
 
 import com.cdp.codpattern.app.match.BuiltInGameModes;
+import com.cdp.codpattern.app.match.editor.ModeEndTeleportSupport;
 import com.cdp.codpattern.app.match.model.GameModeDefinition;
 import com.cdp.codpattern.app.match.model.JoinPolicy;
 import com.cdp.codpattern.app.match.model.LifecycleKind;
@@ -45,7 +46,7 @@ public final class ZombiesGameModeDefinitions {
                 ),
                 Optional.of(ZombiesRuntimeProvider.INSTANCE),
                 Optional.of(ZombiesMapData.persistenceProvider()),
-                Optional.empty(),
+                Optional.of(ModeEndTeleportSupport.schema()),
                 Optional.of(ZombiesClientModePresentations.zombiesPresentation())
         );
     }

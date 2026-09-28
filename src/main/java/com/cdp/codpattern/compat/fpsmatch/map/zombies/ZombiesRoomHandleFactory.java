@@ -4,6 +4,7 @@ import com.cdp.codpattern.adapter.forge.network.ModNetworkChannel;
 import com.cdp.codpattern.app.match.BuiltInGameModes;
 import com.cdp.codpattern.app.match.GameModeRegistry;
 import com.cdp.codpattern.app.match.ModeRoomHandle;
+import com.cdp.codpattern.app.match.editor.ModeEndTeleportSupport;
 import com.cdp.codpattern.app.match.model.JoinRoomRequest;
 import com.cdp.codpattern.app.match.model.JoinRoomResult;
 import com.cdp.codpattern.app.match.model.LeaveRoomResult;
@@ -95,6 +96,7 @@ final class ZombiesRoomHandleFactory {
         ZombiesRespawnPolicy respawnPolicy = new ZombiesRespawnPolicy(map.roomId(), null, (player, context) -> {
         });
         return ModeRoomHandle.builder(map.roomId(), ports, ports)
+                .withMapEdit(ModeEndTeleportSupport.editor(map::matchEndTeleportPoint, map::setMatchEndTeleportPoint))
                 .withReady(ports)
                 .withVote(map.startVoteService())
                 .withCombatEvents(playerCombatPort)

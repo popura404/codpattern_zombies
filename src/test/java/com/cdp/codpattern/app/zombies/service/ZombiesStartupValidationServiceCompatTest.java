@@ -25,7 +25,7 @@ public final class ZombiesStartupValidationServiceCompatTest {
         validMapAndValidWavePreflightSucceeds();
         missingEndTeleportPointAllowedForMvp1();
         missingInitialSpawnFails();
-        missingGroupOneZombieSpawnFails();
+        missingGroupZeroZombieSpawnFails();
         missingWavesDirectoryGeneratesDefaultWaveAndPreflightSucceeds();
         missingMobsFails();
         filenameWaveConflictFails();
@@ -52,7 +52,7 @@ public final class ZombiesStartupValidationServiceCompatTest {
             writeWave(wavesDirectory, "wave_001.json", "{\"wave\":1,\"mobs\":[]}");
 
             ZombiesServiceResult<ZombiesStartupPreflightSnapshot> result = service(wavesDirectory)
-                    .preflight(snapshot(false, List.of(initialSpawn(), zombieSpawn(1, 1.0D))));
+                    .preflight(snapshot(false, List.of(initialSpawn(), zombieSpawn(0, 1.0D))));
 
             require(result.success(), "missing endtp should pass preflight under MVP1: " + firstIssue(result));
             ZombiesStartupPreflightSnapshot snapshot = requireSnapshot(result);
@@ -66,22 +66,22 @@ public final class ZombiesStartupValidationServiceCompatTest {
             writeWave(wavesDirectory, "wave_001.json", "{\"wave\":1,\"mobs\":[]}");
 
             ZombiesServiceResult<ZombiesStartupPreflightSnapshot> result = service(wavesDirectory)
-                    .preflight(snapshot(true, List.of(zombieSpawn(1, 1.0D))));
+                    .preflight(snapshot(true, List.of(zombieSpawn(0, 1.0D))));
 
             require(!result.success(), "missing INITIAL spawn should fail preflight");
             requireIssue(result, "map.missing_initial_spawn");
         });
     }
 
-    private static void missingGroupOneZombieSpawnFails() throws IOException {
+    private static void missingGroupZeroZombieSpawnFails() throws IOException {
         withWaves("zombies-startup-missing-group-one-", wavesDirectory -> {
             writeWave(wavesDirectory, "wave_001.json", "{\"wave\":1,\"mobs\":[]}");
 
             ZombiesServiceResult<ZombiesStartupPreflightSnapshot> result = service(wavesDirectory)
                     .preflight(snapshot(true, List.of(initialSpawn(), zombieSpawn(2, 1.0D))));
 
-            require(!result.success(), "missing group=1 zombie spawn should fail preflight");
-            requireIssue(result, "map.missing_group_1_zombie_spawn");
+            require(!result.success(), "missing group=0 zombie spawn should fail preflight");
+            requireIssue(result, "map.missing_group_0_zombie_spawn");
         });
     }
 
@@ -160,12 +160,8 @@ public final class ZombiesStartupValidationServiceCompatTest {
             require(ZombiesMapValidationProfile.MVP3_FULL_INITIAL_KEY.equals(snapshot.mapReport().profileKey()),
                     "default Path constructor should use MVP3_FULL_INITIAL, got "
                             + snapshot.mapReport().profileKey());
-            requireIssue(result, "map.missing_weapon_wall");
-            requireIssue(result, "map.missing_ammo_box");
-            requireIssue(result, "map.missing_armor_station");
-            requireIssue(result, "map.missing_barrier");
-            requireIssue(result, "map.missing_soda_machine");
-            requireIssue(result, "map.missing_ultimate_machine");
+            // MVP3 validates positions; facilities are optional in the current map rules.
+            requireIssue(result, "map.object_missing_location");
         });
     }
 
@@ -179,7 +175,7 @@ public final class ZombiesStartupValidationServiceCompatTest {
     }
 
     private static ZombiesMapSnapshot validMap() {
-        return snapshot(true, List.of(initialSpawn(), zombieSpawn(1, 1.0D)));
+        return snapshot(true, List.of(initialSpawn(), zombieSpawn(0, 1.0D)));
     }
 
     private static ZombiesMapSnapshot snapshot(

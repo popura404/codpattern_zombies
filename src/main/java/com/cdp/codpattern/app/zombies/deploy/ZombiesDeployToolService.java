@@ -1282,7 +1282,9 @@ public final class ZombiesDeployToolService {
             case ZombiesDeployFieldSchema.BARRIER -> {
                 for (int i = 0; i < resolved.barriers().size(); i++) {
                     ZombiesBarrierData data = resolved.barriers().get(i);
-                    summaries.add(summary(i, type, data.objectId(), "group " + data.group(), formatPos(data.areaFrom()) + " -> " + formatPos(data.areaTo())));
+                    summaries.add(summary(i, type, data.objectId(), "group " + data.group(), formatPos(data.areaFrom()) + " -> " + formatPos(data.areaTo())
+                            + "; enable=" + ZombiesSpawnGroupFields.format(data.spawnGroupChanges().enable())
+                            + "; disable=" + ZombiesSpawnGroupFields.format(data.spawnGroupChanges().disable())));
                 }
             }
             case ZombiesDeployFieldSchema.WEAPON_WALL -> {
@@ -1459,8 +1461,12 @@ public final class ZombiesDeployToolService {
         for (ZombiesBarrierData barrier : resolved.barriers()) {
             barrierGroups.add(barrier.group());
         }
-        Set<Integer> unmatchedBarrierGroups = new TreeSet<>(barrierGroups);
-        unmatchedBarrierGroups.removeAll(zombieSpawnGroups);
+        Set<Integer> enabledSpawnGroups = new TreeSet<>();
+        Set<Integer> disabledSpawnGroups = new TreeSet<>();
+        for (ZombiesBarrierData barrier : resolved.barriers()) {
+            enabledSpawnGroups.addAll(barrier.spawnGroupChanges().enable());
+            disabledSpawnGroups.addAll(barrier.spawnGroupChanges().disable());
+        }
 
         boolean hasWeaponWall = !resolved.weaponWalls().isEmpty();
         boolean hasAmmoBox = !resolved.ammoBoxes().isEmpty();
@@ -1486,7 +1492,8 @@ public final class ZombiesDeployToolService {
         String barrierDetail = "barrier=" + resolved.barriers().size()
                 + ";barrierGroups=" + formatGroupSet(barrierGroups)
                 + ";spawnGroups=" + formatGroupSet(zombieSpawnGroups)
-                + ";unmatchedGroups=" + formatGroupSet(unmatchedBarrierGroups);
+                + ";enableGroups=" + formatGroupSet(enabledSpawnGroups)
+                + ";disableGroups=" + formatGroupSet(disabledSpawnGroups);
         return List.of(
                 new ZombiesDeploySnapshot.StepStatus("map", "", hasMap ? "1" : "0", hasMap),
                 new ZombiesDeploySnapshot.StepStatus("initial", "", Integer.toString(resolved.initialSpawns().size()), !resolved.initialSpawns().isEmpty()),
@@ -1594,7 +1601,7 @@ public final class ZombiesDeployToolService {
         if (code.contains("missing_initial_spawn")) {
             return new IssueTarget(false, ZombiesDeployDraft.WORKFLOW_INITIAL, ZombiesDeployFieldSchema.INITIAL, 0);
         }
-        if (code.contains("group_1_zombie_spawn")) {
+        if (code.contains("group_0_zombie_spawn")) {
             return new IssueTarget(false, ZombiesDeployDraft.WORKFLOW_ZOMBIE_SPAWN, ZombiesDeployFieldSchema.ZOMBIE_SPAWN, -1);
         }
         if (code.contains("missing_power_switch") || code.contains("multiple_power_switches") || code.contains("invalid_power_switch")) {
@@ -1614,12 +1621,6 @@ public final class ZombiesDeployToolService {
         }
         if (code.contains("missing_armor_station") || code.contains("invalid_armor_station")) {
             return issueTargetForObject(false, ZombiesDeployDraft.WORKFLOW_INTERACT, ZombiesDeployFieldSchema.ARMOR_STATION, subjectObjectId, objects);
-        }
-        if (code.contains("barrier_group_without_zombie_spawn")) {
-            return issueTargetForObject(false, ZombiesDeployDraft.WORKFLOW_BARRIER, ZombiesDeployFieldSchema.BARRIER, subjectObjectId, objects);
-        }
-        if (code.contains("missing_barrier_for_spawn_group")) {
-            return new IssueTarget(false, ZombiesDeployDraft.WORKFLOW_BARRIER, ZombiesDeployFieldSchema.BARRIER, -1);
         }
         if (code.contains("invalid_barrier")) {
             return issueTargetForObject(false, ZombiesDeployDraft.WORKFLOW_BARRIER, ZombiesDeployFieldSchema.BARRIER, subjectObjectId, objects);

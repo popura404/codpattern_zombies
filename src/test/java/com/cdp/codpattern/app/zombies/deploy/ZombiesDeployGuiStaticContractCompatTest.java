@@ -138,7 +138,7 @@ public final class ZombiesDeployGuiStaticContractCompatTest {
         requireContains(packet, "case SAVE_DRAFT -> service.saveDraft(player, stack, draft);", "draft save action should route through the service");
         requireContains(packet, "case UNDO_LAST -> service.undoLast(player, stack, draft, expectedRevision);", "undo action should route through the service with revision validation");
         requireContains(validator, "map.missing_power_switch", "powered facilities should require a power switch");
-        requireContains(validator, "map.missing_barrier_for_spawn_group", "spawn groups should require matching barriers");
+        requireContains(validator, "map.spawn_group_never_enabled", "spawn groups without an explicit activation should warn");
         requireContains(validator, "private static void addConditionalRuntimeRequirementIssues", "conditional runtime requirements should be centralized");
     }
 

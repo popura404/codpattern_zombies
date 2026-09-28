@@ -333,5 +333,17 @@
     "gui.codpattern.zombies.deploy.editor.world_shortcuts": "Ctrl+右：編集 · R 元に戻す / Shift+R やり直す",
     "message.codpattern.zombies.deploy.saved_invalid": "保存しました。マップの検証にエラーがあります",
     "gui.codpattern.zombies.deploy.editor.saved_bounds_a": "登録済み範囲 A：%s",
-    "gui.codpattern.zombies.deploy.editor.saved_bounds_b": "登録済み範囲 B：%s"
+    "gui.codpattern.zombies.deploy.editor.saved_bounds_b": "登録済み範囲 B：%s",
+    "gui.codpattern.zombies.deploy.field.enableSpawnGroups": "開放時に有効化するスポーングループ",
+    "gui.codpattern.zombies.deploy.field.disableSpawnGroups": "開放時に無効化するスポーングループ",
+    "gui.codpattern.zombies.deploy.spawn_groups.row_hint": "グループ番号（省略可）",
+    "gui.codpattern.zombies.deploy.spawn_groups.hint": "省略可。1行に1番号、または 1,2,3 を貼り付け",
+    "gui.codpattern.zombies.deploy.spawn_groups.none": "操作なし",
+    "gui.codpattern.zombies.deploy.spawn_groups.barrier_group": "連動バリアグループ",
+    "gui.codpattern.zombies.deploy.spawn_groups.spawn_group": "スポーングループ（0 は開始時に有効）",
+    "gui.codpattern.zombies.deploy.spawn_groups.summary_none": "バリアのみ開放し、スポーングループは変更しません",
+    "gui.codpattern.zombies.deploy.spawn_groups.summary": "有効化：%s；無効化：%s",
+    "gui.codpattern.zombies.deploy.spawn_groups.scope": "この設定は連動グループ %s の全バリアに適用されます",
+    "gui.codpattern.zombies.deploy.spawn_groups.conflict": "グループ %s が有効化と無効化の両方に指定されています",
+    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "%s の「%s」は無効です。0 以上の整数を入力してください"
 }

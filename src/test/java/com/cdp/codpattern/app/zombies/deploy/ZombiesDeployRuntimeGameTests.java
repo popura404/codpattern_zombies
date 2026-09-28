@@ -32,6 +32,11 @@ public final class ZombiesDeployRuntimeGameTests {
         run(helper, "com.cdp.codpattern.app.zombies.deploy.ZombiesDeployIssueRoutingCompatTest", "main");
     }
 
+    @GameTest(template = "empty", batch = "zombies_deploy", timeoutTicks = 40, required = true)
+    public static void spawnGroupEditingAndCodecs(GameTestHelper helper) {
+        run(helper, "com.cdp.codpattern.app.zombies.deploy.ZombiesSpawnGroupChangesCompatTest", "runRuntime");
+    }
+
     private static void run(GameTestHelper helper, String className, String methodName) {
         try {
             Class<?> test = Class.forName(className);

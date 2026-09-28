@@ -16,7 +16,8 @@ public record ZombiesBarrierData(
         BlockPos areaFrom,
         BlockPos areaTo,
         BlockPos interactionPos,
-        String requiredItem
+        String requiredItem,
+        ZombiesSpawnGroupChanges spawnGroupChanges
 ) {
     public ZombiesBarrierData(
             String objectId,
@@ -45,7 +46,19 @@ public record ZombiesBarrierData(
         this(objectId, "", group, cost, blocksPlayersOnly, dimension, areaFrom, areaTo, interactionPos, "");
     }
 
+    public ZombiesBarrierData(String objectId, String name, int group, int cost, boolean blocksPlayersOnly,
+            ResourceKey<Level> dimension, BlockPos areaFrom, BlockPos areaTo, BlockPos interactionPos, String requiredItem) {
+        this(objectId, name, group, cost, blocksPlayersOnly, dimension, areaFrom, areaTo, interactionPos,
+                requiredItem, ZombiesSpawnGroupChanges.NONE);
+    }
+
+    public ZombiesBarrierData withSpawnGroupChanges(ZombiesSpawnGroupChanges changes) {
+        return new ZombiesBarrierData(objectId, name, group, cost, blocksPlayersOnly, dimension,
+                areaFrom, areaTo, interactionPos, requiredItem, changes);
+    }
+
     public ZombiesBarrierData {
+        spawnGroupChanges = spawnGroupChanges == null ? ZombiesSpawnGroupChanges.NONE : spawnGroupChanges;
         objectId = objectId == null ? "" : objectId.trim();
         name = name == null ? "" : name.trim();
         requiredItem = requiredItem == null ? "" : requiredItem.trim();
@@ -65,6 +78,7 @@ public record ZombiesBarrierData(
             BlockPos.CODEC.optionalFieldOf("areaFrom", BlockPos.ZERO).forGetter(ZombiesBarrierData::areaFrom),
             BlockPos.CODEC.optionalFieldOf("areaTo", BlockPos.ZERO).forGetter(ZombiesBarrierData::areaTo),
             BlockPos.CODEC.optionalFieldOf("interactionPos", BlockPos.ZERO).forGetter(ZombiesBarrierData::interactionPos),
-            Codec.STRING.optionalFieldOf("requiredItem", "").forGetter(ZombiesBarrierData::requiredItem)
+            Codec.STRING.optionalFieldOf("requiredItem", "").forGetter(ZombiesBarrierData::requiredItem),
+            ZombiesSpawnGroupChanges.CODEC.optionalFieldOf("spawnGroupChanges", ZombiesSpawnGroupChanges.NONE).forGetter(ZombiesBarrierData::spawnGroupChanges)
     ).apply(instance, ZombiesBarrierData::new));
 }

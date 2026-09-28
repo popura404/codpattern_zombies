@@ -231,7 +231,7 @@ public final class ZombiesMobSpawnService {
             Set<Integer> activeSpawnGroups
     ) {
         ZombiesMapObjects objects = mapObjects == null ? ZombiesMapObjects.EMPTY : mapObjects;
-        Set<Integer> groups = activeSpawnGroups == null || activeSpawnGroups.isEmpty() ? Set.of(1) : Set.copyOf(activeSpawnGroups);
+        Set<Integer> groups = activeSpawnGroups == null ? Set.of() : Set.copyOf(activeSpawnGroups);
         List<ZombiesZombieSpawnData> candidates = new ArrayList<>();
         for (ZombiesZombieSpawnData spawn : objects.zombieSpawns()) {
             if (spawn == null || spawn.weight() <= 0.0D || !groups.contains(spawn.group())) {

@@ -38,7 +38,7 @@ public final class ZombiesDeployFieldSchema {
             )),
             new ObjectTypeSchema(ZOMBIE_SPAWN, "gui.codpattern.zombies.deploy.type.zombie_spawn", false, false, List.of(
                     field("objectId", FieldType.TEXT, ""),
-                    field("group", FieldType.INTEGER, "1"),
+                    field("group", FieldType.INTEGER, "0"),
                     field("weight", FieldType.DECIMAL, "1.0"),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("posX", FieldType.INTEGER, "0"),
@@ -51,6 +51,8 @@ public final class ZombiesDeployFieldSchema {
                     field("objectId", FieldType.TEXT, ""),
                     field("name", FieldType.TEXT, ""),
                     field("group", FieldType.INTEGER, "2"),
+                    field(ZombiesSpawnGroupFields.ENABLE, FieldType.LIST, ""),
+                    field(ZombiesSpawnGroupFields.DISABLE, FieldType.LIST, ""),
                     field("cost", FieldType.INTEGER, "750"),
                     field("blocksPlayersOnly", FieldType.BOOLEAN, "true"),
                     field("requiredItem", FieldType.TEXT, ""),
@@ -210,7 +212,7 @@ public final class ZombiesDeployFieldSchema {
                 labelKeyForField(key),
                 type,
                 defaultValue,
-                true);
+                !"objectId".equals(key) && !"dimension".equals(key));
     }
 
     public enum FieldType {

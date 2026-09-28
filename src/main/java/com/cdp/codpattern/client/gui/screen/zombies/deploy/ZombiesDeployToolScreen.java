@@ -1,6 +1,7 @@
 package com.cdp.codpattern.client.gui.screen.zombies.deploy;
 
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployDraft;
+import com.cdp.codpattern.app.zombies.deploy.ZombiesSpawnGroupFields;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployFieldSchema;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeploySnapshot;
 import com.cdp.codpattern.client.zombies.ZombiesDeployClientActionHandler;
@@ -35,6 +36,11 @@ public class ZombiesDeployToolScreen extends Screen {
     private final List<Label> labels = new ArrayList<>();
     private final Map<String, EditBox> editors = new LinkedHashMap<>();
     private final Map<String, List<String>> listValues = new LinkedHashMap<>();
+    // Preserve local empty placeholders through widget rebuilds; they are never saved as group 0.
+    private final Map<String, List<String>> spawnGroupRows = new LinkedHashMap<>();
+    private boolean splitGroupRowsPending;
+    private static final String GROUP_SUMMARY = "@spawn_group_summary";
+    private static final String GROUP_SCOPE = "@spawn_group_scope";
     private int bodyTop, bodyBottom, typeWidth, objectX, objectWidth, fieldX, fieldWidth, issueTop;
     private int totalFieldRows, totalRegistrationRows;
     private boolean compactDetails;
@@ -86,7 +92,24 @@ public class ZombiesDeployToolScreen extends Screen {
         updateActions();
     }
 
-    private void rebuild() { if (minecraft != null) { rebuildWidgets(); } }
+    private void rebuild() {
+        if (minecraft == null) { return; }
+        if (!mapPage() && focusedKey != null) {
+            String[] focused = focusedKey.split(":", 2);
+            if (focused.length == 2 && ZombiesSpawnGroupFields.isGroupList(focused[0])) {
+                List<FieldRow> rows = fieldRows();
+                for (int i = 0; i < rows.size(); i++) {
+                    FieldRow row = rows.get(i);
+                    if (row.keys().contains(focused[0]) && Integer.toString(row.listIndex()).equals(focused[1])) {
+                        if (i < session.fieldScroll) { session.fieldScroll = i; }
+                        else if (i >= session.fieldScroll + visibleRows()) { session.fieldScroll = i - visibleRows() + 1; }
+                        break;
+                    }
+                }
+            }
+        }
+        rebuildWidgets();
+    }
 
     private Button button(String text, int x, int y, int w, Runnable action) {
         Button button = addRenderableWidget(Button.builder(Component.literal(font.plainSubstrByWidth(text, Math.max(12, w - 8))), ignored -> {
@@ -217,7 +240,33 @@ public class ZombiesDeployToolScreen extends Screen {
             int inputWidth = fieldWidth - labelWidth;
             String key = value.keys().get(0);
             var schema = snapshot().fields().stream().filter(it -> it.key().equals(key)).findFirst().orElseThrow();
-            if (value.listIndex() == -2) {
+            if (ZombiesSpawnGroupFields.isGroupList(key) && value.listIndex() == -2) {
+                button("+", inputX, y, 28, () -> {
+                    listRows(key).add("");
+                    focusedKey = key + ":" + (listRows(key).size() - 1);
+                    rebuild();
+                }).active = !session.busy();
+            } else if (ZombiesSpawnGroupFields.isGroupList(key) && value.listIndex() >= 0) {
+                List<String> values = listRows(key);
+                int index = value.listIndex();
+                EditBox box = edit(key + ":" + index, values.get(index), inputX, y, inputWidth - 30, text -> {
+                    List<String> pasted = ZombiesSpawnGroupFields.rows(text);
+                    if (pasted.size() > 1) {
+                        values.remove(index);
+                        values.addAll(index, pasted);
+                        focusedKey = key + ":" + (index + pasted.size() - 1);
+                        splitGroupRowsPending = true;
+                    } else { values.set(index, text); }
+                    session.fields.put(key, String.join(";", values));
+                }, schema.editable());
+                box.setHint(Component.literal(tr("spawn_groups.row_hint")));
+                button("−", inputX + inputWidth - 26, y, 26, () -> {
+                    values.remove(index);
+                    session.fields.put(key, String.join(";", values));
+                    focusedKey = null;
+                    rebuild();
+                }).active = !session.busy();
+            } else if (value.listIndex() == -2) {
                 button("+", inputX, y, 28, () -> withCommitted(() -> {
                     // A new row is local until it contains a value; never stage a malformed placeholder.
                     List<String> values = new ArrayList<>(listRows(key));
@@ -270,9 +319,25 @@ public class ZombiesDeployToolScreen extends Screen {
                 result.add(new FieldRow(tr("editor.coordinate." + prefix), List.of(prefix + "X", prefix + "Y", prefix + "Z"), -1));
             } else if (field.type() == ZombiesDeployFieldSchema.FieldType.LIST) {
                 result.add(new FieldRow(translated(field.labelKey()), List.of(key), -2));
+                if (ZombiesSpawnGroupFields.isGroupList(key)) {
+                    result.add(new FieldRow(tr("spawn_groups.hint"), List.of(), -1));
+                }
                 List<String> values = listRows(key);
+                if (ZombiesSpawnGroupFields.isGroupList(key) && values.isEmpty()) {
+                    result.add(new FieldRow(tr("spawn_groups.none"), List.of(), -1));
+                }
                 for (int i = 0; i < values.size(); i++) { result.add(new FieldRow("#" + (i + 1), List.of(key), i)); }
-            } else { result.add(new FieldRow(translated(field.labelKey()), List.of(key), -1)); }
+            } else {
+                String label = key.equals("group") && snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.BARRIER)
+                        ? tr("spawn_groups.barrier_group")
+                        : key.equals("group") && snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.ZOMBIE_SPAWN)
+                        ? tr("spawn_groups.spawn_group") : translated(field.labelKey());
+                result.add(new FieldRow(label, List.of(key), -1));
+            }
+        }
+        if (snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.BARRIER)) {
+            result.add(new FieldRow(GROUP_SUMMARY, List.of(), -1));
+            result.add(new FieldRow(GROUP_SCOPE, List.of(), -1));
         }
         return result;
     }
@@ -283,13 +348,23 @@ public class ZombiesDeployToolScreen extends Screen {
     }
     private static String delimiter(String key) { return key.equals("pricesByWeaponLevel") ? "," : ";"; }
     private List<String> listRows(String key) {
+        if (ZombiesSpawnGroupFields.isGroupList(key)) {
+            return spawnGroupRows.computeIfAbsent(key, ignored -> new ArrayList<>(
+                    ZombiesSpawnGroupFields.rows(session.fields.getOrDefault(key, ""))));
+        }
         String value = session.fields.getOrDefault(key, "");
         if (value.isEmpty()) { return new ArrayList<>(List.of("")); }
         return new ArrayList<>(Arrays.asList(value.split(key.equals("pricesByWeaponLevel") ? "[,;\\n\\r]" : "[;\\n\\r]", -1)));
     }
 
     private EditBox edit(String key, String value, int x, int y, int w, Consumer<String> changed, boolean editable) {
-        EditBox box = addRenderableWidget(new EditBox(font, x, y, Math.max(18, w), 20, Component.literal(key)));
+        boolean groupList = ZombiesSpawnGroupFields.isGroupList(key.split(":", 2)[0]);
+        EditBox box = addRenderableWidget(new EditBox(font, x, y, Math.max(18, w), 20, Component.literal(key)) {
+            @Override public void insertText(String text) {
+                // Vanilla EditBox strips newlines before the responder sees pasted text.
+                super.insertText(groupList ? text.replace("\r\n", ";").replace('\r', ';').replace('\n', ';') : text);
+            }
+        });
         box.setMaxLength(2048);
         box.setValue(Objects.requireNonNullElse(value, ""));
         box.setEditable(editable && !session.busy());
@@ -372,6 +447,10 @@ public class ZombiesDeployToolScreen extends Screen {
     private void withCommitted(Runnable next) {
         if (session.busy() || !validCorners()) { return; }
         if (session.fieldsChanged() && !mapPage()) {
+            if (snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.BARRIER)) {
+                try { ZombiesSpawnGroupFields.parse(session.fields); }
+                catch (ZombiesSpawnGroupFields.InvalidGroups error) { localError = groupInputError(error); return; }
+            }
             for (var field : snapshot().fields()) {
                 if (!field.editable()) { continue; }
                 String value = session.fields.getOrDefault(field.key(), "");
@@ -445,6 +524,8 @@ public class ZombiesDeployToolScreen extends Screen {
         if (hadPending && (code.startsWith("object.") && !code.equals("object.field_staged") && !code.equals("object.field_updated"))) {
             session.fields.putAll(oldFields);
         }
+        spawnGroupRows.clear();
+        splitGroupRowsPending = false;
         ZombiesDeployClientState.update(snapshot());
         rebuild();
         if (next != null) { next.run(); }
@@ -466,6 +547,10 @@ public class ZombiesDeployToolScreen extends Screen {
     }
 
     @Override public void tick() {
+        if (splitGroupRowsPending && !session.busy()) {
+            splitGroupRowsPending = false;
+            rebuild();
+        }
         for (EditBox box : editors.values()) { box.tick(); }
         if (!session.busy()) {
             EditBox focus = getFocused() instanceof EditBox box ? box : null;
@@ -479,6 +564,16 @@ public class ZombiesDeployToolScreen extends Screen {
     @Override public boolean mouseScrolled(double x, double y, double delta) {
         if (session.busy() || delta == 0) { return true; }
         int direction = delta > 0 ? -1 : 1;
+        if (!mapPage() && !compactDetails && snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.BARRIER)
+                && x >= fieldX && y >= bodyTop && y < bodyBottom) {
+            // Scrolling must stay possible while correcting an invalid/conflicting group on another row.
+            // Text already lives in the local draft; only navigation and save need a server commit.
+            session.fieldScroll = clamp(session.fieldScroll + direction, totalFieldRows);
+            focusedKey = null;
+            lastFocused = null;
+            rebuild();
+            return true;
+        }
         withCommitted(() -> {
             if (session.details && y >= issueTop) { session.issueScroll = Math.max(0, session.issueScroll + direction); }
             else if (y >= bodyTop && y < bodyBottom) {
@@ -523,7 +618,7 @@ public class ZombiesDeployToolScreen extends Screen {
             drawSelection(graphics);
         }
         for (Label label : labels) {
-            graphics.drawString(font, font.plainSubstrByWidth(label.text(), Math.max(8, label.width())), label.x(), label.y(), label.color(), false);
+            graphics.drawString(font, font.plainSubstrByWidth(labelText(label), Math.max(8, label.width())), label.x(), label.y(), label.color(), false);
         }
         String statusMessage = !localError.isBlank() ? localError : session.busy() ? tr("waiting_response") : feedback();
         int statusY = height - (width < 420 ? 60 : 34) - 10;
@@ -533,12 +628,29 @@ public class ZombiesDeployToolScreen extends Screen {
         }
         super.render(graphics, mouseX, mouseY, partialTick);
         for (Label label : labels) {
-            if (font.width(label.text()) > label.width() && mouseX >= label.x() && mouseX < label.x() + label.width()
+            if (font.width(labelText(label)) > label.width() && mouseX >= label.x() && mouseX < label.x() + label.width()
                     && mouseY >= label.y() && mouseY <= label.y() + 12) {
-                graphics.renderTooltip(font, Component.literal(label.text()), mouseX, mouseY); break;
+                graphics.renderTooltip(font, Component.literal(labelText(label)), mouseX, mouseY); break;
             }
         }
         if (!compactDetails) { drawScrollbars(graphics); }
+    }
+
+    private String groupInputError(ZombiesSpawnGroupFields.InvalidGroups error) {
+        return error.conflict() ? tr("spawn_groups.conflict", error.entry())
+                : tr("spawn_groups.invalid", translated(ZombiesDeployFieldSchema.labelKeyForField(error.field())), error.entry());
+    }
+
+    private String labelText(Label label) {
+        if (GROUP_SCOPE.equals(label.text())) { return tr("spawn_groups.scope", session.fields.getOrDefault("group", "")); }
+        if (!GROUP_SUMMARY.equals(label.text())) { return label.text(); }
+        try {
+            var changes = ZombiesSpawnGroupFields.parse(session.fields);
+            if (changes.enable().isEmpty() && changes.disable().isEmpty()) { return tr("spawn_groups.summary_none"); }
+            String enable = changes.enable().isEmpty() ? tr("spawn_groups.none") : ZombiesSpawnGroupFields.format(changes.enable());
+            String disable = changes.disable().isEmpty() ? tr("spawn_groups.none") : ZombiesSpawnGroupFields.format(changes.disable());
+            return tr("spawn_groups.summary", enable, disable);
+        } catch (ZombiesSpawnGroupFields.InvalidGroups error) { return groupInputError(error); }
     }
 
     private String readiness() {

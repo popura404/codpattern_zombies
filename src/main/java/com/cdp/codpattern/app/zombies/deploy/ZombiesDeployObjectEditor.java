@@ -4,6 +4,7 @@ import com.cdp.codpattern.app.zombies.map.ZombiesMapObjects;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesAmmoBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesArmorStationData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesSpawnGroupChanges;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesInitialSpawnData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesPowerSwitchData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesSodaMachineData;
@@ -85,7 +86,8 @@ final class ZombiesDeployObjectEditor {
                 ZombiesBarrierData data = parseBarrier(objects, NO_EXCLUSION, fields);
                 List<ZombiesBarrierData> next = mutable(objects.barriers());
                 next.add(data);
-                yield success(withBarriers(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
+                int affected = 1 + synchronizeSpawnGroupChanges(next, data);
+                yield success(withBarriers(objects, next), type, next.size() - 1, fieldsFrom(data), affected);
             }
             case ZombiesDeployFieldSchema.WEAPON_WALL -> {
                 ZombiesWeaponWallData data = parseWeaponWall(objects, NO_EXCLUSION, fields);
@@ -160,7 +162,8 @@ final class ZombiesDeployObjectEditor {
                 ZombiesBarrierData data = parseBarrier(objects, new ObjectRef(type, selectedIndex), fields);
                 List<ZombiesBarrierData> next = mutable(objects.barriers());
                 next.set(selectedIndex, data);
-                yield success(withBarriers(objects, next), type, selectedIndex, fieldsFrom(data), 1);
+                int affected = 1 + synchronizeSpawnGroupChanges(next, data);
+                yield success(withBarriers(objects, next), type, selectedIndex, fieldsFrom(data), affected);
             }
             case ZombiesDeployFieldSchema.WEAPON_WALL -> {
                 requireIndex(type, selectedIndex, objects.weaponWalls().size());
@@ -253,10 +256,12 @@ final class ZombiesDeployObjectEditor {
                         source.areaFrom(),
                         source.areaTo(),
                         source.interactionPos(),
-                        source.requiredItem());
+                        source.requiredItem(),
+                        source.spawnGroupChanges());
                 List<ZombiesBarrierData> next = mutable(objects.barriers());
                 next.add(data);
-                yield success(withBarriers(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
+                int affected = 1 + synchronizeSpawnGroupChanges(next, data);
+                yield success(withBarriers(objects, next), type, next.size() - 1, fieldsFrom(data), affected);
             }
             case ZombiesDeployFieldSchema.WEAPON_WALL -> {
                 requireIndex(type, selectedIndex, objects.weaponWalls().size());
@@ -535,7 +540,28 @@ final class ZombiesDeployObjectEditor {
                 blockPos(fields, "areaFrom"),
                 blockPos(fields, "areaTo"),
                 blockPos(fields, "interaction"),
-                requiredItemField(fields));
+                requiredItemField(fields),
+                spawnGroupChanges(fields));
+    }
+
+    private static ZombiesSpawnGroupChanges spawnGroupChanges(Map<String, String> fields) {
+        try {
+            return ZombiesSpawnGroupFields.parse(fields);
+        } catch (ZombiesSpawnGroupFields.InvalidGroups exception) {
+            throw failure("field.invalid_spawn_groups", exception.getMessage());
+        }
+    }
+
+    private static int synchronizeSpawnGroupChanges(List<ZombiesBarrierData> barriers, ZombiesBarrierData edited) {
+        int changed = 0;
+        for (int i = 0; i < barriers.size(); i++) {
+            ZombiesBarrierData barrier = barriers.get(i);
+            if (barrier.group() == edited.group() && !barrier.spawnGroupChanges().equals(edited.spawnGroupChanges())) {
+                barriers.set(i, barrier.withSpawnGroupChanges(edited.spawnGroupChanges()));
+                changed++;
+            }
+        }
+        return changed;
     }
 
     private static String requiredItemField(Map<String, String> fields) {
@@ -775,6 +801,8 @@ final class ZombiesDeployObjectEditor {
         fields.put("cost", Integer.toString(data.cost()));
         fields.put("blocksPlayersOnly", Boolean.toString(data.blocksPlayersOnly()));
         fields.put("requiredItem", data.requiredItem());
+        fields.put(ZombiesSpawnGroupFields.ENABLE, ZombiesSpawnGroupFields.format(data.spawnGroupChanges().enable()));
+        fields.put(ZombiesSpawnGroupFields.DISABLE, ZombiesSpawnGroupFields.format(data.spawnGroupChanges().disable()));
         fields.put("dimension", dimensionId(data.dimension()));
         putPosition(fields, "areaFrom", data.areaFrom());
         putPosition(fields, "areaTo", data.areaTo());

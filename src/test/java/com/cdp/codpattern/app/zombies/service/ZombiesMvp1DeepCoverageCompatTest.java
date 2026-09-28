@@ -49,10 +49,10 @@ public final class ZombiesMvp1DeepCoverageCompatTest {
             writeWave(wavesDirectory, "wave_001.json", "{\"wave\":1,\"mobs\":[]}");
 
             ZombiesServiceResult<ZombiesStartupPreflightSnapshot> result = validationService(wavesDirectory)
-                    .preflight(snapshot(roomId, false, List.of(initialSpawn(), zombieSpawn(1, 1.0D))));
+                    .preflight(snapshot(roomId, false, List.of(initialSpawn(), zombieSpawn(0, 1.0D))));
 
             require(!result.success(), "MVP3-default preflight failure should happen before startup side effects");
-            requireIssue(result, "map.missing_barrier");
+            requireIssue(result, "map.object_missing_location");
             require(!ZombiesMapOccupancyService.instance().isOccupied(roomId),
                     "preflight failure should not acquire map occupancy");
             require(ClientModeRuntimeState.snapshot(roomId.encode()).orElseThrow().revision() == 3L,

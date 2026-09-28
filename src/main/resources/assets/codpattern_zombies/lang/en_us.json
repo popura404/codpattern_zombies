@@ -333,5 +333,17 @@
     "gui.codpattern.zombies.deploy.editor.world_shortcuts": "Ctrl+Right editor · R undo / Shift+R redo",
     "message.codpattern.zombies.deploy.saved_invalid": "Saved; map validation has errors",
     "gui.codpattern.zombies.deploy.editor.saved_bounds_a": "Registered corner A: %s",
-    "gui.codpattern.zombies.deploy.editor.saved_bounds_b": "Registered corner B: %s"
+    "gui.codpattern.zombies.deploy.editor.saved_bounds_b": "Registered corner B: %s",
+    "gui.codpattern.zombies.deploy.field.enableSpawnGroups": "Enable spawn groups on opening",
+    "gui.codpattern.zombies.deploy.field.disableSpawnGroups": "Disable spawn groups on opening",
+    "gui.codpattern.zombies.deploy.spawn_groups.row_hint": "Group (optional)",
+    "gui.codpattern.zombies.deploy.spawn_groups.hint": "Optional; one group per row, or paste 1,2,3",
+    "gui.codpattern.zombies.deploy.spawn_groups.none": "No action",
+    "gui.codpattern.zombies.deploy.spawn_groups.barrier_group": "Linked barrier group",
+    "gui.codpattern.zombies.deploy.spawn_groups.spawn_group": "Spawn group (0 starts enabled)",
+    "gui.codpattern.zombies.deploy.spawn_groups.summary_none": "Open barriers only; leave spawn groups unchanged",
+    "gui.codpattern.zombies.deploy.spawn_groups.summary": "Enable: %s; disable: %s",
+    "gui.codpattern.zombies.deploy.spawn_groups.scope": "These actions apply to every barrier in linked group %s",
+    "gui.codpattern.zombies.deploy.spawn_groups.conflict": "Groups %s appear in both enable and disable lists",
+    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "Invalid entry in %s: \"%s\"; enter a non-negative integer"
 }

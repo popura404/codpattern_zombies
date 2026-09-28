@@ -52,8 +52,8 @@ public final class ZombiesMvp2DeepCoverageCompatTest {
         requireSuccess(purchase, "barrier group 2 purchase should succeed");
         require(purchase.value().orElseThrow().objectIds().equals(List.of("barrier-2-a", "barrier-2-b")),
                 "barrier purchase should report every cleared same-group object");
-        require(Set.of(1, 2).equals(activeGroups.snapshot()),
-                "successful barrier purchase should activate the matching spawn group only");
+        require(Set.of(0, 2).equals(activeGroups.snapshot()),
+                "successful barrier purchase should apply the explicitly configured spawn groups");
         requireCleared(store, barriers, "barrier-2-a", true);
         requireCleared(store, barriers, "barrier-2-b", true);
         requireCleared(store, barriers, "barrier-3-a", false);
@@ -68,7 +68,7 @@ public final class ZombiesMvp2DeepCoverageCompatTest {
 
         requireFailure(repeat, ZombiesErrorCode.of("barrier.already_cleared"),
                 "repeat barrier purchase should fail after group clear");
-        require(Set.of(1, 2).equals(activeGroups.snapshot()),
+        require(Set.of(0, 2).equals(activeGroups.snapshot()),
                 "failed repeat purchase should not activate any additional spawn group");
         requirePoints(players, repeatBuyer, 1_000.0D, "failed repeat barrier purchase should not deduct points");
     }
@@ -185,7 +185,7 @@ public final class ZombiesMvp2DeepCoverageCompatTest {
         return economy.spendAtomically(playerId, cost, ignored -> {
             ZombiesServiceResult<ZombiesObjectStateStore.BarrierGroupUpdate> clear =
                     store.clearBarrierGroup(group, barriers);
-            clear.value().ifPresent(update -> activeGroups.activate(update.group()));
+            clear.value().ifPresent(update -> activeGroups.apply(barriers.stream().filter(barrier -> barrier.group() == group).findFirst().orElseThrow().spawnGroupChanges()));
             return clear;
         });
     }
@@ -278,7 +278,8 @@ public final class ZombiesMvp2DeepCoverageCompatTest {
                 dimension(),
                 new BlockPos(5 + group, 64, 5),
                 new BlockPos(5 + group, 66, 7),
-                new BlockPos(5 + group, 65, 5));
+                new BlockPos(5 + group, 65, 5)).withSpawnGroupChanges(
+                new com.cdp.codpattern.app.zombies.map.object.ZombiesSpawnGroupChanges(Set.of(group), Set.of()));
     }
 
     private static ModeObjectState barrierState(

@@ -333,5 +333,17 @@
     "gui.codpattern.zombies.deploy.editor.world_shortcuts": "Ctrl+右键编辑 · R 撤销 / Shift+R 重做",
     "message.codpattern.zombies.deploy.saved_invalid": "已保存，地图校验未通过",
     "gui.codpattern.zombies.deploy.editor.saved_bounds_a": "已注册范围 A：%s",
-    "gui.codpattern.zombies.deploy.editor.saved_bounds_b": "已注册范围 B：%s"
+    "gui.codpattern.zombies.deploy.editor.saved_bounds_b": "已注册范围 B：%s",
+    "gui.codpattern.zombies.deploy.field.enableSpawnGroups": "打开时启用生成点组",
+    "gui.codpattern.zombies.deploy.field.disableSpawnGroups": "打开时禁用生成点组",
+    "gui.codpattern.zombies.deploy.spawn_groups.row_hint": "组号（可留空）",
+    "gui.codpattern.zombies.deploy.spawn_groups.hint": "可留空；每行一个组号，也可粘贴 1,2,3",
+    "gui.codpattern.zombies.deploy.spawn_groups.none": "无操作",
+    "gui.codpattern.zombies.deploy.spawn_groups.barrier_group": "屏障联动组",
+    "gui.codpattern.zombies.deploy.spawn_groups.spawn_group": "生成点组（0 开局启用）",
+    "gui.codpattern.zombies.deploy.spawn_groups.summary_none": "仅打开屏障，不改变生成点组",
+    "gui.codpattern.zombies.deploy.spawn_groups.summary": "启用：%s；禁用：%s",
+    "gui.codpattern.zombies.deploy.spawn_groups.scope": "此操作配置应用于屏障联动组 %s 的所有屏障",
+    "gui.codpattern.zombies.deploy.spawn_groups.conflict": "组 %s 同时出现在启用和禁用列表中",
+    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "%s 中的“%s”无效，请填写非负整数"
 }

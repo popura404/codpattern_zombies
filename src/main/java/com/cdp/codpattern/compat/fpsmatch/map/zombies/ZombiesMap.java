@@ -220,7 +220,8 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap> {
                 purchase -> barrierBlockRuntimeService.clearGroup(
                         roomId,
                         purchase.group(),
-                        this::levelForDimension));
+                        this::levelForDimension),
+                () -> runtimeObjects().zombieSpawns());
         ZombiesWeaponInstanceService weaponInstanceService = new ZombiesWeaponInstanceService(economyService);
         ZombiesAmmoBoxService ammoBoxService = new ZombiesAmmoBoxService(economyService);
         ZombiesArmorService armorService = new ZombiesArmorService(economyService);

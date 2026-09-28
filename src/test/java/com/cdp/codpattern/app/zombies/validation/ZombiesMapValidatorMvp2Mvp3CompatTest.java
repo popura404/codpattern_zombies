@@ -22,7 +22,7 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         mvp3RequiresPowerSodaWithoutPowerSwitchFails();
         mvp3RequiresPowerUltimateWithoutPowerSwitchFails();
         mvp3NoPowerSwitchPasses();
-        zombieSpawnGroupWithoutBarrierFails();
+        zombieSpawnGroupWithoutEnablerWarns();
         orphanBarrierGroupIsNonBlocking();
         mvp3MultiplePowerSwitchesPass();
         mvp3MissingSodaMachinePasses();
@@ -97,14 +97,14 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         requireNoIssue(report, "map.missing_power_switch");
     }
 
-    private static void zombieSpawnGroupWithoutBarrierFails() {
+    private static void zombieSpawnGroupWithoutEnablerWarns() {
         ZombiesMapValidationReport report = validate(
                 ZombiesMapValidationProfile.MVP1_MINIMAL,
                 snapshot(
                         List.of(initialSpawn(), zombieSpawn(), zombieSpawn("zombie-2", new BlockPos(2, 1, 2), 2)),
                         List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
-        require(report.hasErrors(), "group > 1 zombie spawn should require a matching barrier");
-        requireIssue(report, "map.missing_barrier_for_spawn_group");
+        require(report.valid(), "unreferenced groups should warn without preventing editing/startup");
+        requireIssue(report, "map.spawn_group_never_enabled");
     }
 
     private static void orphanBarrierGroupIsNonBlocking() {
@@ -594,7 +594,7 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
     }
 
     private static ZombiesMapSnapshot.SpawnSnapshot zombieSpawn(String objectId, BlockPos pos) {
-        return zombieSpawn(objectId, pos, 1);
+        return zombieSpawn(objectId, pos, 0);
     }
 
     private static ZombiesMapSnapshot.SpawnSnapshot zombieSpawn(String objectId, BlockPos pos, int group) {

@@ -229,7 +229,7 @@ public final class ZombiesMvp1LifecycleClosureCompatTest {
             require(readyService.knownPlayers().isEmpty(), context + " should clear ready known players");
             require(readyService.readyPlayers().isEmpty(), context + " should clear ready players");
             require(voteService.activeVoteSnapshot().isEmpty(), context + " should clear active start vote");
-            require(activeGroups.snapshot().equals(Set.of(1)), context + " should reset active spawn groups");
+            require(activeGroups.snapshot().equals(Set.of(0)), context + " should reset active spawn groups");
             require(!cleanupHooks.objectRuntimeDirty, context + " should clear object runtime state");
             require(!occupancy.isOccupied(roomId), context + " should release map occupancy");
             require(cleanupHooks.clearHooksRan(), context + " should run every cleanup clear hook");

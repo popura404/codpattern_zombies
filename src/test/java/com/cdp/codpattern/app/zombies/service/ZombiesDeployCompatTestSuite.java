@@ -8,6 +8,7 @@ public final class ZombiesDeployCompatTestSuite {
 
     public static void main(String[] args) throws Throwable {
         com.cdp.codpattern.app.zombies.deploy.ZombiesDeployDraftSessionCompatTest.closeWaitsForTheMatchingSuccessfulResponse();
+        com.cdp.codpattern.app.zombies.deploy.ZombiesSpawnGroupChangesCompatTest.main(args);
         int skipped = ZombiesCompatSuiteRunner.runAll(List.of(
                 new ZombiesCompatSuiteRunner.TestEntry("Deploy object editor static contract",
                         "com.cdp.codpattern.app.zombies.deploy.ZombiesDeployObjectEditorStaticContractCompatTest", false),

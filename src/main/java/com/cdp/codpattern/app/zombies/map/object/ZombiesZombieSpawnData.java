@@ -17,7 +17,7 @@ public record ZombiesZombieSpawnData(
 ) {
     public static final Codec<ZombiesZombieSpawnData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.STRING.fieldOf("objectId").forGetter(ZombiesZombieSpawnData::objectId),
-            Codec.INT.optionalFieldOf("group", 1).forGetter(ZombiesZombieSpawnData::group),
+            Codec.INT.optionalFieldOf("group", 0).forGetter(ZombiesZombieSpawnData::group),
             Codec.DOUBLE.optionalFieldOf("weight", 1.0D).forGetter(ZombiesZombieSpawnData::weight),
             ZombiesObjectCodecs.DIMENSION_CODEC.fieldOf("dimension").forGetter(ZombiesZombieSpawnData::dimension),
             BlockPos.CODEC.optionalFieldOf("pos", BlockPos.ZERO).forGetter(ZombiesZombieSpawnData::pos),

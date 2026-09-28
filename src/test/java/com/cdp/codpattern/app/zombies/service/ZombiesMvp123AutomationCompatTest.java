@@ -151,14 +151,14 @@ public final class ZombiesMvp123AutomationCompatTest {
                 unlockSpawnGroupAtomically(economy, activeGroups, playerId, 2, 400.0D);
         requireFailure(insufficientUnlock, ZombiesErrorCode.ECONOMY_NOT_ENOUGH_POINTS,
                 "insufficient barrier unlock should fail before side effects");
-        require(activeGroups.snapshot().equals(Set.of(1)),
+        require(activeGroups.snapshot().equals(Set.of(0)),
                 "insufficient unlock should leave only initial spawn group active");
         requirePoints(players, playerId, 300.0D, "insufficient unlock should not spend points");
 
         ZombiesServiceResult<Integer> unlock =
                 unlockSpawnGroupAtomically(economy, activeGroups, playerId, 2, 125.0D);
         requireSuccess(unlock, "barrier-style unlock should succeed");
-        require(activeGroups.snapshot().equals(Set.of(1, 2)),
+        require(activeGroups.snapshot().equals(Set.of(0, 2)),
                 "successful unlock should activate the purchased spawn group");
         requirePoints(players, playerId, 175.0D, "successful unlock should spend points");
 
@@ -166,7 +166,7 @@ public final class ZombiesMvp123AutomationCompatTest {
                 unlockSpawnGroupAtomically(economy, activeGroups, playerId, 2, 50.0D);
         requireFailure(repeatUnlock, BARRIER_ALREADY_CLEARED,
                 "repeat unlock of an active group should fail");
-        require(activeGroups.snapshot().equals(Set.of(1, 2)),
+        require(activeGroups.snapshot().equals(Set.of(0, 2)),
                 "repeat unlock failure should keep active groups stable");
         requirePoints(players, playerId, 175.0D, "repeat unlock failure should not spend points");
     }
@@ -316,7 +316,7 @@ public final class ZombiesMvp123AutomationCompatTest {
                 ROOM_ID,
                 ROOM_ID.mapName(),
                 true,
-                List.of(initialSpawn("initial-1"), zombieSpawn("zombie-1", 1)),
+                List.of(initialSpawn("initial-1"), zombieSpawn("zombie-1", 0)),
                 List.of());
     }
 
@@ -325,7 +325,7 @@ public final class ZombiesMvp123AutomationCompatTest {
                 ROOM_ID,
                 ROOM_ID.mapName(),
                 true,
-                List.of(zombieSpawn("zombie-1", 1)),
+                List.of(zombieSpawn("zombie-1", 0)),
                 List.of());
     }
 

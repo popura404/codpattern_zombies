@@ -1,5 +1,7 @@
 package com.cdp.codpattern.app.zombies.map;
 
+import com.cdp.codpattern.app.zombies.map.object.ZombiesSpawnGroupChanges;
+
 import com.cdp.codpattern.app.match.editor.ModeObjectData;
 import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.match.persistence.CommonModeMapData;
@@ -235,7 +237,8 @@ public record ZombiesMapSnapshot(
                         barrier.interactionPos(),
                         barrier.areaFrom(),
                         barrier.areaTo(),
-                        barrier.requiredItem()))
+                        barrier.requiredItem(),
+                        barrier.spawnGroupChanges()))
                 .toList();
         List<WeaponWallSnapshot> weaponWalls = resolved.weaponWalls().stream()
                 .map(weaponWall -> new WeaponWallSnapshot(
@@ -390,7 +393,8 @@ public record ZombiesMapSnapshot(
                         object.position(),
                         object.position(),
                         object.position(),
-                        firstPayloadString(object.payload(), "requiredItem", "required_item").orElse("")));
+                        firstPayloadString(object.payload(), "requiredItem", "required_item").orElse(""),
+                        ZombiesSpawnGroupChanges.fromTag(object.payload().getCompound("spawnGroupChanges"))));
             }
         }
         return barriers;
@@ -548,7 +552,8 @@ public record ZombiesMapSnapshot(
             BlockPos pos,
             BlockPos areaFrom,
             BlockPos areaTo,
-            String requiredItem
+            String requiredItem,
+            ZombiesSpawnGroupChanges spawnGroupChanges
     ) {
         public BarrierSnapshot(String objectId, String featureKey) {
             this(objectId, featureKey, 1, 0);
@@ -660,7 +665,21 @@ public record ZombiesMapSnapshot(
                     requiredItem);
         }
 
+        public BarrierSnapshot(String objectId, String featureKey, int group, int cost, boolean blocksPlayersOnly,
+                String dimensionId, BlockPos pos, BlockPos areaFrom, BlockPos areaTo, String requiredItem) {
+            this(objectId, featureKey, group, cost, blocksPlayersOnly, dimensionId, pos, areaFrom, areaTo,
+                    requiredItem, ZombiesSpawnGroupChanges.NONE);
+        }
+
+        public BarrierSnapshot(String objectId, String featureKey, int group, int cost, boolean blocksPlayersOnly,
+                ResourceKey<Level> dimension, BlockPos pos, BlockPos areaFrom, BlockPos areaTo, String requiredItem,
+                ZombiesSpawnGroupChanges changes) {
+            this(objectId, featureKey, group, cost, blocksPlayersOnly, ZombiesMapSnapshot.dimensionId(dimension),
+                    pos, areaFrom, areaTo, requiredItem, changes);
+        }
+
         public BarrierSnapshot {
+            spawnGroupChanges = spawnGroupChanges == null ? ZombiesSpawnGroupChanges.NONE : spawnGroupChanges;
             objectId = Objects.requireNonNullElse(objectId, "").trim();
             featureKey = Objects.requireNonNullElse(featureKey, "").trim();
             dimensionId = normalizeDimensionId(dimensionId);

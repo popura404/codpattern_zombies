@@ -81,5 +81,55 @@ public final class ZombiesDeployPersistenceGameTests {
             if (map != null) { FPSMCore.getInstance().unregisterMap(map); }
         }
     }
+    @GameTest(template = "empty", batch = "zombies_deploy", timeoutTicks = 100, required = true)
+    public static void linkedSpawnActionsUndoAndReload(GameTestHelper helper) {
+        var service = ZombiesDeployToolService.instance();
+        var player = FakePlayerFactory.getMinecraft(helper.getLevel());
+        var stack = new ItemStack(ZombiesItemRegister.ZOMBIES_DEPLOY_TOOL.get());
+        var core = FPSMCore.getInstance();
+        String name = "spawn-action-save-" + UUID.randomUUID().toString().substring(0, 8);
+        try {
+            check(service.createMap(player, stack, ZombiesDeployDraft.empty().withMapDraft(name,
+                    new BlockPos(-16, 0, -16), new BlockPos(16, 256, 16))).success(), "create map");
+            var map = (ZombiesMap) core.getMapByTypeWithName(BuiltInGameModes.ZOMBIES, name).orElseThrow();
+            for (int index = 0; index < 2; index++) {
+                var fields = new HashMap<>(ZombiesDeployFieldSchema.defaultFields(ZombiesDeployFieldSchema.BARRIER));
+                fields.put("objectId", "linked-" + index); fields.put("group", "10");
+                fields.put("enableSpawnGroups", "1,2"); fields.put("disableSpawnGroups", "0");
+                fields.put("dimension", helper.getLevel().dimension().location().toString());
+                fields.put("areaFromX", Integer.toString(index * 2)); fields.put("areaToX", Integer.toString(index * 2));
+                fields.put("interactionX", Integer.toString(index * 2));
+                var draft = new ZombiesDeployDraft(name, ZombiesDeployFieldSchema.BARRIER, -1, ZombiesDeployFieldSchema.PROFILE_MVP3, fields);
+                var added = service.addObject(player, stack, draft);
+                check(added.success(), "add linked barrier: " + added.code());
+            }
+            check(service.saveDraft(player, stack, ZombiesDeployTool.getDraft(stack)).success(), "save actions");
+            var original = map.objects();
+            var fields = new HashMap<>(ZombiesDeployTool.getDraft(stack).fields());
+            fields.put("enableSpawnGroups", ""); fields.put("disableSpawnGroups", "");
+            var updated = service.updateObject(player, stack, ZombiesDeployTool.getDraft(stack).withFields(fields)).value().orElseThrow();
+            check(updated.undoCount() == 3, "synchronizing peers is one history entry");
+            check(service.saveDraft(player, stack, ZombiesDeployTool.getDraft(stack)).success(), "save empty actions");
+            check(map.objects().barriers().stream().allMatch(barrier -> barrier.spawnGroupChanges().referencedGroups().isEmpty()), "all peers explicitly cleared");
+            var undone = service.undoLast(player, stack, ZombiesDeployTool.getDraft(stack), updated.revision()).value().orElseThrow();
+            check(undone.redoCount() == 1, "whole group is undone together");
+            var redone = service.redoLast(player, stack, ZombiesDeployTool.getDraft(stack), undone.revision()).value().orElseThrow();
+            check(!redone.dirty(), "redo restores saved empty lists");
+            service.undoLast(player, stack, ZombiesDeployTool.getDraft(stack), redone.revision());
+            check(service.saveDraft(player, stack, ZombiesDeployTool.getDraft(stack)).success(), "save restored actions");
+            check(map.objects().equals(original), "undo restores every peer action");
+            service.discardDraft(player, stack, ZombiesDeployTool.getDraft(stack));
+            check(core.unregisterMap(map), "unregister before disk reload");
+            core.getFPSMDataManager().readData();
+            var loaded = (ZombiesMap) core.getMapByTypeWithName(BuiltInGameModes.ZOMBIES, name).orElseThrow();
+            check(loaded != map && loaded.objects().equals(original), "disk reload preserves complete action sets");
+            helper.succeed();
+        } catch (Throwable error) {
+            error.printStackTrace(); helper.fail("Spawn action persistence: " + error);
+        } finally {
+            service.discardDraft(player, stack, ZombiesDeployTool.getDraft(stack));
+            core.getMapByTypeWithName(BuiltInGameModes.ZOMBIES, name).ifPresent(core::unregisterMap);
+        }
+    }
     private static void check(boolean condition, String message) { if (!condition) { throw new AssertionError(message); } }
 }

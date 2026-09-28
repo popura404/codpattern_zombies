@@ -17,7 +17,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public final class ZombiesWaveDirector {
-    public static final Set<Integer> DEFAULT_ACTIVE_SPAWN_GROUPS = Set.of(1);
+    public static final Set<Integer> DEFAULT_ACTIVE_SPAWN_GROUPS = Set.of(ZombiesActiveSpawnGroupService.INITIAL_SPAWN_GROUP);
 
     private final ZombiesMobSpawnService spawnService;
     private final Map<Integer, ZombiesWaveDefinition> wavesByNumber;

@@ -109,7 +109,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, com.cdp.codpattern.app.match.ModeRoomBackedMap {
+public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, com.cdp.codpattern.app.match.ModeRoomBackedMap, com.cdp.codpattern.app.match.port.ModeRoomEvictionPort {
     static final int SURVIVOR_LIMIT = 4;
     private static final int COMBAT_REGEN_DELAY_TICKS = 120;
     private static final float COMBAT_REGEN_HALF_HEARTS_PER_SECOND = 5.0F;
@@ -574,6 +574,26 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 COMBAT_REGEN_HALF_HEARTS_PER_SECOND);
     }
 
+    @Override
+    public java.util.Set<UUID> deletionMembers() {
+        var members = new java.util.HashSet<>(getMapTeams().getJoinedPlayersWithSpec());
+        playerStateService.states().stream().filter(state -> !state.connectionState().isLeft())
+                .forEach(state -> members.add(state.playerId()));
+        return java.util.Set.copyOf(members);
+    }
+
+    @Override
+    public void evictRecoveredMember(UUID playerId) {
+        // Shared recovery has already restored equipment, effects, HUD and destination.
+        CombatRegenService.clearPlayerCooldown(combatRegenCooldowns, playerId);
+        postGameTeleportService.clearPending(playerId);
+        readyService.removePlayer(playerId);
+        startVoteService.onSnapshotMemberLeft(playerId);
+        playerStateService.remove(playerId); // connection state is stored in this same service
+        getMapTeams().removePlayer(playerId);
+        markRosterDirty();
+    }
+
     void leaveRoomPlayer(ServerPlayer player) {
         if (player == null) {
             return;
@@ -686,6 +706,10 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
 
     @Override
     public void setMatchEndTeleportPoint(SpawnPointData data) {
+        if (getServerLevel().getServer() != null && com.phasetranscrystal.fpsmatch.core.FPSMCore.initialized()
+                && com.phasetranscrystal.fpsmatch.core.FPSMCore.getInstance().getMapByTypeWithName(getGameType(), getMapName()).orElse(null) == this
+                && com.cdp.codpattern.app.match.management.MapDeletionCoordinator.get(getServerLevel().getServer()).blocks(roomId))
+            throw new IllegalStateException("Map deletion is pending");
         matchEndTeleportPoint = Optional.ofNullable(data);
     }
 

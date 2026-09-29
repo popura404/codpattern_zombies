@@ -1174,7 +1174,8 @@ public final class ZombiesDeployToolService {
         return FPSMCore.getInstance()
                 .getMapByTypeWithName(BuiltInGameModes.ZOMBIES, selected)
                 .filter(ZombiesMap.class::isInstance)
-                .map(ZombiesMap.class::cast);
+                .map(ZombiesMap.class::cast)
+                .filter(map -> !com.cdp.codpattern.app.match.management.MapDeletionCoordinator.get(map.getServerLevel().getServer()).blocks(com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.id(map)));
     }
 
     private ZombiesMapObjects draftObjects(ServerPlayer player, ZombiesDeployDraft draft, ZombiesMap map) {

@@ -7,6 +7,7 @@ import com.cdp.codpattern.client.ClientMatchState;
 import com.cdp.codpattern.client.ClientModeObjectState;
 import com.cdp.codpattern.client.zombies.ClientZombiesState;
 import com.cdp.codpattern.client.zombies.ZombiesRarityDisplay;
+import com.cdp.codpattern.client.zombies.ZombiesMysteryBoxVisualLayout;
 import com.cdp.codpattern.zombiesaddon.ZombiesAddonConstants;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Camera;
@@ -46,7 +47,9 @@ public final class ZombiesMysteryBoxWorldRenderer {
                 if (state == null) continue; CompoundTag p = state.payload();
                 if (!"mystery_box".equals(p.getString(ZombiesObjectStateKeys.PAYLOAD_TYPE))) continue;
                 String phase = p.getString("mysteryPhase"); if ("IDLE".equals(phase) || phase.isBlank()) continue;
-                Vec3 anchor = new Vec3(p.getInt("boxPosX") + 0.5D, p.getInt("boxPosY") + 1.15D, p.getInt("boxPosZ") + 0.5D);
+                BlockPos boxPos = ZombiesMysteryBoxVisualLayout.boxPosition(p, state.position());
+                if (boxPos == null) continue;
+                Vec3 anchor = Vec3.atBottomCenterOf(boxPos).add(0.0D, ZombiesMysteryBoxVisualLayout.EFFECT_BASE_HEIGHT, 0.0D);
                 if (cameraPos.distanceToSqr(anchor) > 24.0D * 24.0D) continue;
                 Vec3 rel = anchor.subtract(cameraPos); pose.pushPose(); pose.translate(rel.x, rel.y, rel.z);
                 int frame = 9;
@@ -58,9 +61,13 @@ public final class ZombiesMysteryBoxWorldRenderer {
                 if (list != null && frame < list.size()) {
                     String gun = list.getString(frame); ItemStack stack = ZombiesWeaponInventoryService.createDefaultTaczGunStackForRules(gun);
                     if (!stack.isEmpty()) {
-                        pose.translate(0, 0.08D + Mth.sin((level.getGameTime() + event.getPartialTick()) * 0.12F) * 0.05D, 0);
+                        pose.translate(0, ZombiesMysteryBoxVisualLayout.WEAPON_FLOAT_OFFSET
+                                + Mth.sin((level.getGameTime() + event.getPartialTick()) * 0.12F)
+                                * ZombiesMysteryBoxVisualLayout.WEAPON_BOB_AMPLITUDE, 0);
                         pose.mulPose(Axis.YP.rotationDegrees((level.getGameTime() + event.getPartialTick()) * 4.0F));
-                        pose.pushPose(); pose.translate(0, 0.35D, 0); pose.scale(0.65F, 0.65F, 0.65F);
+                        pose.pushPose(); pose.translate(0, ZombiesMysteryBoxVisualLayout.WEAPON_DISPLAY_OFFSET, 0);
+                        float weaponScale = ZombiesMysteryBoxVisualLayout.WEAPON_SCALE;
+                        pose.scale(weaponScale, weaponScale, weaponScale);
                         mc.getItemRenderer().renderStatic(stack, ItemDisplayContext.FIXED, LightTexture.FULL_BRIGHT, 0, pose, buffers, level, 0);
                         pose.popPose();
                     }

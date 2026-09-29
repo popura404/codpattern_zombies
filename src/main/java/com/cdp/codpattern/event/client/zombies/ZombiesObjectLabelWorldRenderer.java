@@ -6,6 +6,7 @@ import com.cdp.codpattern.client.ClientMatchState;
 import com.cdp.codpattern.client.ClientModeObjectState;
 import com.cdp.codpattern.client.zombies.ZombiesRarityDisplay;
 import com.cdp.codpattern.client.zombies.ClientZombiesState;
+import com.cdp.codpattern.client.zombies.ZombiesMysteryBoxVisualLayout;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
 import com.cdp.codpattern.zombiesaddon.ZombiesAddonConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -51,6 +52,7 @@ public final class ZombiesObjectLabelWorldRenderer {
     private static final String PAYLOAD_TYPE_POWER_SWITCH = "power_switch";
     private static final String PAYLOAD_TYPE_SODA_MACHINE = "soda_machine";
     private static final String PAYLOAD_TYPE_ULTIMATE_MACHINE = "ultimate_machine";
+    private static final String PAYLOAD_TYPE_MYSTERY_BOX = "mystery_box";
     private static final String PAYLOAD_CLEARED = "cleared";
     private static final String PAYLOAD_GROUP = "group";
     private static final String PAYLOAD_RARITY_ID = "rarityId";
@@ -61,6 +63,8 @@ public final class ZombiesObjectLabelWorldRenderer {
     private static final String PAYLOAD_POWER_ON = "powerOn";
     private static final String PAYLOAD_BUFF_ID = "buffId";
     private static final String PAYLOAD_MAX_UPGRADE_LEVEL = "maxUpgradeLevel";
+    private static final String PAYLOAD_MYSTERY_PHASE = "mysteryPhase";
+    private static final String PAYLOAD_OWNER_UUID = "ownerUuid";
 
     private ZombiesObjectLabelWorldRenderer() {
     }
@@ -137,14 +141,16 @@ public final class ZombiesObjectLabelWorldRenderer {
             }
             CompoundTag payload = state.payload();
             String type = payload.getString(ZombiesObjectStateKeys.PAYLOAD_TYPE);
-            if (!isLabelObjectType(type) || !hasExpectedRuntimeBlock(level, state.position(), payload, type)) {
+            BlockPos pos = PAYLOAD_TYPE_MYSTERY_BOX.equals(type)
+                    ? ZombiesMysteryBoxVisualLayout.boxPosition(payload, state.position()) : state.position();
+            if (!isLabelObjectType(type) || !hasExpectedRuntimeBlock(level, pos, payload, type)) {
                 continue;
             }
             ObjectLabel label = labelFor(type, payload);
             if (label == null || label.title().isBlank()) {
                 continue;
             }
-            Vec3 anchor = labelAnchor(state.position(), type);
+            Vec3 anchor = labelAnchor(pos, type);
             double distanceSqr = cameraPos.distanceToSqr(anchor);
             if (distanceSqr > MAX_RENDER_DISTANCE_SQR) {
                 continue;
@@ -214,6 +220,7 @@ public final class ZombiesObjectLabelWorldRenderer {
             case PAYLOAD_TYPE_POWER_SWITCH -> powerSwitchLabel(payload);
             case PAYLOAD_TYPE_SODA_MACHINE -> sodaMachineLabel(payload);
             case PAYLOAD_TYPE_ULTIMATE_MACHINE -> ultimateMachineLabel(payload);
+            case PAYLOAD_TYPE_MYSTERY_BOX -> mysteryBoxLabel(payload);
             default -> null;
         };
     }
@@ -286,6 +293,24 @@ public final class ZombiesObjectLabelWorldRenderer {
         return pricedLabel("强化机", enabled ? "强化武器" : "不可用", payload, enabled);
     }
 
+    private static ObjectLabel mysteryBoxLabel(CompoundTag payload) {
+        return switch (payload.getString(PAYLOAD_MYSTERY_PHASE)) {
+            case "ROLLING" -> new ObjectLabel("神秘箱", "抽奖中…", ACTIVE_COLOR);
+            case "CLAIMABLE" -> {
+                Minecraft minecraft = Minecraft.getInstance();
+                boolean mine = minecraft.player != null
+                        && minecraft.player.getUUID().toString().equals(payload.getString(PAYLOAD_OWNER_UUID));
+                ZombiesRarityDisplay.Entry rarity = ZombiesRarityDisplay.fromRarityId(payload.getString(PAYLOAD_RARITY_ID)).orElse(null);
+                String detail = (rarity == null ? "" : rarity.label() + " · ")
+                        + (mine ? "可领取武器" : "等待购买者领取");
+                yield new ObjectLabel("神秘箱", detail, mine ? READY_COLOR : DISABLED_COLOR);
+            }
+            case "COOLDOWN" -> new ObjectLabel("神秘箱", "冷却中…", DISABLED_COLOR);
+            default -> pricedLabel("神秘箱", "抽取随机武器", payload,
+                    payload.getBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED));
+        };
+    }
+
     private static ObjectLabel pricedLabel(String title, String action, CompoundTag payload, boolean enabled) {
         return pricedLabel(title, action, payload, enabled, TITLE_COLOR);
     }
@@ -302,6 +327,9 @@ public final class ZombiesObjectLabelWorldRenderer {
     }
 
     private static Vec3 labelAnchor(BlockPos pos, String type) {
+        if (PAYLOAD_TYPE_MYSTERY_BOX.equals(type)) {
+            return Vec3.atBottomCenterOf(pos).add(0.0D, ZombiesMysteryBoxVisualLayout.LABEL_HEIGHT, 0.0D);
+        }
         double yOffset = PAYLOAD_TYPE_BARRIER.equals(type) ? 1.15D : 1.35D;
         return Vec3.atCenterOf(pos).add(0.0D, yOffset, 0.0D);
     }
@@ -313,7 +341,8 @@ public final class ZombiesObjectLabelWorldRenderer {
                 || PAYLOAD_TYPE_ARMOR_STATION.equals(type)
                 || PAYLOAD_TYPE_POWER_SWITCH.equals(type)
                 || PAYLOAD_TYPE_SODA_MACHINE.equals(type)
-                || PAYLOAD_TYPE_ULTIMATE_MACHINE.equals(type);
+                || PAYLOAD_TYPE_ULTIMATE_MACHINE.equals(type)
+                || PAYLOAD_TYPE_MYSTERY_BOX.equals(type);
     }
 
     private static boolean hasExpectedRuntimeBlock(ClientLevel level, BlockPos pos, CompoundTag payload, String type) {
@@ -332,6 +361,7 @@ public final class ZombiesObjectLabelWorldRenderer {
             case PAYLOAD_TYPE_POWER_SWITCH -> CodPatternBlockRegister.ZOMBIES_POWER_SWITCH.get();
             case PAYLOAD_TYPE_SODA_MACHINE -> CodPatternBlockRegister.ZOMBIES_SODA_MACHINE_BOX.get();
             case PAYLOAD_TYPE_ULTIMATE_MACHINE -> CodPatternBlockRegister.ZOMBIES_ULTIMATE_MACHINE_BOX.get();
+            case PAYLOAD_TYPE_MYSTERY_BOX -> CodPatternBlockRegister.ZOMBIES_MYSTERY_BOX.get();
             default -> null;
         };
     }

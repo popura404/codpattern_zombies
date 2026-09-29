@@ -4,6 +4,7 @@ import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployDraft;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesSpawnGroupFields;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeployFieldSchema;
 import com.cdp.codpattern.app.zombies.deploy.ZombiesDeploySnapshot;
+import com.cdp.codpattern.app.zombies.model.ZombiesBuffType;
 import com.cdp.codpattern.client.zombies.ZombiesDeployClientActionHandler;
 import com.cdp.codpattern.client.zombies.ZombiesDeployClientState;
 import com.phasetranscrystal.fpsmatch.common.packet.zombies.OpenZombiesDeployToolScreenS2CPacket;
@@ -13,6 +14,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
@@ -39,6 +41,7 @@ public class ZombiesDeployToolScreen extends Screen {
     // Preserve local empty placeholders through widget rebuilds; they are never saved as group 0.
     private final Map<String, List<String>> spawnGroupRows = new LinkedHashMap<>();
     private boolean splitGroupRowsPending;
+    private boolean sodaEffectsExpanded;
     private static final String GROUP_SUMMARY = "@spawn_group_summary";
     private static final String GROUP_SCOPE = "@spawn_group_scope";
     private int bodyTop, bodyBottom, typeWidth, objectX, objectWidth, fieldX, fieldWidth, issueTop;
@@ -240,7 +243,9 @@ public class ZombiesDeployToolScreen extends Screen {
             int inputWidth = fieldWidth - labelWidth;
             String key = value.keys().get(0);
             var schema = snapshot().fields().stream().filter(it -> it.key().equals(key)).findFirst().orElseThrow();
-            if (ZombiesSpawnGroupFields.isGroupList(key) && value.listIndex() == -2) {
+            if (isSodaEffect(key)) {
+                buildSodaEffect(value, schema, inputX, y, inputWidth);
+            } else if (ZombiesSpawnGroupFields.isGroupList(key) && value.listIndex() == -2) {
                 button("+", inputX, y, 28, () -> {
                     listRows(key).add("");
                     focusedKey = key + ":" + (listRows(key).size() - 1);
@@ -302,6 +307,52 @@ public class ZombiesDeployToolScreen extends Screen {
         }
     }
 
+    private boolean isSodaEffect(String key) {
+        return key.equals("buffId") && snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.SODA_MACHINE);
+    }
+
+    private String sodaEffectName(ZombiesBuffType type) {
+        String key = "gui.codpattern.zombies.deploy.soda_effect." + type.id();
+        return I18n.exists(key) ? translated(key) : type.id();
+    }
+
+    private void buildSodaEffect(FieldRow row, ZombiesDeploySnapshot.FieldValue schema, int x, int y, int w) {
+        String current = session.fields.getOrDefault(schema.key(), "");
+        ZombiesBuffType selected = ZombiesBuffType.fromId(current).orElse(null);
+        ZombiesBuffType option = row.sodaEffect();
+        if (option == null) {
+            String name = selected == null ? tr("soda_effect.unknown", current) : sodaEffectName(selected);
+            Button selector = button(name + (sodaEffectsExpanded ? " ▴" : " ▾"), x, y, w, () -> withCommitted(() -> {
+                sodaEffectsExpanded = !sodaEffectsExpanded;
+                if (sodaEffectsExpanded) {
+                    List<FieldRow> rows = fieldRows();
+                    for (int i = 0; i < rows.size(); i++) {
+                        if (rows.get(i).keys().contains(schema.key())) {
+                            // Bring the choices into view even when the selector was at the bottom.
+                            int shownRows = Math.min(visibleRows(), ZombiesBuffType.values().length + 1);
+                            session.fieldScroll = Math.max(session.fieldScroll, i + shownRows - visibleRows());
+                            break;
+                        }
+                    }
+                }
+                rebuild();
+            }));
+            selector.active = schema.editable() && !session.busy();
+            selector.setTooltip(Tooltip.create(Component.literal(name + "\n" + current + "\n"
+                    + tr(sodaEffectsExpanded ? "soda_effect.hide" : "soda_effect.choose"))));
+        } else {
+            Button choice = button((option == selected ? "● " : "○ ") + sodaEffectName(option), x, y, w, () -> {
+                session.fields.put(schema.key(), option.id());
+                sodaEffectsExpanded = false;
+                // Reflect the local choice even if another field prevents the server commit.
+                rebuild();
+                withCommitted(() -> { });
+            });
+            choice.active = schema.editable() && !session.busy();
+            choice.setTooltip(Tooltip.create(Component.literal(sodaEffectName(option) + "\n" + option.id())));
+        }
+    }
+
     private List<FieldRow> fieldRows() {
         List<FieldRow> result = new ArrayList<>();
         List<ZombiesDeploySnapshot.FieldValue> fields = new ArrayList<>(snapshot().fields());
@@ -333,6 +384,11 @@ public class ZombiesDeployToolScreen extends Screen {
                         : key.equals("group") && snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.ZOMBIE_SPAWN)
                         ? tr("spawn_groups.spawn_group") : translated(field.labelKey());
                 result.add(new FieldRow(label, List.of(key), -1));
+                if (isSodaEffect(key) && sodaEffectsExpanded) {
+                    for (ZombiesBuffType type : ZombiesBuffType.values()) {
+                        result.add(new FieldRow("", List.of(key), -1, type));
+                    }
+                }
             }
         }
         if (snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.BARRIER)) {
@@ -519,7 +575,13 @@ public class ZombiesDeployToolScreen extends Screen {
         // Never replace unsubmitted local text with an unrelated refresh.
         if (!hadPending && !session.suspended && !packet.openScreen() && session.fieldsChanged()) { return; }
         Map<String, String> oldFields = new LinkedHashMap<>(session.fields);
+        ZombiesDeploySnapshot previous = snapshot();
         Runnable next = session.complete(packet);
+        if (!previous.selectedMap().equals(snapshot().selectedMap())
+                || !previous.selectedObjectType().equals(snapshot().selectedObjectType())
+                || previous.selectedIndex() != snapshot().selectedIndex()) {
+            sodaEffectsExpanded = false;
+        }
         String code = snapshot().statusCode();
         if (hadPending && (code.startsWith("object.") && !code.equals("object.field_staged") && !code.equals("object.field_updated"))) {
             session.fields.putAll(oldFields);
@@ -696,5 +758,7 @@ public class ZombiesDeployToolScreen extends Screen {
         graphics.fill(x, y, x + 2, y + thumb, 0xAA7FD6A0);
     }
     private record Label(String text, int x, int y, int width, int color) { }
-    private record FieldRow(String label, List<String> keys, int listIndex) { }
+    private record FieldRow(String label, List<String> keys, int listIndex, ZombiesBuffType sodaEffect) {
+        private FieldRow(String label, List<String> keys, int listIndex) { this(label, keys, listIndex, null); }
+    }
 }

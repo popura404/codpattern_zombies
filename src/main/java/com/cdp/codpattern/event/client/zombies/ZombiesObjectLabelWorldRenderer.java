@@ -7,6 +7,9 @@ import com.cdp.codpattern.client.ClientModeObjectState;
 import com.cdp.codpattern.client.zombies.ZombiesRarityDisplay;
 import com.cdp.codpattern.client.zombies.ClientZombiesState;
 import com.cdp.codpattern.client.zombies.ZombiesMysteryBoxVisualLayout;
+import com.cdp.codpattern.client.zombies.ZombiesObjectLabelLayout;
+import com.cdp.codpattern.client.zombies.ZombiesObjectLabelLayout.Rect;
+import com.cdp.codpattern.client.zombies.ZombiesLabelProjection;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
 import com.cdp.codpattern.zombiesaddon.ZombiesAddonConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -18,10 +21,13 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.core.BlockPos;
+import net.minecraft.Util;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -29,9 +35,11 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Mod.EventBusSubscriber(modid = ZombiesAddonConstants.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class ZombiesObjectLabelWorldRenderer {
@@ -40,6 +48,14 @@ public final class ZombiesObjectLabelWorldRenderer {
     private static final double MIN_RENDER_DEPTH = 0.05D;
     private static final int MAX_RENDERED_LABELS = 32;
     private static final float FIXED_LABEL_SCALE = 0.035F;
+    private static final int LABEL_WIDTH = 160;
+    private static final int COMPACT_LABEL_WIDTH = 96;
+    private static final int LIFT_STEP = 12;
+    private static final int MAX_LIFT_SLOT = 5; // At most 2.1 blocks along camera-up.
+    private static final double SCREEN_PADDING = 1.5D;
+    private static final ZombiesObjectLabelLayout LABEL_LAYOUT = new ZombiesObjectLabelLayout();
+    private static WeakReference<ClientLevel> layoutLevel = new WeakReference<>(null);
+    private static String layoutRoom = "";
     private static final int TITLE_COLOR = 0xFFFFF1C2;
     private static final int ACTIVE_COLOR = 0xFFE8F4FF;
     private static final int DISABLED_COLOR = 0xFFFF7777;
@@ -71,7 +87,11 @@ public final class ZombiesObjectLabelWorldRenderer {
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES || !ClientZombiesState.shouldRenderHud()) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) {
+            return;
+        }
+        if (!ClientZombiesState.shouldRenderHud()) {
+            clearLayout();
             return;
         }
 
@@ -85,11 +105,18 @@ public final class ZombiesObjectLabelWorldRenderer {
                 || !camera.isInitialized()
                 || roomKey == null
                 || roomKey.isBlank()) {
+            clearLayout();
             return;
         }
+        if (layoutLevel.get() != level || !layoutRoom.equals(roomKey)) {
+            clearLayout();
+            layoutLevel = new WeakReference<>(level);
+            layoutRoom = roomKey;
+        }
 
-        List<RenderCandidate> candidates = collectCandidates(event, level, camera, roomKey);
-        if (candidates.isEmpty()) {
+        SceneCandidates scene = collectCandidates(event, level, camera, roomKey);
+        if (scene.labels().isEmpty()) {
+            LABEL_LAYOUT.clear();
             return;
         }
 
@@ -99,6 +126,46 @@ public final class ZombiesObjectLabelWorldRenderer {
         PoseStack poseStack = event.getPoseStack();
         Font font = minecraft.font;
         MultiBufferSource.BufferSource bufferSource = minecraft.renderBuffers().bufferSource();
+        int width = minecraft.getWindow().getGuiScaledWidth();
+        int height = minecraft.getWindow().getGuiScaledHeight();
+        Rect viewport = new Rect(0, 0, width, height);
+        Matrix4f worldProjection = new Matrix4f(event.getProjectionMatrix()).mul(poseStack.last().pose());
+        List<Rect> obstacles = new ArrayList<>();
+        for (AABB weapon : scene.weapons()) {
+            AABB relative = weapon.move(-cameraPos.x, -cameraPos.y, -cameraPos.z);
+            Rect bounds = ZombiesLabelProjection.projectBox(worldProjection,
+                    relative.minX, relative.minY, relative.minZ,
+                    relative.maxX, relative.maxY, relative.maxZ, width, height, true);
+            Rect visible = visibleBounds(bounds, viewport, false);
+            if (visible != null) {
+                obstacles.add(visible);
+            }
+        }
+
+        List<ZombiesObjectLabelLayout.Candidate> layoutCandidates = new ArrayList<>();
+        Map<String, PreparedLabel> prepared = new HashMap<>();
+        for (RenderCandidate candidate : scene.labels()) {
+            Vec3 relative = candidate.anchor().subtract(cameraPos);
+            if (relative.dot(cameraForward) <= MIN_RENDER_DEPTH) {
+                continue;
+            }
+            ObjectLabel full = fitLabel(font, candidate.label(), false);
+            ObjectLabel compact = fitLabel(font, candidate.label(), true);
+            Matrix4f basePose = new Matrix4f(poseStack.last().pose())
+                    .translate((float) relative.x, (float) relative.y, (float) relative.z)
+                    .rotate(minecraft.getEntityRenderDispatcher().cameraOrientation())
+                    .scale(-FIXED_LABEL_SCALE, -FIXED_LABEL_SCALE, FIXED_LABEL_SCALE);
+            List<ZombiesObjectLabelLayout.Option> options = new ArrayList<>();
+            addOptions(options, full, false, basePose, event.getProjectionMatrix(), font, viewport, width, height);
+            if (!candidate.focused()) {
+                addOptions(options, compact, true, basePose, event.getProjectionMatrix(), font, viewport, width, height);
+            }
+            layoutCandidates.add(new ZombiesObjectLabelLayout.Candidate(candidate.id(), candidate.focused(),
+                    Math.sqrt(candidate.distanceSqr()), options));
+            prepared.put(candidate.id(), new PreparedLabel(basePose, full, compact));
+        }
+        List<ZombiesObjectLabelLayout.Placement> placements =
+                LABEL_LAYOUT.arrange(layoutCandidates, obstacles, viewport, Util.getMillis());
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
@@ -106,14 +173,10 @@ public final class ZombiesObjectLabelWorldRenderer {
         RenderSystem.disableCull();
         try {
             int rendered = 0;
-            for (RenderCandidate candidate : candidates) {
-                Vec3 relative = candidate.anchor().subtract(cameraPos);
-                double depth = relative.dot(cameraForward);
-                if (depth <= MIN_RENDER_DEPTH) {
-                    continue;
-                }
-
-                renderLabel(poseStack, bufferSource, font, minecraft, relative, candidate.label());
+            for (ZombiesObjectLabelLayout.Placement placement : placements) {
+                PreparedLabel label = prepared.get(placement.id());
+                Matrix4f matrix = new Matrix4f(label.pose()).translate(0, -placement.option().slot() * LIFT_STEP, 0);
+                renderLabel(matrix, bufferSource, font, placement.option().compact() ? label.compact() : label.full());
                 rendered++;
                 if (rendered >= MAX_RENDERED_LABELS) {
                     break;
@@ -127,7 +190,7 @@ public final class ZombiesObjectLabelWorldRenderer {
         }
     }
 
-    private static List<RenderCandidate> collectCandidates(
+    private static SceneCandidates collectCandidates(
             RenderLevelStageEvent event,
             ClientLevel level,
             Camera camera,
@@ -135,6 +198,10 @@ public final class ZombiesObjectLabelWorldRenderer {
     ) {
         Vec3 cameraPos = camera.getPosition();
         List<RenderCandidate> candidates = new ArrayList<>();
+        List<AABB> weapons = new ArrayList<>();
+        Minecraft minecraft = Minecraft.getInstance();
+        BlockPos hit = minecraft.hitResult instanceof BlockHitResult blockHit && blockHit.getType() == HitResult.Type.BLOCK
+                ? blockHit.getBlockPos() : null;
         for (ModeObjectState state : ClientModeObjectState.roomStates(roomKey).values()) {
             if (state == null || state.position() == null) {
                 continue;
@@ -146,6 +213,15 @@ public final class ZombiesObjectLabelWorldRenderer {
             if (!isLabelObjectType(type) || !hasExpectedRuntimeBlock(level, pos, payload, type)) {
                 continue;
             }
+            // Reserve animation space even when this box's label itself is off screen.
+            if (PAYLOAD_TYPE_MYSTERY_BOX.equals(type)
+                    && !payload.getString(PAYLOAD_MYSTERY_PHASE).isBlank()
+                    && !"IDLE".equals(payload.getString(PAYLOAD_MYSTERY_PHASE))
+                    && !payload.getList("previewGunIds", Tag.TAG_STRING).isEmpty()
+                    && cameraPos.distanceToSqr(Vec3.atBottomCenterOf(pos)
+                    .add(0, ZombiesMysteryBoxVisualLayout.EFFECT_BASE_HEIGHT, 0)) <= MAX_RENDER_DISTANCE_SQR) {
+                weapons.add(ZombiesMysteryBoxVisualLayout.weaponBounds(pos));
+            }
             ObjectLabel label = labelFor(type, payload);
             if (label == null || label.title().isBlank()) {
                 continue;
@@ -155,49 +231,113 @@ public final class ZombiesObjectLabelWorldRenderer {
             if (distanceSqr > MAX_RENDER_DISTANCE_SQR) {
                 continue;
             }
-            if (!event.getFrustum().isVisible(new AABB(anchor, anchor).inflate(0.45D))) {
+            // Include the text's width and possible lift, not just the anchor point.
+            if (!event.getFrustum().isVisible(new AABB(anchor, anchor).inflate(4.0D))) {
                 continue;
             }
-            candidates.add(new RenderCandidate(anchor, distanceSqr, label));
+            candidates.add(new RenderCandidate(state.objectKey(), anchor, distanceSqr, label,
+                    isFocused(hit, pos, state.position(), payload, type)));
         }
-        candidates.sort(Comparator.comparingDouble(RenderCandidate::distanceSqr));
-        return candidates;
+        return new SceneCandidates(candidates, weapons);
+    }
+
+    private static void clearLayout() {
+        LABEL_LAYOUT.clear();
+        layoutLevel.clear();
+        layoutRoom = "";
+    }
+
+    private static boolean isFocused(BlockPos hit, BlockPos box, BlockPos interaction, CompoundTag payload, String type) {
+        if (hit == null) {
+            return false;
+        }
+        if (hit.equals(box) || hit.equals(interaction)) {
+            return true;
+        }
+        if (!PAYLOAD_TYPE_BARRIER.equals(type)
+                || !Minecraft.getInstance().level.getBlockState(hit).is(CodPatternBlockRegister.ZOMBIES_PLAYER_BARRIER.get())) {
+            return false;
+        }
+        String[] axes = {"X", "Y", "Z"};
+        int[] coordinates = {hit.getX(), hit.getY(), hit.getZ()};
+        for (int axis = 0; axis < axes.length; axis++) {
+            String from = "areaFrom" + axes[axis];
+            String to = "areaTo" + axes[axis];
+            if (!payload.contains(from, Tag.TAG_ANY_NUMERIC) || !payload.contains(to, Tag.TAG_ANY_NUMERIC)
+                    || coordinates[axis] < Math.min(payload.getInt(from), payload.getInt(to))
+                    || coordinates[axis] > Math.max(payload.getInt(from), payload.getInt(to))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ObjectLabel fitLabel(Font font, ObjectLabel label, boolean compact) {
+        return new ObjectLabel(trimToWidth(font, label.title(), compact ? COMPACT_LABEL_WIDTH : LABEL_WIDTH),
+                compact ? "" : trimToWidth(font, label.detail(), LABEL_WIDTH), label.titleColor(), label.detailColor());
+    }
+
+    private static void addOptions(
+            List<ZombiesObjectLabelLayout.Option> options, ObjectLabel label, boolean compact,
+            Matrix4f basePose, Matrix4f projection, Font font, Rect viewport, int width, int height
+    ) {
+        double halfWidth = Math.max(font.width(label.title()), font.width(label.detail())) / 2.0D + 2.0D;
+        double top = -font.lineHeight - 3;
+        double bottom = label.detail().isBlank() ? -2 : font.lineHeight + 1;
+        for (int slot = 0; slot <= MAX_LIFT_SLOT; slot++) {
+            Matrix4f clip = new Matrix4f(projection).mul(basePose).translate(0, -slot * LIFT_STEP, 0);
+            Rect bounds = ZombiesLabelProjection.projectBox(clip, -halfWidth, top, 0,
+                    halfWidth, bottom, 0.01D, width, height, false);
+            Rect visible = visibleBounds(bounds, viewport, slot > 0);
+            if (visible != null) {
+                options.add(new ZombiesObjectLabelLayout.Option(slot, compact, visible));
+            }
+        }
+    }
+
+    private static Rect visibleBounds(Rect bounds, Rect viewport, boolean lifted) {
+        if (bounds == null) {
+            return null;
+        }
+        double left = bounds.left() - SCREEN_PADDING;
+        double top = bounds.top() - SCREEN_PADDING;
+        double right = bounds.right() + SCREEN_PADDING;
+        double bottom = bounds.bottom() + SCREEN_PADDING;
+        // Preserve naturally clipped edge labels, but never lift one out through the top.
+        if (lifted && top < viewport.top()) {
+            return null;
+        }
+        left = Math.max(left, viewport.left());
+        top = Math.max(top, viewport.top());
+        right = Math.min(right, viewport.right());
+        bottom = Math.min(bottom, viewport.bottom());
+        return left < right && top < bottom ? new Rect(left, top, right, bottom) : null;
     }
 
     private static void renderLabel(
-            PoseStack poseStack,
+            Matrix4f matrix,
             MultiBufferSource.BufferSource bufferSource,
             Font font,
-            Minecraft minecraft,
-            Vec3 relative,
             ObjectLabel label
     ) {
-        poseStack.pushPose();
-        poseStack.translate(relative.x, relative.y, relative.z);
-        poseStack.mulPose(minecraft.getEntityRenderDispatcher().cameraOrientation());
-        poseStack.scale(-FIXED_LABEL_SCALE, -FIXED_LABEL_SCALE, FIXED_LABEL_SCALE);
-
-        drawCenteredLine(poseStack, bufferSource, font, label.title(), -font.lineHeight - 2, label.titleColor());
+        drawCenteredLine(matrix, bufferSource, font, label.title(), -font.lineHeight - 2, label.titleColor());
         if (!label.detail().isBlank()) {
-            drawCenteredLine(poseStack, bufferSource, font, label.detail(), 1, label.detailColor());
+            drawCenteredLine(matrix, bufferSource, font, label.detail(), 1, label.detailColor());
         }
-
-        poseStack.popPose();
     }
 
     private static void drawCenteredLine(
-            PoseStack poseStack,
+            Matrix4f matrix,
             MultiBufferSource.BufferSource bufferSource,
             Font font,
             String text,
             int y,
             int color
     ) {
-        String safeText = trimToWidth(font, text == null ? "" : text, 160);
+        String safeText = text == null ? "" : text;
         if (safeText.isBlank()) {
             return;
         }
-        Matrix4f matrix = poseStack.last().pose();
         font.drawInBatch(
                 safeText,
                 -font.width(safeText) / 2.0F,
@@ -379,7 +519,13 @@ public final class ZombiesObjectLabelWorldRenderer {
         return safeText + ellipsis;
     }
 
-    private record RenderCandidate(Vec3 anchor, double distanceSqr, ObjectLabel label) {
+    private record SceneCandidates(List<RenderCandidate> labels, List<AABB> weapons) {
+    }
+
+    private record RenderCandidate(String id, Vec3 anchor, double distanceSqr, ObjectLabel label, boolean focused) {
+    }
+
+    private record PreparedLabel(Matrix4f pose, ObjectLabel full, ObjectLabel compact) {
     }
 
     private record ObjectLabel(String title, String detail, int titleColor, int detailColor) {

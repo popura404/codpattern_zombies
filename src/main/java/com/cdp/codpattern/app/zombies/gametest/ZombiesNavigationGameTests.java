@@ -678,25 +678,25 @@ public final class ZombiesNavigationGameTests {
         return Math.hypot(mob.getX() - player.getX(), mob.getZ() - player.getZ());
     }
 
-    private static final class Fixture implements AutoCloseable {
+    static final class Fixture implements AutoCloseable {
         private final GameTestHelper helper;
         private final RoomId roomId = RoomId.of(BuiltInGameModes.ZOMBIES, "navigation-" + UUID.randomUUID());
         private final ModeEntityOwnershipRegistry ownership = ModeEntityOwnershipRegistry.instance();
         private final ZombiesActiveMobCounter counter = new ZombiesActiveMobCounter();
         private final List<Mob> mobs = new ArrayList<>();
         private final List<ServerPlayer> targets = new ArrayList<>();
-        private final ServerPlayer player;
-        private final ZombiesMobSpawnService spawnService;
+        final ServerPlayer player;
+        final ZombiesMobSpawnService spawnService;
         private ZombiesWaveRuntimeState waveState;
 
-        private Fixture(GameTestHelper helper, Vec3 relativePlayerPosition) {
+        Fixture(GameTestHelper helper, Vec3 relativePlayerPosition) {
             this.helper = helper;
             player = addPlayer(relativePlayerPosition);
             spawnService = new ZombiesMobSpawnService(ownership, () -> List.copyOf(targets),
                     ZombiesRulesConfig.SpawnPointWeighting::new, counter);
         }
 
-        private ServerPlayer addPlayer(Vec3 relativePosition) {
+        ServerPlayer addPlayer(Vec3 relativePosition) {
             ServerPlayer added = new ServerPlayer(helper.getLevel().getServer(), helper.getLevel(),
                     new GameProfile(UUID.randomUUID(), "navigation-test"));
             added.connection = new SilentPacketListener(added);
@@ -707,7 +707,7 @@ public final class ZombiesNavigationGameTests {
             return added;
         }
 
-        private Mob spawn(String mobId, BlockPos position) {
+        Mob spawn(String mobId, BlockPos position) {
             ZombiesMobSpawnService.SpawnResult result = attemptSpawn(mobId, position);
             helper.assertTrue(result.spawned(), "real room spawn must succeed for " + mobId + ": " + result);
             return result.entity().orElseThrow();

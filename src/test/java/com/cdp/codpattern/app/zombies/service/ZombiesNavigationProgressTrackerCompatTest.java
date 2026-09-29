@@ -7,12 +7,19 @@ public final class ZombiesNavigationProgressTrackerCompatTest {
     public static void main(String[] args) {
         movingAwayAndClimbingCountAsProgress();
         slowMovementAccumulates();
-        repeatedRouteLoopsCannotRenewProgress();
+        longRetracingPursuitContinuesToProgress();
+        ordinaryRoomCircuitsCanRevisitOldGround();
+        shortOscillationsCannotRenewProgress();
+        repeatedSmallCircuitsCannotRenewProgress();
+        routeStopsDoNotEraseOscillationEvidence();
+        leavingALoopCanMakeProgressAgain();
         stationaryReplanningAndBoundaryJitterDoNotCount();
         pushingWithoutARouteDoesNotCount();
         resettingRouteHistoryDoesNotExtendTheDeadline();
         staleAndInvalidObservationsAreIgnored();
-        spatialHistoryIsBounded();
+        sparseObservationsStillAccumulateMovement();
+        motionHistoryIsBounded();
+        repeatedObservationsInOneTickUseOneSlot();
     }
 
     private static void movingAwayAndClimbingCountAsProgress() {
@@ -26,26 +33,87 @@ public final class ZombiesNavigationProgressTrackerCompatTest {
 
     private static void slowMovementAccumulates() {
         ZombiesNavigationProgressTracker tracker = tracker();
-        for (int tick = 1; tick <= 20; tick++) {
-            tracker.observe(tick, tick * 0.05D, 0.0D, 0.0D, true);
+        for (int tick = 1; tick <= 800; tick++) {
+            tracker.observe(tick, tick * 0.005D, 0.0D, 0.0D, true);
+            if (tick >= 40) {
+                require(tick - tracker.getLastProgressGameTime() < 40,
+                        "slow steady motion must accumulate instead of losing its baseline every sample");
+            }
         }
-        require(tracker.getLastProgressGameTime() == 20,
+        require(tracker.getLastProgressGameTime() == 800,
                 "movement smaller than the threshold per tick must accumulate");
     }
 
-    private static void repeatedRouteLoopsCannotRenewProgress() {
+    private static void longRetracingPursuitContinuesToProgress() {
         ZombiesNavigationProgressTracker tracker = tracker();
-        require(tracker.observe(10, 0.5D, 0.0D, 0.0D, true), "first outward movement counts");
-        require(tracker.observe(20, 0.5D, 0.0D, 0.5D, true), "a new corner counts once");
-        require(tracker.observe(30, 0.0D, 0.0D, 0.5D, true), "the third corner counts once");
-        for (int tick = 40; tick < 200; tick += 4) {
-            tracker.observe(tick, 0.0D, 0.0D, 0.0D, true);
-            tracker.observe(tick + 1, 0.5D, 0.0D, 0.0D, true);
-            tracker.observe(tick + 2, 0.5D, 0.0D, 0.5D, true);
-            tracker.observe(tick + 3, 0.0D, 0.0D, 0.5D, true);
+        // Each 24-block leg takes 480 ticks: returning over the old path must survive
+        // both the recovery threshold and more than one complete recycling timeout.
+        for (int tick = 1; tick <= 1920; tick++) {
+            int phase = tick % 960;
+            double x = (phase <= 480 ? phase : 960 - phase) * 0.05D;
+            tracker.observe(tick, x, 0.0D, 0.0D, true);
+            require(tick - tracker.getLastProgressGameTime() <= 40,
+                    "a genuine long return route must keep progressing through previously visited positions");
         }
-        require(tracker.getLastProgressGameTime() == 30,
-                "revisiting the same route cells must not indefinitely renew progress");
+        require(tracker.getLastProgressGameTime() > 1880,
+                "repeated long return legs must not exhaust a permanent visited-cell allowance");
+    }
+
+    private static void ordinaryRoomCircuitsCanRevisitOldGround() {
+        ZombiesNavigationProgressTracker tracker = tracker();
+        for (int tick = 1; tick <= 960; tick++) {
+            double[] point = squarePoint(tick % 240, 60, 6.0D);
+            tracker.observe(tick, point[0], 0.0D, point[1], true);
+            require(tick - tracker.getLastProgressGameTime() <= 10,
+                    "continuous pursuit around a room must not expire after its first circuit");
+        }
+    }
+
+    private static void shortOscillationsCannotRenewProgress() {
+        for (int period : new int[]{4, 10, 20, 30, 40}) {
+            ZombiesNavigationProgressTracker tracker = tracker();
+            for (int tick = 1; tick <= 800; tick++) {
+                int phase = tick % period;
+                double x = 2.0D * Math.min(phase, period - phase) / period;
+                tracker.observe(tick, x, 0.0D, 0.0D, true);
+            }
+            require(tracker.getLastProgressGameTime() <= 80,
+                    "one-block oscillations cannot periodically renew the timeout; period=" + period);
+        }
+    }
+
+    private static void repeatedSmallCircuitsCannotRenewProgress() {
+        ZombiesNavigationProgressTracker tracker = tracker();
+        for (int tick = 1; tick <= 800; tick++) {
+            double[] point = squarePoint(tick % 20, 5, 0.5D);
+            tracker.observe(tick, point[0], 0.0D, point[1], true);
+        }
+        require(tracker.getLastProgressGameTime() <= 80,
+                "a half-block circuit must stop counting once the motion window contains its returns");
+    }
+
+    private static void routeStopsDoNotEraseOscillationEvidence() {
+        ZombiesNavigationProgressTracker tracker = tracker();
+        for (int tick = 1; tick <= 800; tick++) {
+            int phase = tick % 20;
+            double x = Math.min(phase, 20 - phase) * 0.1D;
+            tracker.observe(tick, x, 0.0D, 0.0D, phase != 0 && phase != 10);
+        }
+        require(tracker.getLastProgressGameTime() <= 80,
+                "ending and rebuilding a route at every turn cannot discard the physical return movement");
+    }
+
+    private static void leavingALoopCanMakeProgressAgain() {
+        ZombiesNavigationProgressTracker tracker = tracker();
+        for (int tick = 1; tick <= 400; tick++) {
+            tracker.observe(tick, tick % 2 == 0 ? 0.0D : 0.5D, 0.0D, 0.0D, true);
+        }
+        require(tracker.getLastProgressGameTime() < 80, "the initial oscillation must first stop counting");
+        for (int tick = 401; tick <= 500; tick++) {
+            tracker.observe(tick, -(tick - 400) * 0.05D, 0.0D, 0.0D, true);
+        }
+        require(tracker.getLastProgressGameTime() >= 496,
+                "a resolved obstruction must permit sustained movement without an explicit history reset");
     }
 
     private static void stationaryReplanningAndBoundaryJitterDoNotCount() {
@@ -81,7 +149,7 @@ public final class ZombiesNavigationProgressTrackerCompatTest {
         tracker.resetRouteHistory();
         require(tracker.getLastProgressGameTime() == 10, "history reset cannot renew the failure deadline");
         require(!tracker.observe(60, 0.5D, 0.0D, 0.0D, true),
-                "reset must remember the current cell rather than crediting standing still");
+                "reset must establish the current position rather than crediting standing still");
         require(tracker.observe(70, 1.0D, 0.0D, 0.0D, true), "new context permits actual new movement");
     }
 
@@ -93,14 +161,41 @@ public final class ZombiesNavigationProgressTrackerCompatTest {
         require(tracker.getLastProgressGameTime() == 20, "invalid observations cannot rewrite progress time");
     }
 
-    private static void spatialHistoryIsBounded() {
+    private static void sparseObservationsStillAccumulateMovement() {
+        ZombiesNavigationProgressTracker tracker = tracker();
+        for (int tick = 100; tick <= 1000; tick += 100) {
+            require(tracker.observe(tick, tick * 0.005D, 0.0D, 0.0D, true),
+                    "a long sampling gap must not discard the observed displacement");
+        }
+    }
+
+    private static void motionHistoryIsBounded() {
         ZombiesNavigationProgressTracker tracker = tracker();
         for (int tick = 1; tick <= 1000; tick++) {
             tracker.observe(tick, tick, 0.0D, 0.0D, true);
+            require(tracker.motionSampleCount() <= ZombiesNavigationProgressTracker.MAX_MOTION_SAMPLES,
+                    "motion history must remain bounded during long paths");
         }
-        require(tracker.visitedCellCount() == ZombiesNavigationProgressTracker.MAX_VISITED_CELLS,
-                "spatial history must remain bounded during long paths");
         require(tracker.getLastProgressGameTime() == 1000, "long productive paths must keep progressing");
+    }
+
+    private static void repeatedObservationsInOneTickUseOneSlot() {
+        ZombiesNavigationProgressTracker tracker = tracker();
+        for (int observation = 0; observation < 1000; observation++) {
+            tracker.observe(10, 0.5D, 0.0D, 0.0D, true);
+        }
+        require(tracker.motionSampleCount() == 2, "one game tick must occupy at most one motion sample");
+        require(tracker.getLastProgressGameTime() == 10, "repeated reads cannot advance the game clock");
+    }
+
+    private static double[] squarePoint(int phase, int ticksPerSide, double sideLength) {
+        double offset = (phase % ticksPerSide) * sideLength / ticksPerSide;
+        return switch (phase / ticksPerSide) {
+            case 0 -> new double[]{offset, 0.0D};
+            case 1 -> new double[]{sideLength, offset};
+            case 2 -> new double[]{sideLength - offset, sideLength};
+            default -> new double[]{0.0D, sideLength - offset};
+        };
     }
 
     private static ZombiesNavigationProgressTracker tracker() {

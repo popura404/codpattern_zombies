@@ -1,18 +1,22 @@
 package com.cdp.codpattern.app.zombies.service;
 
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 /**
- * Tracks new ground covered while following a route, independently of a target's movement
- * or the identity of the current path object. All times are server game ticks.
+ * Tracks actual route movement over a short window. Revisiting an old position is allowed;
+ * repeated execution failures belong to the navigation controller, not a permanent spatial
+ * blacklist here. All times are server game ticks.
  */
 public final class ZombiesNavigationProgressTracker {
-    static final int MAX_VISITED_CELLS = 128;
-    private static final double CELL_SIZE = 0.5D;
+    static final int MOTION_WINDOW_TICKS = 40;
+    static final int MAX_MOTION_SAMPLES = MOTION_WINDOW_TICKS + 2;
     private static final double MIN_PROGRESS_DISTANCE_SQUARED = 0.2D * 0.2D;
+    private static final double MIN_NET_MOVEMENT_RATIO = 0.5D;
+    private static final double DISTANCE_EPSILON = 1.0E-9D;
 
-    private final Set<Cell> visitedCells = new LinkedHashSet<>();
+    private final Deque<MotionSample> motion = new ArrayDeque<>();
+    private double motionDistance;
     private long lastProgressGameTime;
     private long lastObservationGameTime;
     private double currentX;
@@ -34,9 +38,11 @@ public final class ZombiesNavigationProgressTracker {
 
     /**
      * Returns whether this observation establishes new route progress. The caller supplies
-     * whether a usable route is being followed; proximity to the player alone is not enough.
-     * Small movements accumulate from the last credited position, so slow mobs can progress.
-     * Movement without a route establishes a new baseline but cannot extend the timeout.
+     * whether a usable route is advancing; proximity or a new path object is not enough.
+     * Small movements accumulate from the last credited position. Recent back-and-forth
+     * travel must not count as sustained movement just because each individual step moved.
+     * Movement without a route establishes a new baseline but cannot extend the timeout;
+     * it stays in the motion window so path stops cannot erase evidence of an oscillation.
      */
     public boolean observe(long now, double x, double y, double z, boolean followingPath) {
         if (now < lastObservationGameTime || !isFinitePosition(x, y, z)) {
@@ -44,9 +50,8 @@ public final class ZombiesNavigationProgressTracker {
         }
         lastObservationGameTime = now;
         setCurrentPosition(x, y, z);
-        Cell cell = Cell.at(x, y, z);
+        recordMotion(new MotionSample(now, x, y, z));
         if (!followingPath) {
-            remember(cell);
             setAnchorToCurrentPosition();
             return false;
         }
@@ -54,24 +59,24 @@ public final class ZombiesNavigationProgressTracker {
         double dx = x - anchorX;
         double dy = y - anchorY;
         double dz = z - anchorZ;
-        if (visitedCells.contains(cell)
-                || dx * dx + dy * dy + dz * dz < MIN_PROGRESS_DISTANCE_SQUARED) {
+        if (dx * dx + dy * dy + dz * dz + DISTANCE_EPSILON < MIN_PROGRESS_DISTANCE_SQUARED
+                || !hasNetMovement()) {
             return false;
         }
-        remember(cell);
         setAnchorToCurrentPosition();
         lastProgressGameTime = now;
         return true;
     }
 
     /**
-     * Starts spatial tracking for a genuinely different route context without extending
-     * the failure deadline. Do not call this merely because a path was reconstructed or
-     * the target moved: doing so would let repeated endpoint loops renew their history.
+     * Starts a genuinely different movement context without extending the failure deadline.
+     * Replanning, target movement and temporary movement ownership changes must retain the
+     * window. Otherwise repeated short routes could continually hide their return movement.
      */
     public void resetRouteHistory() {
-        visitedCells.clear();
-        remember(Cell.at(currentX, currentY, currentZ));
+        motion.clear();
+        motion.addLast(new MotionSample(lastObservationGameTime, currentX, currentY, currentZ));
+        motionDistance = 0.0D;
         setAnchorToCurrentPosition();
     }
 
@@ -79,16 +84,43 @@ public final class ZombiesNavigationProgressTracker {
         return lastProgressGameTime;
     }
 
-    int visitedCellCount() {
-        return visitedCells.size();
+    int motionSampleCount() {
+        return motion.size();
     }
 
-    private void remember(Cell cell) {
-        visitedCells.add(cell);
-        if (visitedCells.size() > MAX_VISITED_CELLS) {
-            var oldest = visitedCells.iterator();
-            oldest.next();
-            oldest.remove();
+    private boolean hasNetMovement() {
+        if (motion.size() < 2 || motionDistance <= 0.0D) {
+            return false;
+        }
+        double minimumNetDistance = motionDistance * MIN_NET_MOVEMENT_RATIO;
+        return motion.peekFirst().distanceSquared(motion.peekLast()) + DISTANCE_EPSILON
+                >= minimumNetDistance * minimumNetDistance;
+    }
+
+    private void recordMotion(MotionSample sample) {
+        // Several observations in one tick occupy one slot, not an unbounded amount of history.
+        if (!motion.isEmpty() && motion.peekLast().gameTime == sample.gameTime) {
+            MotionSample replaced = motion.removeLast();
+            if (!motion.isEmpty()) {
+                motionDistance = Math.max(0.0D, motionDistance - motion.peekLast().distance(replaced));
+            }
+        }
+        if (!motion.isEmpty()) {
+            motionDistance += motion.peekLast().distance(sample);
+        }
+        motion.addLast(sample);
+
+        // Keep at most one sample before the window boundary, including with sparse observations.
+        while (motion.size() > 2) {
+            var iterator = motion.iterator();
+            iterator.next();
+            MotionSample second = iterator.next();
+            if (motion.size() <= MAX_MOTION_SAMPLES
+                    && second.gameTime > sample.gameTime - MOTION_WINDOW_TICKS) {
+                break;
+            }
+            MotionSample removed = motion.removeFirst();
+            motionDistance = Math.max(0.0D, motionDistance - removed.distance(motion.peekFirst()));
         }
     }
 
@@ -108,12 +140,16 @@ public final class ZombiesNavigationProgressTracker {
         return Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(z);
     }
 
-    private record Cell(long x, long y, long z) {
-        private static Cell at(double x, double y, double z) {
-            return new Cell(
-                    (long) Math.floor(x / CELL_SIZE),
-                    (long) Math.floor(y / CELL_SIZE),
-                    (long) Math.floor(z / CELL_SIZE));
+    private record MotionSample(long gameTime, double x, double y, double z) {
+        private double distanceSquared(MotionSample other) {
+            double dx = x - other.x;
+            double dy = y - other.y;
+            double dz = z - other.z;
+            return dx * dx + dy * dy + dz * dz;
+        }
+
+        private double distance(MotionSample other) {
+            return Math.sqrt(distanceSquared(other));
         }
     }
 }

@@ -112,6 +112,8 @@ public final class ZombiesNavigationLoadGameTests {
         private final ZombiesMobLifecycleService lifecycle;
         private long previousSearches;
         private long maxSearchesPerTick;
+        private long previousGeometryChecks;
+        private long maxGeometryChecksPerTick;
         private long firstArrivalTick = -1L;
         private long lastArrivalTick = -1L;
         private int lastSampledServerTick = -1;
@@ -156,6 +158,7 @@ public final class ZombiesNavigationLoadGameTests {
             helper.assertTrue(waveState.activeZombies() == requestedCount && waveState.remainingBudget() == 0,
                     "the shared room wave must account for every load-test spawn");
             previousSearches = spawnService.navigationMetrics().searches();
+            previousGeometryChecks = spawnService.navigationMetrics().geometryChecks();
         }
 
         private void observe() {
@@ -170,6 +173,13 @@ public final class ZombiesNavigationLoadGameTests {
             maxSearchesPerTick = Math.max(maxSearchesPerTick, delta);
             if (delta < 0L || delta > 2L) {
                 finish(false, "extra recovery-search budget exceeded: " + delta + " searches in one room tick");
+                return;
+            }
+            long segmentDelta = metrics.geometryChecks() - previousGeometryChecks;
+            previousGeometryChecks = metrics.geometryChecks();
+            maxGeometryChecksPerTick = Math.max(maxGeometryChecksPerTick, segmentDelta);
+            if (segmentDelta < 0L || segmentDelta > 32L) {
+                finish(false, "geometry-check budget exceeded: " + segmentDelta + " segments in one room tick");
                 return;
             }
             for (Mob mob : mobs) {
@@ -236,6 +246,9 @@ public final class ZombiesNavigationLoadGameTests {
             result.put("extraRecoverySearchMillis", metrics.searchNanos() / 1_000_000.0D);
             result.put("recoveryStarts", metrics.recoveries());
             result.put("maxExtraRecoverySearchesPerRoomTick", maxSearchesPerTick);
+            result.put("geometryChecks", metrics.geometryChecks());
+            result.put("localRoutes", metrics.localRoutes());
+            result.put("maxGeometryChecksPerRoomTick", maxGeometryChecksPerTick);
             result.put("nativePathSearchesMeasured", false);
             result.put("discardSuccessfulArrivals", true);
             result.put("warmupTicksExcluded", WARMUP_TICKS);

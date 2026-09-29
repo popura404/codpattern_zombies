@@ -288,6 +288,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 var result = cleanupService.cleanup(roomId, context.reason(), ZombiesMap.this::levelForDimension);
                 if (!result.success()) throw new IllegalStateException(result.logMessage());
                 mobRecycleService.reset();
+                mobSpawnService.resetNavigationRuntime();
                 reconcileActiveMobCounter();
                 return com.cdp.codpattern.app.match.model.result.ModeOperationResult.success(null);
             }
@@ -1126,6 +1127,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         frozenObjects = ZombiesMapObjects.EMPTY;
         objectsFrozen = false;
         mobRecycleService.reset();
+        mobSpawnService.resetNavigationRuntime();
         resetObjectRuntime();
         syncConfiguredInitialSpawnsToTeam();
     }

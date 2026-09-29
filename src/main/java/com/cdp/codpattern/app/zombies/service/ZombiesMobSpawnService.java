@@ -77,6 +77,8 @@ public final class ZombiesMobSpawnService {
     private final Supplier<List<ServerPlayer>> survivorTargetSupplier;
     private final Supplier<ZombiesRulesConfig.SpawnPointWeighting> spawnPointWeightingSupplier;
     private final boolean roomTargetingEnabled;
+    private final ZombiesGroundNavigationService groundNavigation;
+    private final ZombiesGroundSpawnPolicy groundSpawns = new ZombiesGroundSpawnPolicy();
 
     public ZombiesMobSpawnService() {
         this(ModeEntityOwnershipRegistry.instance(), null);
@@ -117,6 +119,7 @@ public final class ZombiesMobSpawnService {
                 ? () -> ZombiesRulesRepository.getConfig().getSpawnPointWeighting()
                 : spawnPointWeightingSupplier;
         this.roomTargetingEnabled = survivorTargetSupplier != null;
+        this.groundNavigation = new ZombiesGroundNavigationService(this.survivorTargetSupplier);
     }
 
     public SpawnResult spawnNext(
@@ -154,29 +157,43 @@ public final class ZombiesMobSpawnService {
             return SpawnResult.failure(SpawnFailureReason.CHUNK_UNAVAILABLE);
         }
 
-        ZombiesZombieSpawnData spawn = chooseSpawn(
-                level,
-                loadedCandidates,
-                survivorTargets(level),
-                spawnPointWeighting());
         Mob mob = createSupportedMob(level, mobId.get());
         if (mob == null) {
             return SpawnResult.failure(SpawnFailureReason.ENTITY_CREATE_FAILED);
         }
-        mob.moveTo(
-                spawn.pos().getX() + 0.5D,
-                spawn.pos().getY(),
-                spawn.pos().getZ() + 0.5D,
-                spawn.yaw(),
-                spawn.pitch());
+        double initialFollowRange = currentFollowRange(mob);
         applySpawnedMobSpecialRules(mob);
         applyWaveAttributes(mob, mobId.get(), waveDefinition);
         applyRoomMonsterRetention(mob);
-        applyRoomMonsterObstacleJumping(mob);
-        applyRoomMonsterObstacleDetouring(mob);
-        applyRoomMonsterDropDownChasing(mob);
-        applyRoomMonsterAttackCadence(mob);
-        applyRoomMonsterTargeting(mob, survivorTargetSupplier, roomTargetingEnabled);
+        boolean groundManaged = ZombiesGroundNavigationService.supports(mob);
+        List<ZombiesZombieSpawnData> legalCandidates = loadedCandidates;
+        if (groundManaged) {
+            legalCandidates = loadedCandidates.stream().filter(candidate -> {
+                moveToSpawn(mob, candidate);
+                return groundSpawns.validateBody(mob).allowed();
+            }).toList();
+            if (legalCandidates.isEmpty()) {
+                mob.discard();
+                return SpawnResult.failure(SpawnFailureReason.NO_AVAILABLE_SPAWN);
+            }
+        }
+        ZombiesZombieSpawnData spawn = chooseSpawn(level, legalCandidates, survivorTargets(level),
+                spawnPointWeighting(), groundManaged
+                        ? candidate -> groundSpawns.weightMultiplier(candidate.objectId(), mob, level.getGameTime())
+                        : candidate -> 1.0D);
+        moveToSpawn(mob, spawn);
+        if (groundManaged) {
+            groundNavigation.reportSpawnValidation(mob, spawn.objectId(), groundSpawns.evaluate(mob));
+            groundNavigation.install(mob, initialFollowRange);
+            groundNavigation.trackSpawn(mob, groundSpawns, spawn.objectId());
+        } else {
+            applyRoomMonsterObstacleJumping(mob);
+            applyRoomMonsterObstacleDetouring(mob);
+            applyRoomMonsterDropDownChasing(mob);
+            applyRoomMonsterAttackCadence(mob);
+        }
+        applyRoomMonsterTargeting(mob, groundManaged ? () -> groundNavigation.targetsFor(mob)
+                : survivorTargetSupplier, roomTargetingEnabled);
         attachWaveRewardMetadata(mob, mobId.get(), waveDefinition);
         attachRecycleCountMetadata(mob, mobId.get(), waveState);
 
@@ -195,6 +212,20 @@ public final class ZombiesMobSpawnService {
         waveState.registerActiveZombie(mob.getUUID());
         activeMobCounter.register(roomId, mob.getUUID());
         return SpawnResult.spawned(mob, mobId.get(), spawn.objectId());
+    }
+
+    private static void moveToSpawn(Mob mob, ZombiesZombieSpawnData spawn) {
+        mob.moveTo(spawn.pos().getX() + 0.5D, spawn.pos().getY(), spawn.pos().getZ() + 0.5D,
+                spawn.yaw(), spawn.pitch());
+    }
+
+    public void resetNavigationRuntime() {
+        groundSpawns.reset();
+        groundNavigation.reset();
+    }
+
+    public ZombiesGroundNavigationService.SearchMetrics navigationMetrics() {
+        return groundNavigation.metrics();
     }
 
     private ZombiesRulesConfig.SpawnPointWeighting spawnPointWeighting() {
@@ -277,11 +308,13 @@ public final class ZombiesMobSpawnService {
             ServerLevel level,
             List<ZombiesZombieSpawnData> candidates,
             List<ServerPlayer> survivorTargets,
-            ZombiesRulesConfig.SpawnPointWeighting weighting
+            ZombiesRulesConfig.SpawnPointWeighting weighting,
+            java.util.function.ToDoubleFunction<ZombiesZombieSpawnData> healthWeight
     ) {
         ServerPlayer pressureTarget = choosePressureTarget(level, survivorTargets);
         double totalWeight = candidates.stream()
-                .mapToDouble(spawn -> effectiveSpawnWeight(spawn, pressureTarget, survivorTargets, weighting))
+                .mapToDouble(spawn -> effectiveSpawnWeight(spawn, pressureTarget, survivorTargets, weighting)
+                        * healthWeight.applyAsDouble(spawn))
                 .sum();
         if (totalWeight <= 0.0D) {
             return candidates.get(0);
@@ -289,7 +322,8 @@ public final class ZombiesMobSpawnService {
         double selected = level.random.nextDouble() * totalWeight;
         double cursor = 0.0D;
         for (ZombiesZombieSpawnData candidate : candidates) {
-            cursor += effectiveSpawnWeight(candidate, pressureTarget, survivorTargets, weighting);
+            cursor += effectiveSpawnWeight(candidate, pressureTarget, survivorTargets, weighting)
+                    * healthWeight.applyAsDouble(candidate);
             if (selected <= cursor) {
                 return candidate;
             }
@@ -622,7 +656,7 @@ public final class ZombiesMobSpawnService {
                 .min(Comparator.comparingDouble(mob::distanceToSqr));
     }
 
-    private static boolean isEligibleRoomSurvivor(Mob mob, ServerPlayer player) {
+    static boolean isEligibleRoomSurvivor(Mob mob, ServerPlayer player) {
         if (mob == null || player == null || !player.isAlive() || player.isSpectator()) {
             return false;
         }
@@ -653,6 +687,17 @@ public final class ZombiesMobSpawnService {
 
     private static boolean usesWardenBrainCombat(Mob mob) {
         return mob != null && mob.getType() == EntityType.WARDEN;
+    }
+
+    static void setRecoveredRoomTarget(PathfinderMob mob, ServerPlayer target) {
+        for (var wrapped : mob.targetSelector.getAvailableGoals()) {
+            if (wrapped.getGoal() instanceof RoomSurvivorTargetGoal roomGoal) {
+                roomGoal.currentRoomTargetId = target.getUUID();
+                applyRoomTargetSpecialRules(mob, target);
+                mob.setTarget(target);
+                return;
+            }
+        }
     }
 
     private static void attachWaveRewardMetadata(Mob mob, String rawMobId, ZombiesWaveDefinition waveDefinition) {
@@ -1046,6 +1091,7 @@ public final class ZombiesMobSpawnService {
         private final PathfinderMob mob;
         private final Supplier<List<ServerPlayer>> targetSupplier;
         private int nextScanDelay;
+        private long nextGroundScan;
         private UUID currentRoomTargetId;
 
         private RoomSurvivorTargetGoal(PathfinderMob mob, Supplier<List<ServerPlayer>> targetSupplier) {
@@ -1072,6 +1118,15 @@ public final class ZombiesMobSpawnService {
 
         @Override
         public void tick() {
+            if (ZombiesGroundNavigationService.supports(mob)) {
+                long now = mob.level().getGameTime();
+                if (now >= nextGroundScan || !isCurrentRoomTarget(mob.getTarget())
+                        || !containsCurrentTarget(safeTargets())) {
+                    refreshTarget();
+                    nextGroundScan = now + ROOM_MONSTER_TARGET_REFRESH_INTERVAL_TICKS;
+                }
+                return;
+            }
             if (nextScanDelay > 0) {
                 nextScanDelay--;
                 if (!isCurrentRoomTarget(mob.getTarget())) {
@@ -1081,6 +1136,11 @@ public final class ZombiesMobSpawnService {
             }
             refreshTarget();
             nextScanDelay = ROOM_MONSTER_TARGET_REFRESH_INTERVAL_TICKS;
+        }
+
+        @Override
+        public boolean requiresUpdateEveryTick() {
+            return ZombiesGroundNavigationService.supports(mob);
         }
 
         @Override

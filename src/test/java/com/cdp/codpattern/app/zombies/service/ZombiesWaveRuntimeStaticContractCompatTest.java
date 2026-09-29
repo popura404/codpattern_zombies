@@ -92,78 +92,8 @@ public final class ZombiesWaveRuntimeStaticContractCompatTest {
         requireContains(spawnService,
                 "mob.setMaxUpStep(ROOM_MONSTER_MAX_UP_STEP);",
                 "spawned room monsters should receive the zombies obstacle step height");
-        requireContains(spawnService,
-                "new RoomMonsterObstacleJumpGoal(pathfinderMob));",
-                "spawned room monsters should receive the zombies obstacle jump goal");
-        requireContains(spawnService,
-                "new RoomMonsterObstacleDetourGoal(pathfinderMob));",
-                "spawned room monsters should receive the zombies obstacle detour goal");
-        requireContains(spawnService,
-                "static final int ROOM_MONSTER_DETOUR_STUCK_TICKS = 10;",
-                "room monster detours should wait for a short stuck window before taking over movement");
-        requireContains(spawnService,
-                "static final double ROOM_MONSTER_DETOUR_SIDE_DISTANCE = 1.25D;",
-                "room monster detours should test side offsets around blocking collision shapes");
-        requireContains(spawnService,
-                "stuckTicks < ROOM_MONSTER_DETOUR_STUCK_TICKS",
-                "room monster detours should only start after repeated blocked non-progress ticks");
-        requireContains(spawnService,
-                "detourTarget = chooseDetourTarget(target);",
-                "room monster detours should pick a left or right bypass target");
-        requireContains(spawnService,
-                "mob.getMoveControl().setWantedPosition(\n                    detourTarget.x,",
-                "room monster detours should directly drive short side movement around bad pathing");
-        requireContains(spawnService,
-                "mob.level().noCollision(mob, detourBox)",
-                "room monster detours should use collision boxes for non-standard obstacle shapes");
-        requireContains(spawnService,
-                "return !mob.level().noCollision(mob, detourBox.move(0.0D, -1.0D, 0.0D));",
-                "room monster detours should avoid choosing unsupported side positions");
-        requireContains(spawnService,
-                "mob.getJumpControl().jump();",
-                "room monster obstacle handling should force a jump when blocked by low shapes");
-        requireContains(spawnService,
-                "mob.level().noCollision(mob, probeBox)",
-                "room monster obstacle detection should use collision boxes for non-standard block shapes");
-        requireContains(spawnService,
-                "static final double ROOM_MONSTER_DROP_DOWN_MIN_HEIGHT = 2.0D;",
-                "room monsters should actively jump down when the target is at least two blocks lower");
-        requireContains(spawnService,
-                "pendingJumpImpulse = dropDownImpulse(target);",
-                "room monster terrain jumping should attempt a drop-down impulse before low-obstacle checks");
-        requireContains(spawnService,
-                "if (pendingJumpImpulse != null) {\n                return true;\n            }\n            return hasLowFrontObstacle(target);",
-                "drop-down descent should take priority over repeated low-obstacle hops");
-        requireContains(spawnService,
-                "mob.setDeltaMovement(",
-                "drop-down jumping should push the mob forward off ledges");
-        requireContains(spawnService,
-                "mob.level().noCollision(mob, dropBox)",
-                "drop-down jumping should detect an open ledge space below the forward probe");
-        requireContains(spawnService,
-                "new RoomMonsterDropDownChaseGoal(pathfinderMob));",
-                "spawned room monsters should actively chase lower room targets toward ledges");
-        requireContains(spawnService,
-                "static final int ROOM_MONSTER_DROP_DOWN_RECOVERY_TICKS = 24;",
-                "drop-down jumping should have a landing recovery window to prevent jump loops");
-        requireContains(spawnService,
-                "cooldownTicks = dropDownJump\n                    ? ROOM_MONSTER_DROP_DOWN_RECOVERY_TICKS\n                    : ROOM_MONSTER_OBSTACLE_JUMP_COOLDOWN_TICKS;",
-                "drop-down jumping should use a longer recovery than low-obstacle hops");
-        requireContains(spawnService,
-                "if (mob.onGround()) {\n                    cooldownTicks--;\n                }",
-                "drop-down jump recovery should be consumed after landing instead of while falling");
-        requireContains(spawnService,
-                "2,\n                    new RoomMonsterDropDownChaseGoal(pathfinderMob));",
-                "drop-down chase should yield to normal melee movement once a valid path resumes");
-        requireContains(spawnService,
-                "static final double ROOM_MONSTER_DROP_DOWN_CHASE_SPEED = 1.15D;",
-                "drop-down chasing should use a zombies-specific aggressive movement speed");
-        requireContains(spawnService,
-                "mob.getMoveControl().setWantedPosition(",
-                "drop-down chasing should drive monsters toward lower targets even when normal pathing stalls");
-        requireContains(spawnService,
-                "mob.getY() - target.getY() >= ROOM_MONSTER_DROP_DOWN_MIN_HEIGHT",
-                "drop-down chasing should stay scoped to targets substantially below the monster");
+        // Movement, species actions and excluded-entity behavior are exercised by
+        // ZombiesNavigationGameTests; do not lock the legacy detour implementation into this contract.
         requireContains(spawnService,
                 "effectiveSpawnWeight(spawn.weight(), targetDistance, nearestDistance, weighting)",
                 "spawn-point selection should combine map weight with distance multiplier");
@@ -277,10 +207,10 @@ public final class ZombiesWaveRuntimeStaticContractCompatTest {
                 "zombie recycle scanner must use the hardcoded 16-second stuck timeout");
         requireContains(recycleService,
                 "static final double MIN_MOVED_DISTANCE = 0.5D;",
-                "zombie recycle scanner must treat movement below 0.5 blocks as stuck");
+                "excluded mobs retain their legacy movement threshold");
         requireContains(recycleService,
                 "static final double STUCK_MIN_TARGET_DISTANCE = 8.0D;",
-                "zombie recycle scanner must only stuck-recycle mobs farther than 8 blocks from target");
+                "excluded mobs retain their legacy distance exemption; managed mobs use behavior tests");
         requireContains(recycleService,
                 "static final int MAX_REQUEUE_RECYCLES_PER_ENTITY = 2;",
                 "zombie recycle scanner must only requeue the first two recycle attempts");

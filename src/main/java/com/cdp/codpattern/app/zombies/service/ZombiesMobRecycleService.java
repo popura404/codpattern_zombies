@@ -86,7 +86,7 @@ public final class ZombiesMobRecycleService {
             String mobId = mob.getPersistentData().getString(ZombiesMobSpawnService.WAVE_MOB_ID_TAG);
             int nextRecycleCount = mob.getPersistentData().getInt(ZombiesMobSpawnService.WAVE_RECYCLE_COUNT_TAG) + 1;
             boolean requeue = nextRecycleCount <= MAX_REQUEUE_RECYCLES_PER_ENTITY;
-            if (recycle(roomId, mob, waveState, mobId, nextRecycleCount, requeue)) {
+            if (recycle(roomId, mob, waveState, mobId, nextRecycleCount, requeue, decision.navigationFailure())) {
                 if (requeue) {
                     requeued++;
                 } else {
@@ -104,6 +104,13 @@ public final class ZombiesMobRecycleService {
 
     private RecycleDecision evaluate(Mob mob, long roomTick) {
         MonitorState state = monitorStates.computeIfAbsent(mob.getUUID(), ignored -> MonitorState.initial(mob, roomTick));
+        ZombiesGroundNavigationService.ProgressSnapshot progress = ZombiesGroundNavigationService.supports(mob)
+                ? ZombiesGroundNavigationService.getProgress(mob)
+                : null;
+        if (progress != null) {
+            return evaluateManagedGroundMob(mob, roomTick, state, progress);
+        }
+        // Unmanaged or excluded mobs retain the original movement and distance policy.
         Vec3 currentPos = mob.position();
         double movedDistance = currentPos.distanceTo(state.lastPos);
         if (movedDistance >= MIN_MOVED_DISTANCE) {
@@ -122,7 +129,49 @@ public final class ZombiesMobRecycleService {
         if (!noTargetTimedOut && !stuckTimedOut) {
             return RecycleDecision.keep();
         }
-        return new RecycleDecision(true);
+        return new RecycleDecision(true, false);
+    }
+
+    private RecycleDecision evaluateManagedGroundMob(
+            Mob mob,
+            long roomTick,
+            MonitorState state,
+            ZombiesGroundNavigationService.ProgressSnapshot progress
+    ) {
+        LivingEntity target = validTarget(mob, mob.getTarget()) ? mob.getTarget() : null;
+        if (target != null) {
+            state.lastTargetTick = roomTick;
+        }
+        boolean noTargetTimedOut = target == null && roomTick - state.lastTargetTick >= NO_TARGET_RECYCLE_TICKS;
+        long gameTime = mob.level().getGameTime();
+        if (state.groundStallMonitor == null) {
+            state.groundStallMonitor = new GroundStallMonitor(gameTime);
+        }
+        boolean stuckTimedOut = target != null && state.groundStallMonitor.timedOut(
+                gameTime,
+                progress.lastProgressGameTime(),
+                progress.lastEngagementGameTime(),
+                progress.actionGraceUntilGameTime());
+        return new RecycleDecision(noTargetTimedOut || stuckTimedOut, stuckTimedOut);
+    }
+
+    /** Uses navigation evidence rather than raw displacement, which crowding and loops can renew forever. */
+    static final class GroundStallMonitor {
+        private final long startedGameTime;
+
+        GroundStallMonitor(long startedGameTime) {
+            this.startedGameTime = startedGameTime;
+        }
+
+        boolean timedOut(long gameTime, long lastProgressGameTime, long lastEngagementGameTime,
+                long actionGraceUntilGameTime) {
+            if (gameTime < actionGraceUntilGameTime) {
+                return false;
+            }
+            long lastUsefulActivity = Math.max(startedGameTime,
+                    Math.max(lastProgressGameTime, lastEngagementGameTime));
+            return gameTime - lastUsefulActivity >= STUCK_RECYCLE_TICKS;
+        }
     }
 
     private boolean recycle(
@@ -131,12 +180,16 @@ public final class ZombiesMobRecycleService {
             ZombiesWaveRuntimeState waveState,
             String mobId,
             int nextRecycleCount,
-            boolean requeue
+            boolean requeue,
+            boolean navigationFailure
     ) {
         ZombiesMobLifecycleService.LifecycleResult lifecycle =
                 lifecycleService.onRecycledForRetry(roomId, mob, waveState);
         if (!lifecycle.unregistered()) {
             return false;
+        }
+        if (navigationFailure) {
+            ZombiesGroundNavigationService.onRecycled(mob);
         }
         monitorStates.remove(mob.getUUID());
         if (requeue && mobId != null && !mobId.isBlank()) {
@@ -185,6 +238,7 @@ public final class ZombiesMobRecycleService {
         private Vec3 lastPos;
         private long lastMovedTick;
         private long lastTargetTick;
+        private GroundStallMonitor groundStallMonitor;
 
         private MonitorState(Vec3 lastPos, long lastMovedTick, long lastTargetTick) {
             this.lastPos = lastPos;
@@ -197,9 +251,9 @@ public final class ZombiesMobRecycleService {
         }
     }
 
-    private record RecycleDecision(boolean recycle) {
+    private record RecycleDecision(boolean recycle, boolean navigationFailure) {
         private static RecycleDecision keep() {
-            return new RecycleDecision(false);
+            return new RecycleDecision(false, false);
         }
     }
 

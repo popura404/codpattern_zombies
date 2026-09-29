@@ -16,6 +16,10 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 def mainProject = project(':codpattern-main')
+def navigationLoadSize = findProperty('navigationLoad')?.toString()
+if (navigationLoadSize && !(navigationLoadSize in ['8', '32', '64'])) {
+    throw new GradleException('navigationLoad must be 8, 32, or 64')
+}
 def gameTestRunDirectory = file(findProperty('gameTestRunDirectory') ?: layout.buildDirectory.dir('gametest/run').get().asFile)
 def dedicatedServerRunRequested = gradle.startParameter.taskNames.any {
     it.toLowerCase().contains('server') || it.toLowerCase().contains('gametest')
@@ -61,7 +65,10 @@ minecraft {
             // Forge's launch module graph must include the JDK random service providers.
             jvmArgs '--add-modules=jdk.random'
             workingDirectory gameTestRunDirectory
-            property 'forge.enabledGameTestNamespaces', findProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'
+            property 'forge.enabledGameTestNamespaces', navigationLoadSize ? "codpattern_navigation_load${navigationLoadSize}"
+                    : (project.hasProperty('navigationGameTests') ? 'codpattern_navigation'
+                    : (findProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'))
+            property 'codpattern.zombies.navigationDebug', project.hasProperty('navigationDebug') ? 'true' : 'false'
             property 'mixin.env.remapRefMap', 'true'
             property 'mixin.env.refMapRemappingFile', layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
             environment 'MOD_CLASSES', [
@@ -85,6 +92,7 @@ tasks.register('syncGameTestStructures', Copy) {
     group = 'verification'
     description = 'Copy the shared empty GameTest template into the isolated addon test directory.'
     from mainProject.layout.projectDirectory.dir('src/main/resources/gameteststructures')
+    from layout.projectDirectory.dir('src/main/resources/gameteststructures')
     into new File(gameTestRunDirectory, 'gameteststructures')
     include '**/*.snbt'
 }
@@ -197,6 +205,23 @@ def splitCompatTestClasspath = files(
         sourceSets.main.output,
         mainTestOutput,
         mainRuntimeOutput) + sourceSets.test.compileClasspath
+
+['ZombiesNavigationProgressTrackerCompatTest', 'ZombiesMobRecycleProgressCompatTest',
+ 'ZombiesGroundSpawnPolicyCompatTest', 'ZombiesWaveRuntimeStaticContractCompatTest'].each { testName ->
+    tasks.register("run${testName}", JavaExec) {
+        group = 'verification'
+        workingDir = mainProject.projectDir
+        classpath = splitCompatTestClasspath
+        mainClass = "com.cdp.codpattern.app.zombies.service.${testName}"
+        dependsOn tasks.named('testClasses')
+    }
+}
+
+tasks.register('runZombiesNavigationCompatSuite') {
+    group = 'verification'
+    dependsOn 'runZombiesNavigationProgressTrackerCompatTest', 'runZombiesMobRecycleProgressCompatTest',
+            'runZombiesGroundSpawnPolicyCompatTest', 'runZombiesWaveRuntimeStaticContractCompatTest'
+}
 
 tasks.register('runZombiesForceEndCompatSuite', JavaExec) {
     group = 'verification'

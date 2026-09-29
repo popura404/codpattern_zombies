@@ -265,6 +265,15 @@ tasks.register('runZombiesWeaponHudCompat', JavaExec) {
     dependsOn tasks.named('testClasses')
 }
 
+tasks.register('runZombiesSodaHudCompat', JavaExec) {
+    group = 'verification'
+    description = 'Check soda HUD ownership, lifecycle visibility, and collision-free layout.'
+    workingDir = mainProject.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.client.gui.overlay.zombies.ZombiesSodaHudCompatSuite'
+    dependsOn tasks.named('testClasses')
+}
+
 tasks.register('runZombiesObjectLabelCompat', JavaExec) {
     group = 'verification'
     description = 'Check world-label packing, projection, and renderer integration.'

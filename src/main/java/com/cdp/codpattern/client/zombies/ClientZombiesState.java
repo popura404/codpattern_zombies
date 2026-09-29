@@ -169,6 +169,38 @@ public final class ClientZombiesState {
         return List.copyOf(buffIds);
     }
 
+    public static List<String> visibleSodaBuffIds() {
+        if (!ClientMatchState.hasRoomContext()) {
+            return List.of();
+        }
+        String roomKey = ClientMatchState.roomContextName();
+        return ClientModeRuntimeState.snapshot(roomKey)
+                .map(snapshot -> visibleSodaBuffIds(roomKey, snapshot))
+                .orElse(List.of());
+    }
+
+    static List<String> visibleSodaBuffIds(String roomKey, ModeRuntimeStateSnapshot snapshot) {
+        if (!isZombiesRoom(roomKey) || snapshot == null || !roomKey.equals(snapshot.roomKey())) {
+            return List.of();
+        }
+        if (!"WAVE_ACTIVE".equals(snapshot.phaseKey()) && !"INTERMISSION".equals(snapshot.phaseKey())) {
+            return List.of();
+        }
+        Map<String, ModePlayerValue> values = snapshot.playerValues();
+        if (!"ALIVE".equals(stringValue(values.get(ZombiesRuntimeStateKeys.PLAYER_LIFE_STATE), ""))
+                || !"ONLINE".equals(stringValue(values.get(ZombiesRuntimeStateKeys.PLAYER_CONNECTION_STATE), ""))) {
+            return List.of();
+        }
+
+        List<String> buffIds = new ArrayList<>();
+        for (ZombiesBuffType type : ZombiesBuffType.values()) {
+            if (booleanValue(values.get(ZombiesRuntimeStateKeys.playerBuff(type.id())), false)) {
+                buffIds.add(type.id());
+            }
+        }
+        return List.copyOf(buffIds);
+    }
+
     public static Set<UUID> activeZombieEntityIds() {
         Optional<ModeRuntimeStateSnapshot> snapshotOptional = snapshot();
         if (snapshotOptional.isEmpty()) {

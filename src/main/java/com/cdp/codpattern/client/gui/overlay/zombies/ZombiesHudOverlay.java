@@ -39,6 +39,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import net.minecraftforge.client.gui.overlay.IGuiOverlay;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -134,12 +135,14 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             clearIntermissionWaveAnnouncement();
             renderTopStats(graphics, font, screenWidth);
         }
-        renderScoreLeaderboard(graphics, font, screenWidth, screenHeight);
-        renderRoomTeammateStatus(graphics, font, screenWidth, screenHeight);
+        List<ZombiesSodaHudLayout.Bounds> occupied = new ArrayList<>();
+        renderScoreLeaderboard(graphics, font, screenWidth, screenHeight, occupied);
+        renderRoomTeammateStatus(graphics, font, screenWidth, screenHeight, occupied);
         renderPhaseNotice(graphics, font, screenWidth, screenHeight);
-        renderInteractionPrompt(graphics, font, screenWidth, screenHeight);
-        renderPlayerStatus(graphics, font, screenWidth, screenHeight);
-        renderHeldWeaponPanel(graphics, font, screenWidth, screenHeight);
+        renderInteractionPrompt(graphics, font, screenWidth, screenHeight, occupied);
+        renderPlayerStatus(graphics, font, screenWidth, screenHeight, occupied);
+        renderHeldWeaponPanel(graphics, font, screenWidth, screenHeight, occupied);
+        ZombiesSodaHudOverlay.render(graphics, screenWidth, screenHeight, occupied);
     }
 
     private static void renderTopStats(GuiGraphics graphics, Font font, int screenWidth) {
@@ -161,7 +164,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         graphics.drawString(font, value, x + font.width(label), y, TEXT_ZOMBIES_DARK_YELLOW, true);
     }
 
-    private static void renderScoreLeaderboard(GuiGraphics graphics, Font font, int screenWidth, int screenHeight) {
+    private static void renderScoreLeaderboard(GuiGraphics graphics, Font font, int screenWidth, int screenHeight,
+                                               List<ZombiesSodaHudLayout.Bounds> occupied) {
         List<ClientZombiesState.ResultRow> rows = ClientZombiesState.leaderboardRows();
         if (rows.isEmpty()) {
             return;
@@ -181,6 +185,9 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             renderScoreLeaderboardRow(graphics, font, x, rowY + i * (LEADERBOARD_ROW_HEIGHT + LEADERBOARD_ROW_GAP),
                     width, LEADERBOARD_ROW_HEIGHT, i, rows.get(i));
         }
+        int bottom = maxRows == 0 ? y + font.lineHeight + 1
+                : rowY + (maxRows - 1) * (LEADERBOARD_ROW_HEIGHT + LEADERBOARD_ROW_GAP) + LEADERBOARD_ROW_HEIGHT;
+        occupied.add(new ZombiesSodaHudLayout.Bounds(x, y, x + width + 1, bottom));
     }
 
     private static void renderScoreLeaderboardRow(
@@ -265,7 +272,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         return Math.max(0L, INTERMISSION_WAVE_TOTAL_MS - Math.min(INTERMISSION_WAVE_TOTAL_MS, remainingMs));
     }
 
-    private static void renderRoomTeammateStatus(GuiGraphics graphics, Font font, int screenWidth, int screenHeight) {
+    private static void renderRoomTeammateStatus(GuiGraphics graphics, Font font, int screenWidth, int screenHeight,
+                                                List<ZombiesSodaHudLayout.Bounds> occupied) {
         List<ClientZombiesState.SurvivorStatus> teammates = ClientZombiesState.roomTeammates();
         if (teammates.isEmpty()) {
             return;
@@ -288,6 +296,11 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
 
         for (ClientZombiesState.SurvivorStatus teammate : teammates) {
             renderRoomTeammateRow(graphics, font, teammate, avatarX, barX, rowY);
+            int pointsRight = barX + TEAMMATE_BAR_WIDTH + TEAMMATE_POINTS_GAP
+                    + font.width(Integer.toString(Math.max(0, teammate.points()))) + 1;
+            int bottom = rowY + Math.max(TEAMMATE_AVATAR_SIZE + 1,
+                    TEAMMATE_BAR_HEIGHT + 3 + font.lineHeight + 1);
+            occupied.add(new ZombiesSodaHudLayout.Bounds(avatarX - 1, rowY - 1, pointsRight, bottom));
             rowY += rowHeight;
         }
     }
@@ -584,7 +597,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
                 x + width - 8, y + 8, withAlpha(TEXT_PRIMARY, alpha));
     }
 
-    private static void renderInteractionPrompt(GuiGraphics graphics, Font font, int screenWidth, int screenHeight) {
+    private static void renderInteractionPrompt(GuiGraphics graphics, Font font, int screenWidth, int screenHeight,
+                                                 List<ZombiesSodaHudLayout.Bounds> occupied) {
         Optional<InteractionPromptLine> prompt = currentInteractionPrompt();
         if (prompt.isEmpty()) {
             return;
@@ -605,6 +619,7 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         graphics.drawString(font, actionText, x, y, line.color(), true);
         graphics.drawString(font, keyText, x, y + font.lineHeight + 3,
                 line.interactable() ? TEXT_ACCENT : PROMPT_DISABLED, true);
+        occupied.add(new ZombiesSodaHudLayout.Bounds(x - 7, y - 4, x + width + 7, y + totalHeight + 4));
     }
 
     private static Optional<InteractionPromptLine> currentInteractionPrompt() {
@@ -945,7 +960,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     }
 
     private static void renderHeldWeaponPanel(
-            GuiGraphics graphics, Font font, int screenWidth, int screenHeight
+            GuiGraphics graphics, Font font, int screenWidth, int screenHeight,
+            List<ZombiesSodaHudLayout.Bounds> occupied
     ) {
         LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) {
@@ -963,6 +979,9 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             return;
         }
         ZombiesWeaponPanelLayout.Placement layout = placement.get();
+        occupied.add(new ZombiesSodaHudLayout.Bounds((int) Math.floor(layout.left()), (int) Math.floor(layout.top()),
+                (int) Math.ceil(layout.left() + ZombiesWeaponPanelLayout.WIDTH * layout.scale()),
+                (int) Math.ceil(layout.top() + ZombiesWeaponPanelLayout.HEIGHT * layout.scale())));
         float[] previousColor = RenderSystem.getShaderColor().clone();
         boolean previousBlend = GL11.glIsEnabled(GL11.GL_BLEND);
         graphics.flush();
@@ -1219,7 +1238,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         return new InteractionPromptLine(text + "（需要电源）", false, false, TEXT_DANGER);
     }
 
-    private static void renderPlayerStatus(GuiGraphics graphics, Font font, int screenWidth, int screenHeight) {
+    private static void renderPlayerStatus(GuiGraphics graphics, Font font, int screenWidth, int screenHeight,
+                                           List<ZombiesSodaHudLayout.Bounds> occupied) {
         LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) {
             return;
@@ -1268,6 +1288,10 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         if (!armorDots.isBlank()) {
             graphics.drawString(font, armorDots, barX + barWidth - font.width(armorDots), armorY, PLAYER_STATUS_ARMOR_COLOR, true);
         }
+        int bottom = Math.max(avatarY + PLAYER_STATUS_AVATAR_SIZE + 2,
+                armorDots.isBlank() ? barY + PLAYER_STATUS_BAR_HEIGHT + 1 : armorY + font.lineHeight + 1);
+        int left = Math.min(avatarX - 2, barX + barWidth - font.width(armorDots));
+        occupied.add(new ZombiesSodaHudLayout.Bounds(left, avatarY - 2, barX + barWidth + 1, bottom));
     }
 
     private static void renderLocalAvatar(GuiGraphics graphics, LocalPlayer player, int x, int y, int size) {

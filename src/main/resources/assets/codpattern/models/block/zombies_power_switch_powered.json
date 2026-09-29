@@ -1,6 +1,1139 @@
 {
-    "parent": "minecraft:block/cube_all",
-    "textures": {
-        "all": "minecraft:block/redstone_lamp_on"
+  "parent": "minecraft:block/block",
+  "ambientocclusion": true,
+  "textures": {
+    "black": "codpattern:block/industrial_preview/black",
+    "dark": "codpattern:block/industrial_preview/dark",
+    "edge": "codpattern:block/industrial_preview/edge",
+    "green": "codpattern:block/industrial_preview/green",
+    "red": "codpattern:block/industrial_preview/red",
+    "steel": "codpattern:block/industrial_preview/steel",
+    "wood_dark": "codpattern:block/industrial_preview/wood_dark",
+    "particle": "codpattern:block/industrial_preview/black"
+  },
+  "display": {
+    "gui": {
+      "rotation": [
+        25,
+        225,
+        0
+      ],
+      "translation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        0.7,
+        0.7,
+        0.7
+      ]
     }
+  },
+  "elements": [
+    {
+      "name": "mount",
+      "from": [
+        3,
+        1,
+        13
+      ],
+      "to": [
+        13,
+        15,
+        15
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            10,
+            14
+          ],
+          "texture": "#dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            10,
+            14
+          ],
+          "texture": "#dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            2,
+            14
+          ],
+          "texture": "#dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            2,
+            14
+          ],
+          "texture": "#dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            10,
+            2
+          ],
+          "texture": "#dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            10,
+            2
+          ],
+          "texture": "#dark"
+        }
+      }
+    },
+    {
+      "name": "cabinet",
+      "from": [
+        3.5,
+        2,
+        9
+      ],
+      "to": [
+        12.5,
+        14,
+        13
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            9.0,
+            12
+          ],
+          "texture": "#steel"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            9.0,
+            12
+          ],
+          "texture": "#steel"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            4,
+            12
+          ],
+          "texture": "#steel"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            4,
+            12
+          ],
+          "texture": "#steel"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            9.0,
+            4
+          ],
+          "texture": "#steel"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            9.0,
+            4
+          ],
+          "texture": "#steel"
+        }
+      }
+    },
+    {
+      "name": "door",
+      "from": [
+        4,
+        2.5,
+        8.5
+      ],
+      "to": [
+        12,
+        13.5,
+        9
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            8,
+            11.0
+          ],
+          "texture": "#edge"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            8,
+            11.0
+          ],
+          "texture": "#edge"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.5,
+            11.0
+          ],
+          "texture": "#edge"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.5,
+            11.0
+          ],
+          "texture": "#edge"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            8,
+            0.5
+          ],
+          "texture": "#edge"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            8,
+            0.5
+          ],
+          "texture": "#edge"
+        }
+      }
+    },
+    {
+      "name": "lever recess",
+      "from": [
+        5,
+        5,
+        8
+      ],
+      "to": [
+        9,
+        12,
+        8.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            4,
+            7
+          ],
+          "texture": "#black"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            4,
+            7
+          ],
+          "texture": "#black"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.5,
+            7
+          ],
+          "texture": "#black"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.5,
+            7
+          ],
+          "texture": "#black"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            4,
+            0.5
+          ],
+          "texture": "#black"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            4,
+            0.5
+          ],
+          "texture": "#black"
+        }
+      }
+    },
+    {
+      "name": "pivot",
+      "from": [
+        6,
+        7,
+        6.5
+      ],
+      "to": [
+        8,
+        8,
+        8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#steel"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            2,
+            1
+          ],
+          "texture": "#steel"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            1
+          ],
+          "texture": "#steel"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            1
+          ],
+          "texture": "#steel"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            2,
+            1.5
+          ],
+          "texture": "#steel"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            2,
+            1.5
+          ],
+          "texture": "#steel"
+        }
+      }
+    },
+    {
+      "name": "lever shaft",
+      "from": [
+        6.6,
+        4,
+        6.5
+      ],
+      "to": [
+        7.4,
+        7,
+        7.2
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            0.8000000000000007,
+            3
+          ],
+          "texture": "#edge"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            0.8000000000000007,
+            3
+          ],
+          "texture": "#edge"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.7000000000000002,
+            3
+          ],
+          "texture": "#edge"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.7000000000000002,
+            3
+          ],
+          "texture": "#edge"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            0.8000000000000007,
+            0.7000000000000002
+          ],
+          "texture": "#edge"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            0.8000000000000007,
+            0.7000000000000002
+          ],
+          "texture": "#edge"
+        }
+      }
+    },
+    {
+      "name": "lever grip",
+      "from": [
+        5.5,
+        3.5,
+        6
+      ],
+      "to": [
+        8.5,
+        5,
+        7.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            3.0,
+            1.5
+          ],
+          "texture": "#red"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            3.0,
+            1.5
+          ],
+          "texture": "#red"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            1.5
+          ],
+          "texture": "#red"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            1.5
+          ],
+          "texture": "#red"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            3.0,
+            1.5
+          ],
+          "texture": "#red"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            3.0,
+            1.5
+          ],
+          "texture": "#red"
+        }
+      }
+    },
+    {
+      "name": "lamp rim",
+      "from": [
+        10,
+        10,
+        8
+      ],
+      "to": [
+        11.5,
+        11.5,
+        8.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            1.5
+          ],
+          "texture": "#dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            1.5
+          ],
+          "texture": "#dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.5,
+            1.5
+          ],
+          "texture": "#dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.5,
+            1.5
+          ],
+          "texture": "#dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            0.5
+          ],
+          "texture": "#dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            0.5
+          ],
+          "texture": "#dark"
+        }
+      }
+    },
+    {
+      "name": "lamp",
+      "from": [
+        10.2,
+        10.2,
+        7.8
+      ],
+      "to": [
+        11.3,
+        11.3,
+        8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            1.1000000000000014,
+            1.1000000000000014
+          ],
+          "texture": "#green"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            1.1000000000000014,
+            1.1000000000000014
+          ],
+          "texture": "#green"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.20000000000000018,
+            1.1000000000000014
+          ],
+          "texture": "#green"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.20000000000000018,
+            1.1000000000000014
+          ],
+          "texture": "#green"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            1.1000000000000014,
+            0.20000000000000018
+          ],
+          "texture": "#green"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            1.1000000000000014,
+            0.20000000000000018
+          ],
+          "texture": "#green"
+        }
+      }
+    },
+    {
+      "name": "lamp rim",
+      "from": [
+        10,
+        7.5,
+        8
+      ],
+      "to": [
+        11.5,
+        9.0,
+        8.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            1.5
+          ],
+          "texture": "#dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            1.5
+          ],
+          "texture": "#dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.5,
+            1.5
+          ],
+          "texture": "#dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.5,
+            1.5
+          ],
+          "texture": "#dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            0.5
+          ],
+          "texture": "#dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            1.5,
+            0.5
+          ],
+          "texture": "#dark"
+        }
+      }
+    },
+    {
+      "name": "lamp",
+      "from": [
+        10.2,
+        7.7,
+        7.8
+      ],
+      "to": [
+        11.3,
+        8.8,
+        8
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            1.1000000000000014,
+            1.1000000000000005
+          ],
+          "texture": "#wood_dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            1.1000000000000014,
+            1.1000000000000005
+          ],
+          "texture": "#wood_dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.20000000000000018,
+            1.1000000000000005
+          ],
+          "texture": "#wood_dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.20000000000000018,
+            1.1000000000000005
+          ],
+          "texture": "#wood_dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            1.1000000000000014,
+            0.20000000000000018
+          ],
+          "texture": "#wood_dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            1.1000000000000014,
+            0.20000000000000018
+          ],
+          "texture": "#wood_dark"
+        }
+      }
+    },
+    {
+      "name": "vent",
+      "from": [
+        9,
+        3,
+        8.2
+      ],
+      "to": [
+        11.5,
+        3.3,
+        8.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.3000000000000007,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.3000000000000007,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.3000000000000007
+          ],
+          "texture": "#dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.3000000000000007
+          ],
+          "texture": "#dark"
+        }
+      }
+    },
+    {
+      "name": "vent",
+      "from": [
+        9,
+        3.8,
+        8.2
+      ],
+      "to": [
+        11.5,
+        4.1,
+        8.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.3000000000000007,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.3000000000000007,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.3000000000000007
+          ],
+          "texture": "#dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.3000000000000007
+          ],
+          "texture": "#dark"
+        }
+      }
+    },
+    {
+      "name": "vent",
+      "from": [
+        9,
+        4.6,
+        8.2
+      ],
+      "to": [
+        11.5,
+        4.8999999999999995,
+        8.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            0.3000000000000007,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            0.3000000000000007,
+            0.2999999999999998
+          ],
+          "texture": "#dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.3000000000000007
+          ],
+          "texture": "#dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            2.5,
+            0.3000000000000007
+          ],
+          "texture": "#dark"
+        }
+      }
+    },
+    {
+      "name": "conduit",
+      "from": [
+        1.5,
+        3,
+        12
+      ],
+      "to": [
+        2.5,
+        15,
+        13
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            1.0,
+            12
+          ],
+          "texture": "#dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            1.0,
+            12
+          ],
+          "texture": "#dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            1,
+            12
+          ],
+          "texture": "#dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            1,
+            12
+          ],
+          "texture": "#dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            1.0,
+            1
+          ],
+          "texture": "#dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            1.0,
+            1
+          ],
+          "texture": "#dark"
+        }
+      }
+    },
+    {
+      "name": "conduit elbow",
+      "from": [
+        1.5,
+        14,
+        12
+      ],
+      "to": [
+        5,
+        15,
+        13
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            3.5,
+            1
+          ],
+          "texture": "#dark"
+        },
+        "south": {
+          "uv": [
+            0,
+            0,
+            3.5,
+            1
+          ],
+          "texture": "#dark"
+        },
+        "east": {
+          "uv": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "texture": "#dark"
+        },
+        "west": {
+          "uv": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "texture": "#dark"
+        },
+        "up": {
+          "uv": [
+            0,
+            0,
+            3.5,
+            1
+          ],
+          "texture": "#dark"
+        },
+        "down": {
+          "uv": [
+            0,
+            0,
+            3.5,
+            1
+          ],
+          "texture": "#dark"
+        }
+      }
+    }
+  ]
 }

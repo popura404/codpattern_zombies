@@ -50,6 +50,7 @@ import com.cdp.codpattern.app.zombies.service.ZombiesPlayerRuntimeMarkerService;
 import com.cdp.codpattern.app.zombies.service.ZombiesPowerService;
 import com.cdp.codpattern.app.zombies.service.ZombiesPowerSwitchBlockStateService;
 import com.cdp.codpattern.app.zombies.service.ZombiesPostGameTeleportService;
+import com.cdp.codpattern.app.zombies.service.ZombiesPurchasableBlockService;
 import com.cdp.codpattern.app.zombies.service.ZombiesReadyService;
 import com.cdp.codpattern.app.zombies.service.ZombiesReviveLoadoutService;
 import com.cdp.codpattern.app.zombies.service.ZombiesRoomAnnouncementService;
@@ -1491,10 +1492,20 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                             barrierPreflight.logMessage());
                 }
                 placeRuntimeBarrierBlocks();
+                ZombiesPurchasableBlockService.PlacementChanges purchasePointChanges;
+                try {
+                    purchasePointChanges = ZombiesPurchasableBlockService.ensureMissingObjects(
+                            runtimeObjects(), ZombiesMap.this::levelForDimension);
+                } catch (RuntimeException failure) {
+                    clearRuntimeBarrierBlocks();
+                    clearFrozenObjectsAndResetRuntime();
+                    throw failure;
+                }
                 return ZombiesServiceResult.success(Optional.of(new StartupRollbackAction(
                         "restore_startup_positions_and_barrier_blocks",
                         ignored -> {
                             clearRuntimeBarrierBlocks();
+                            purchasePointChanges.rollback();
                             clearFrozenObjectsAndResetRuntime();
                             restoreStartupPositions(positions);
                             return ZombiesServiceResult.ok();

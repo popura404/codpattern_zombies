@@ -7,6 +7,8 @@ public final class ZombiesDeployCompatTestSuite {
     private ZombiesDeployCompatTestSuite() { }
 
     public static void main(String[] args) throws Throwable {
+        com.cdp.codpattern.app.zombies.deploy.ZombiesDeployPreviewKeysCompatTest.main(args);
+        com.cdp.codpattern.app.zombies.deploy.ZombiesDeployPreviewFacingCompatTest.main(args);
         com.cdp.codpattern.app.zombies.deploy.ZombiesDeployDraftSessionCompatTest.closeWaitsForTheMatchingSuccessfulResponse();
         com.cdp.codpattern.app.zombies.deploy.ZombiesSpawnGroupChangesCompatTest.main(args);
         int skipped = ZombiesCompatSuiteRunner.runAll(List.of(

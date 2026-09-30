@@ -3,6 +3,7 @@ package com.cdp.codpattern.app.zombies.map.object;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 
@@ -14,7 +15,8 @@ public record ZombiesAmmoBoxData(
         Map<String, Integer> pricesByWeaponLevel,
         ResourceKey<Level> dimension,
         BlockPos pos,
-        Optional<BlockPos> interactionPos
+        Optional<BlockPos> interactionPos,
+        Direction facing
 ) {
     public static final Codec<ZombiesAmmoBoxData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.STRING.fieldOf("objectId").forGetter(ZombiesAmmoBoxData::objectId),
@@ -23,8 +25,19 @@ public record ZombiesAmmoBoxData(
                     .forGetter(ZombiesAmmoBoxData::pricesByWeaponLevel),
             ZombiesObjectCodecs.DIMENSION_CODEC.fieldOf("dimension").forGetter(ZombiesAmmoBoxData::dimension),
             BlockPos.CODEC.optionalFieldOf("pos", BlockPos.ZERO).forGetter(ZombiesAmmoBoxData::pos),
-            BlockPos.CODEC.optionalFieldOf("interactionPos").forGetter(ZombiesAmmoBoxData::interactionPos)
+            BlockPos.CODEC.optionalFieldOf("interactionPos").forGetter(ZombiesAmmoBoxData::interactionPos),
+            ZombiesObjectCodecs.OPTIONAL_HORIZONTAL_FACING.forGetter(ZombiesAmmoBoxData::facing)
     ).apply(instance, ZombiesAmmoBoxData::new));
+
+    public ZombiesAmmoBoxData(
+            String objectId,
+            Map<String, Integer> pricesByWeaponLevel,
+            ResourceKey<Level> dimension,
+            BlockPos pos,
+            Optional<BlockPos> interactionPos
+    ) {
+        this(objectId, pricesByWeaponLevel, dimension, pos, interactionPos, Direction.NORTH);
+    }
 
     public ZombiesAmmoBoxData {
         objectId = objectId == null ? "" : objectId.trim();
@@ -32,5 +45,6 @@ public record ZombiesAmmoBoxData(
         dimension = dimension == null ? Level.OVERWORLD : dimension;
         pos = pos == null ? BlockPos.ZERO : pos;
         interactionPos = interactionPos == null ? Optional.empty() : interactionPos;
+        facing = ZombiesObjectCodecs.horizontalDirection(facing);
     }
 }

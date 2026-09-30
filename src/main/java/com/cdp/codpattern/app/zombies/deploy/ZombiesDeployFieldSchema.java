@@ -69,6 +69,7 @@ public final class ZombiesDeployFieldSchema {
             )),
             new ObjectTypeSchema(WEAPON_WALL, "gui.codpattern.zombies.deploy.type.weapon_wall", false, false, List.of(
                     field("objectId", FieldType.TEXT, ""),
+                    field("facing", FieldType.TEXT, "north"),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("posX", FieldType.INTEGER, "0"),
                     field("posY", FieldType.INTEGER, "64"),
@@ -79,6 +80,7 @@ public final class ZombiesDeployFieldSchema {
             )),
             new ObjectTypeSchema(AMMO_BOX, "gui.codpattern.zombies.deploy.type.ammo_box", false, false, List.of(
                     field("objectId", FieldType.TEXT, ""),
+                    field("facing", FieldType.TEXT, "north"),
                     field("pricesByWeaponLevel", FieldType.LIST, "1=0,2=250,3=500"),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("posX", FieldType.INTEGER, "0"),
@@ -90,6 +92,7 @@ public final class ZombiesDeployFieldSchema {
             )),
             new ObjectTypeSchema(ARMOR_STATION, "gui.codpattern.zombies.deploy.type.armor_station", false, false, List.of(
                     field("objectId", FieldType.TEXT, ""),
+                    field("facing", FieldType.TEXT, "north"),
                     field("armorLevel", FieldType.INTEGER, "1"),
                     field("buyCost", FieldType.INTEGER, "500"),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
@@ -111,6 +114,7 @@ public final class ZombiesDeployFieldSchema {
             )),
             new ObjectTypeSchema(SODA_MACHINE, "gui.codpattern.zombies.deploy.type.soda_machine", false, false, List.of(
                     field("objectId", FieldType.TEXT, ""),
+                    field("facing", FieldType.TEXT, "north"),
                     field("buffId", FieldType.TEXT, "double_health"),
                     field("cost", FieldType.INTEGER, "1500"),
                     field("requiresPower", FieldType.BOOLEAN, "true"),
@@ -124,6 +128,7 @@ public final class ZombiesDeployFieldSchema {
             )),
             new ObjectTypeSchema(ULTIMATE_MACHINE, "gui.codpattern.zombies.deploy.type.ultimate_machine", false, false, List.of(
                     field("objectId", FieldType.TEXT, ""),
+                    field("facing", FieldType.TEXT, "north"),
                     field("requiresPower", FieldType.BOOLEAN, "true"),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("posX", FieldType.INTEGER, "0"),
@@ -135,6 +140,7 @@ public final class ZombiesDeployFieldSchema {
             )),
             new ObjectTypeSchema(MYSTERY_BOX, "gui.codpattern.zombies.deploy.type.mystery_box", false, false, List.of(
                     field("objectId", FieldType.TEXT, ""),
+                    field("facing", FieldType.TEXT, "north"),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("posX", FieldType.INTEGER, "0"),
                     field("posY", FieldType.INTEGER, "64"),

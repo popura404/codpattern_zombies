@@ -15,6 +15,7 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
 import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.model.ZombiesArmorState;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -270,7 +271,7 @@ final class ZombiesDeployObjectEditor {
                         copyObjectId(objects, source.objectId(), type),
                         source.dimension(),
                         source.pos(),
-                        source.interactionPos());
+                        source.interactionPos(), source.facing());
                 List<ZombiesWeaponWallData> next = mutable(objects.weaponWalls());
                 next.add(data);
                 yield success(withWeaponWalls(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
@@ -283,7 +284,7 @@ final class ZombiesDeployObjectEditor {
                         source.pricesByWeaponLevel(),
                         source.dimension(),
                         source.pos(),
-                        source.interactionPos());
+                        source.interactionPos(), source.facing());
                 List<ZombiesAmmoBoxData> next = mutable(objects.ammoBoxes());
                 next.add(data);
                 yield success(withAmmoBoxes(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
@@ -298,7 +299,7 @@ final class ZombiesDeployObjectEditor {
                         1.0D,
                         source.dimension(),
                         source.pos(),
-                        source.interactionPos());
+                        source.interactionPos(), source.facing());
                 List<ZombiesArmorStationData> next = mutable(objects.armorStations());
                 next.add(data);
                 yield success(withArmorStations(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
@@ -315,7 +316,7 @@ final class ZombiesDeployObjectEditor {
                         source.requiresPower(),
                         source.dimension(),
                         source.pos(),
-                        source.interactionPos());
+                        source.interactionPos(), source.facing());
                 List<ZombiesSodaMachineData> next = mutable(objects.sodaMachines());
                 next.add(data);
                 yield success(withSodaMachines(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
@@ -330,7 +331,7 @@ final class ZombiesDeployObjectEditor {
                         source.requiresPower(),
                         source.dimension(),
                         source.pos(),
-                        source.interactionPos());
+                        source.interactionPos(), source.facing());
                 List<ZombiesUltimateMachineData> next = mutable(objects.ultimateMachines());
                 next.add(data);
                 yield success(withUltimateMachines(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
@@ -340,7 +341,7 @@ final class ZombiesDeployObjectEditor {
                 ZombiesMysteryBoxData source = objects.mysteryBoxes().get(selectedIndex);
                 ZombiesMysteryBoxData data = new ZombiesMysteryBoxData(
                         copyObjectId(objects, source.objectId(), type), source.cost(), source.weaponPool(),
-                        source.dimension(), source.pos(), source.interactionPos());
+                        source.dimension(), source.pos(), source.interactionPos(), source.facing());
                 List<ZombiesMysteryBoxData> next = mutable(objects.mysteryBoxes());
                 next.add(data);
                 yield success(withMysteryBoxes(objects, next), type, next.size() - 1, fieldsFrom(data), 1);
@@ -584,7 +585,7 @@ final class ZombiesDeployObjectEditor {
                 intMap(fields, "pricesByWeaponLevel"),
                 dimension(fields),
                 blockPos(fields, "pos"),
-                Optional.of(blockPos(fields, "interaction")));
+                Optional.of(blockPos(fields, "interaction")), facingField(fields));
     }
 
     private static ZombiesWeaponWallData parseWeaponWall(
@@ -597,7 +598,7 @@ final class ZombiesDeployObjectEditor {
                 objectId,
                 dimension(fields),
                 blockPos(fields, "pos"),
-                Optional.of(blockPos(fields, "interaction")));
+                Optional.of(blockPos(fields, "interaction")), facingField(fields));
     }
 
     private static ZombiesArmorStationData parseArmorStation(
@@ -616,7 +617,7 @@ final class ZombiesDeployObjectEditor {
                 1.0D,
                 dimension(fields),
                 blockPos(fields, "pos"),
-                Optional.of(blockPos(fields, "interaction")));
+                Optional.of(blockPos(fields, "interaction")), facingField(fields));
     }
 
     private static void validateArmorStationFields(int armorLevel) {
@@ -653,7 +654,7 @@ final class ZombiesDeployObjectEditor {
                 booleanField(fields, "requiresPower"),
                 dimension(fields),
                 blockPos(fields, "pos"),
-                Optional.of(blockPos(fields, "interaction")));
+                Optional.of(blockPos(fields, "interaction")), facingField(fields));
     }
 
     private static ZombiesUltimateMachineData parseUltimateMachine(
@@ -669,7 +670,7 @@ final class ZombiesDeployObjectEditor {
                 booleanField(fields, "requiresPower"),
                 dimension(fields),
                 blockPos(fields, "pos"),
-                Optional.of(blockPos(fields, "interaction")));
+                Optional.of(blockPos(fields, "interaction")), facingField(fields));
     }
 
     private static ZombiesMysteryBoxData parseMysteryBox(
@@ -684,7 +685,7 @@ final class ZombiesDeployObjectEditor {
                 List.of(),
                 dimension(fields),
                 blockPos(fields, "pos"),
-                Optional.of(blockPos(fields, "interaction")));
+                Optional.of(blockPos(fields, "interaction")), facingField(fields));
     }
 
     private static EditResult unsupported(String type, ZombiesMapObjects objects, Map<String, String> fields) {
@@ -815,6 +816,7 @@ final class ZombiesDeployObjectEditor {
         fields.put("objectId", data.objectId());
         fields.put("pricesByWeaponLevel", serializeIntMap(data.pricesByWeaponLevel()));
         putPosition(fields, "interaction", data.interactionPos().orElse(data.pos()));
+        fields.put("facing", data.facing().getName());
         return fields;
     }
 
@@ -822,6 +824,7 @@ final class ZombiesDeployObjectEditor {
         Map<String, String> fields = basePositionFields(ZombiesDeployFieldSchema.WEAPON_WALL, data.dimension(), data.pos());
         fields.put("objectId", data.objectId());
         putPosition(fields, "interaction", data.interactionPos().orElse(data.pos()));
+        fields.put("facing", data.facing().getName());
         return fields;
     }
 
@@ -831,6 +834,7 @@ final class ZombiesDeployObjectEditor {
         fields.put("armorLevel", Integer.toString(data.armorLevel()));
         fields.put("buyCost", Integer.toString(data.buyCost()));
         putPosition(fields, "interaction", data.interactionPos().orElse(data.pos()));
+        fields.put("facing", data.facing().getName());
         return fields;
     }
 
@@ -849,6 +853,7 @@ final class ZombiesDeployObjectEditor {
         fields.put("cost", Integer.toString(data.cost()));
         fields.put("requiresPower", Boolean.toString(data.requiresPower()));
         putPosition(fields, "interaction", data.interactionPos().orElse(data.pos()));
+        fields.put("facing", data.facing().getName());
         return fields;
     }
 
@@ -857,6 +862,7 @@ final class ZombiesDeployObjectEditor {
         fields.put("objectId", data.objectId());
         fields.put("requiresPower", Boolean.toString(data.requiresPower()));
         putPosition(fields, "interaction", data.interactionPos().orElse(data.pos()));
+        fields.put("facing", data.facing().getName());
         return fields;
     }
 
@@ -864,6 +870,7 @@ final class ZombiesDeployObjectEditor {
         Map<String, String> fields = basePositionFields(ZombiesDeployFieldSchema.MYSTERY_BOX, data.dimension(), data.pos());
         fields.put("objectId", data.objectId());
         putPosition(fields, "interaction", data.interactionPos().orElse(data.pos()));
+        fields.put("facing", data.facing().getName());
         return fields;
     }
 
@@ -887,6 +894,15 @@ final class ZombiesDeployObjectEditor {
 
     private static String text(Map<String, String> fields, String key) {
         return Objects.requireNonNullElse(fields.get(key), "").trim();
+    }
+
+    private static Direction facingField(Map<String, String> fields) {
+        String value = text(fields, "facing").toLowerCase(Locale.ROOT);
+        Direction direction = Direction.byName(value);
+        if (direction == null || !direction.getAxis().isHorizontal()) {
+            throw failure("field.invalid_facing", "field facing must be north, east, south, or west: " + value);
+        }
+        return direction;
     }
 
     private static int intField(Map<String, String> fields, String key) {

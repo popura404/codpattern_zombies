@@ -5,11 +5,17 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesAmmoBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesArmorStationData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesInitialSpawnData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesMysteryBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesPowerSwitchData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesSodaMachineData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesUltimateMachineData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
+import com.google.gson.JsonPrimitive;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.JsonOps;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.Bootstrap;
 
 import java.util.LinkedHashMap;
@@ -40,6 +46,85 @@ public final class ZombiesDeployObjectEditorCompatTest {
         failurePathsKeepOriginalObjects();
         weaponWallDeprecatedFieldsIgnoredAndRemovedFromEditorFields();
         weaponWallDuplicateCreatesNonConflictingObjectId();
+        boxFacingSurvivesEditingDuplicationAndPersistence();
+    }
+
+    private static void boxFacingSurvivesEditingDuplicationAndPersistence() {
+        Map<String, String> collectionKeys = Map.of(
+                ZombiesDeployFieldSchema.WEAPON_WALL, "weaponWalls",
+                ZombiesDeployFieldSchema.AMMO_BOX, "ammoBoxes",
+                ZombiesDeployFieldSchema.ARMOR_STATION, "armorStations",
+                ZombiesDeployFieldSchema.SODA_MACHINE, "sodaMachines",
+                ZombiesDeployFieldSchema.ULTIMATE_MACHINE, "ultimateMachines",
+                ZombiesDeployFieldSchema.MYSTERY_BOX, "mysteryBoxes");
+        var codec = ZombiesMapObjects.CODEC.codec();
+        for (var entry : collectionKeys.entrySet()) {
+            String type = entry.getKey();
+            var current = edit(ZombiesMapObjects.EMPTY, ZombiesDeployObjectEditor.Operation.ADD, type, -1,
+                    fields(type, "facing", "east"));
+            requireSuccess(current, type + " directional add");
+            require(boxFacing(current.objects(), type, 0) == Direction.EAST, type + " add must keep facing");
+            for (Direction direction : List.of(Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST)) {
+                var changed = new LinkedHashMap<>(current.fields());
+                changed.put("facing", direction.getName());
+                current = edit(current.objects(), ZombiesDeployObjectEditor.Operation.UPDATE, type, 0, changed);
+                requireSuccess(current, type + " directional update");
+                require(boxFacing(current.objects(), type, 0) == direction, type + " update must keep facing");
+                require(direction.getName().equals(current.fields().get("facing")), type + " fields must export facing");
+                var encoded = codec.encodeStart(JsonOps.INSTANCE, current.objects()).result().orElseThrow();
+                require(codec.parse(JsonOps.INSTANCE, encoded).result().orElseThrow().equals(current.objects()),
+                        type + " map JSON must preserve " + direction);
+            }
+            var duplicate = edit(current.objects(), ZombiesDeployObjectEditor.Operation.DUPLICATE, type, 0, Map.of());
+            requireSuccess(duplicate, type + " directional duplicate");
+            require(boxFacing(duplicate.objects(), type, 1) == Direction.WEST, type + " copy must retain facing");
+
+            var legacy = codec.encodeStart(JsonOps.INSTANCE, current.objects()).result().orElseThrow().getAsJsonObject();
+            legacy.getAsJsonArray(entry.getValue()).get(0).getAsJsonObject().remove("facing");
+            require(boxFacing(codec.parse(JsonOps.INSTANCE, legacy).result().orElseThrow(), type, 0) == Direction.NORTH,
+                    type + " old maps without facing must remain north-facing");
+            var legacyObject = legacy.getAsJsonArray(entry.getValue()).get(0).getAsJsonObject();
+            require(boxCodec(type).parse(JsonOps.INSTANCE, legacyObject).result().isPresent(),
+                    type + " object codec must accept legacy missing facing");
+            for (JsonPrimitive invalid : List.of(new JsonPrimitive("up"), new JsonPrimitive("down"),
+                    new JsonPrimitive("diagonal"), new JsonPrimitive(1))) {
+                var invalidObject = legacyObject.deepCopy();
+                invalidObject.add("facing", invalid);
+                require(boxCodec(type).parse(JsonOps.INSTANCE, invalidObject).error().isPresent(),
+                        type + " object codec must reject explicit invalid facing: " + invalid);
+            }
+            for (String invalid : List.of("up", "down", "diagonal", "")) {
+                var invalidFields = new LinkedHashMap<>(current.fields());
+                invalidFields.put("facing", invalid);
+                var rejected = edit(current.objects(), ZombiesDeployObjectEditor.Operation.UPDATE, type, 0, invalidFields);
+                requireFailure(rejected, "field.invalid_facing", type + " must reject " + invalid);
+                require(rejected.objects() == current.objects(), "invalid facing must preserve all object data");
+            }
+        }
+    }
+
+    private static Direction boxFacing(ZombiesMapObjects objects, String type, int index) {
+        return switch (type) {
+            case ZombiesDeployFieldSchema.WEAPON_WALL -> objects.weaponWalls().get(index).facing();
+            case ZombiesDeployFieldSchema.AMMO_BOX -> objects.ammoBoxes().get(index).facing();
+            case ZombiesDeployFieldSchema.ARMOR_STATION -> objects.armorStations().get(index).facing();
+            case ZombiesDeployFieldSchema.SODA_MACHINE -> objects.sodaMachines().get(index).facing();
+            case ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> objects.ultimateMachines().get(index).facing();
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> objects.mysteryBoxes().get(index).facing();
+            default -> throw new AssertionError("Unexpected box type " + type);
+        };
+    }
+
+    private static Codec<?> boxCodec(String type) {
+        return switch (type) {
+            case ZombiesDeployFieldSchema.WEAPON_WALL -> ZombiesWeaponWallData.CODEC;
+            case ZombiesDeployFieldSchema.AMMO_BOX -> ZombiesAmmoBoxData.CODEC;
+            case ZombiesDeployFieldSchema.ARMOR_STATION -> ZombiesArmorStationData.CODEC;
+            case ZombiesDeployFieldSchema.SODA_MACHINE -> ZombiesSodaMachineData.CODEC;
+            case ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> ZombiesUltimateMachineData.CODEC;
+            case ZombiesDeployFieldSchema.MYSTERY_BOX -> ZombiesMysteryBoxData.CODEC;
+            default -> throw new AssertionError("Unexpected box type " + type);
+        };
     }
 
     private static void initialSpawnsAllowFourAndRejectFifth() {

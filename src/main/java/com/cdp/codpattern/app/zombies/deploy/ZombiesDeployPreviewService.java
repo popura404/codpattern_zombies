@@ -21,6 +21,7 @@ import com.phasetranscrystal.fpsmatch.core.FPSMCore;
 import com.phasetranscrystal.fpsmatch.core.data.AreaData;
 import com.phasetranscrystal.fpsmatch.util.PreviewColorUtil;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -180,10 +181,11 @@ public final class ZombiesDeployPreviewService {
                 PreviewColorUtil.getMapPreviewColor(BuiltInGameModes.ZOMBIES),
                 map.getMapArea()));
 
-        sendCurrentObjectList(player, request, objects);
+        // Draw the editable draft first when it shares a position with its saved/staged object.
         if (draftPreview != null) {
             sendDraft(player, request, draftPreview);
         }
+        sendCurrentObjectList(player, request, objects);
         sendSingletonStatusHint(player, map, request.selectedObjectType(), objects);
         sendNearestObjectHint(player, request, objects);
 
@@ -332,9 +334,23 @@ public final class ZombiesDeployPreviewService {
         BlockPos lookAtPos = optionalBlockPos(fields, "lookAt");
         float yaw = switch (type) {
             case ZombiesDeployFieldSchema.INITIAL, ZombiesDeployFieldSchema.ZOMBIE_SPAWN -> floatField(fields, "yaw");
+            case ZombiesDeployFieldSchema.WEAPON_WALL, ZombiesDeployFieldSchema.AMMO_BOX,
+                    ZombiesDeployFieldSchema.ARMOR_STATION, ZombiesDeployFieldSchema.SODA_MACHINE,
+                    ZombiesDeployFieldSchema.ULTIMATE_MACHINE, ZombiesDeployFieldSchema.MYSTERY_BOX -> boxFacingYaw(fields);
             default -> Float.NaN;
         };
         return DraftPreview.point(dimension, blockPos(fields, "pos"), optionalBlockPos(fields, "interaction"), lookAtPos, yaw);
+    }
+
+    static float boxFacingYaw(Map<String, String> fields) {
+        String value = Objects.requireNonNullElse(fields.get("facing"), "north").trim().toLowerCase(Locale.ROOT);
+        Direction facing = Direction.byName(value);
+        if (facing == null || !facing.getAxis().isHorizontal()) {
+            throw new PreviewParseException(
+                    "preview.invalid_direction",
+                    "field facing must be north, east, south or west: " + value);
+        }
+        return facing.toYRot();
     }
 
     private void sendCurrentObjectList(
@@ -406,7 +422,7 @@ public final class ZombiesDeployPreviewService {
                             objectColor(type, selectedIndex == i),
                             data.dimension(),
                             data.pos(),
-                            Float.NaN);
+                            data.facing().toYRot());
                     sendSlotPointForField(player, key, label, binding, "pos", data.dimension(), data.pos(), selectedIndex == i);
                     sendSlotPointForField(player, key, label, binding, "interaction", data.dimension(), data.interactionPos().orElse(null), selectedIndex == i);
                 }
@@ -423,7 +439,7 @@ public final class ZombiesDeployPreviewService {
                             objectColor(type, selectedIndex == i),
                             data.dimension(),
                             data.pos(),
-                            Float.NaN);
+                            data.facing().toYRot());
                     sendSlotPointForField(player, key, label, binding, "pos", data.dimension(), data.pos(), selectedIndex == i);
                     sendSlotPointForField(player, key, label, binding, "interaction", data.dimension(), data.interactionPos().orElse(null), selectedIndex == i);
                 }
@@ -440,7 +456,7 @@ public final class ZombiesDeployPreviewService {
                             objectColor(type, selectedIndex == i),
                             data.dimension(),
                             data.pos(),
-                            Float.NaN);
+                            data.facing().toYRot());
                     sendSlotPointForField(player, key, label, binding, "pos", data.dimension(), data.pos(), selectedIndex == i);
                     sendSlotPointForField(player, key, label, binding, "interaction", data.dimension(), data.interactionPos().orElse(null), selectedIndex == i);
                 }
@@ -470,7 +486,7 @@ public final class ZombiesDeployPreviewService {
                             objectColor(type, selectedIndex == i),
                             data.dimension(),
                             data.pos(),
-                            Float.NaN);
+                            data.facing().toYRot());
                     sendSlotPointForField(player, key, label, binding, "pos", data.dimension(), data.pos(), selectedIndex == i);
                     sendSlotPointForField(player, key, label, binding, "interaction", data.dimension(), data.interactionPos().orElse(null), selectedIndex == i);
                 }
@@ -487,7 +503,7 @@ public final class ZombiesDeployPreviewService {
                             objectColor(type, selectedIndex == i),
                             data.dimension(),
                             data.pos(),
-                            Float.NaN);
+                            data.facing().toYRot());
                     sendSlotPointForField(player, key, label, binding, "pos", data.dimension(), data.pos(), selectedIndex == i);
                     sendSlotPointForField(player, key, label, binding, "interaction", data.dimension(), data.interactionPos().orElse(null), selectedIndex == i);
                 }
@@ -497,7 +513,7 @@ public final class ZombiesDeployPreviewService {
                     ZombiesMysteryBoxData data = resolved.mysteryBoxes().get(i);
                     String key = getHeldPreviewObjectKey(player, type, i);
                     String label = label(type, data.objectId(), i);
-                    sendPoint(player, key, label, objectColor(type, selectedIndex == i), data.dimension(), data.pos(), Float.NaN);
+                    sendPoint(player, key, label, objectColor(type, selectedIndex == i), data.dimension(), data.pos(), data.facing().toYRot());
                     sendSlotPointForField(player, key, label, binding, "pos", data.dimension(), data.pos(), selectedIndex == i);
                     sendSlotPointForField(player, key, label, binding, "interaction", data.dimension(), data.interactionPos().orElse(null), selectedIndex == i);
                 }
@@ -510,7 +526,7 @@ public final class ZombiesDeployPreviewService {
     private void sendDraft(ServerPlayer player, PreviewRequest request, DraftPreview draftPreview) {
         String type = request.selectedObjectType();
         ZombiesDeployCaptureBinding binding = ZombiesDeployCaptureBinding.forObject(type, request.capturePreset());
-        String key = getHeldPreviewDraftKey(player);
+        String key = getHeldPreviewDraftKey(player, type);
         String label = type + " draft";
         if (draftPreview.area()) {
             sendArea(
@@ -963,7 +979,7 @@ public final class ZombiesDeployPreviewService {
     }
 
     private static String getHeldPreviewPrefix(ServerPlayer player) {
-        return "held_tool_preview:zombies_deploy:" + player.getUUID() + ":";
+        return ZombiesDeployPreviewKeys.prefix(player.getUUID());
     }
 
     private static String getHeldPreviewMapKey(ServerPlayer player) {
@@ -975,7 +991,7 @@ public final class ZombiesDeployPreviewService {
     }
 
     private static String getHeldPreviewObjectKey(ServerPlayer player, String type, int index) {
-        return getHeldPreviewPrefix(player) + "object:" + type + ":" + index;
+        return ZombiesDeployPreviewKeys.objectKey(player.getUUID(), type, index);
     }
 
     private static String getHeldPreviewSingletonKey(ServerPlayer player, String type) {
@@ -986,8 +1002,8 @@ public final class ZombiesDeployPreviewService {
         return getHeldPreviewPrefix(player) + "nearest:" + type;
     }
 
-    private static String getHeldPreviewDraftKey(ServerPlayer player) {
-        return getHeldPreviewPrefix(player) + "draft";
+    private static String getHeldPreviewDraftKey(ServerPlayer player, String type) {
+        return ZombiesDeployPreviewKeys.draftKey(player.getUUID(), type);
     }
 
     private static String getHeldPreviewMapDraftKey(ServerPlayer player) {

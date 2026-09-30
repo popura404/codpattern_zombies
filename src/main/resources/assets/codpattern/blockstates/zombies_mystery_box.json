@@ -1,7 +1,20 @@
 {
   "variants": {
-    "": {
-      "model": "codpattern:block/zombies_mystery_box"
+    "facing=north": {
+      "model": "codpattern:block/zombies_mystery_box",
+      "y": 0
+    },
+    "facing=east": {
+      "model": "codpattern:block/zombies_mystery_box",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "codpattern:block/zombies_mystery_box",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "codpattern:block/zombies_mystery_box",
+      "y": 270
     }
   }
 }

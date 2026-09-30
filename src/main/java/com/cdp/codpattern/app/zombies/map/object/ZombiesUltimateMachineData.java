@@ -3,6 +3,7 @@ package com.cdp.codpattern.app.zombies.map.object;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 
@@ -16,7 +17,8 @@ public record ZombiesUltimateMachineData(
         boolean requiresPower,
         ResourceKey<Level> dimension,
         BlockPos pos,
-        Optional<BlockPos> interactionPos
+        Optional<BlockPos> interactionPos,
+        Direction facing
 ) {
     public static final Codec<ZombiesUltimateMachineData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.STRING.fieldOf("objectId").forGetter(ZombiesUltimateMachineData::objectId),
@@ -27,8 +29,21 @@ public record ZombiesUltimateMachineData(
             Codec.BOOL.optionalFieldOf("requiresPower", true).forGetter(ZombiesUltimateMachineData::requiresPower),
             ZombiesObjectCodecs.DIMENSION_CODEC.fieldOf("dimension").forGetter(ZombiesUltimateMachineData::dimension),
             BlockPos.CODEC.optionalFieldOf("pos", BlockPos.ZERO).forGetter(ZombiesUltimateMachineData::pos),
-            BlockPos.CODEC.optionalFieldOf("interactionPos").forGetter(ZombiesUltimateMachineData::interactionPos)
+            BlockPos.CODEC.optionalFieldOf("interactionPos").forGetter(ZombiesUltimateMachineData::interactionPos),
+            ZombiesObjectCodecs.OPTIONAL_HORIZONTAL_FACING.forGetter(ZombiesUltimateMachineData::facing)
     ).apply(instance, ZombiesUltimateMachineData::new));
+
+    public ZombiesUltimateMachineData(
+            String objectId,
+            int maxUpgradeLevel,
+            Map<String, UpgradeLevelData> levels,
+            boolean requiresPower,
+            ResourceKey<Level> dimension,
+            BlockPos pos,
+            Optional<BlockPos> interactionPos
+    ) {
+        this(objectId, maxUpgradeLevel, levels, requiresPower, dimension, pos, interactionPos, Direction.NORTH);
+    }
 
     public ZombiesUltimateMachineData {
         objectId = objectId == null ? "" : objectId.trim();
@@ -36,6 +51,7 @@ public record ZombiesUltimateMachineData(
         dimension = dimension == null ? Level.OVERWORLD : dimension;
         pos = pos == null ? BlockPos.ZERO : pos;
         interactionPos = interactionPos == null ? Optional.empty() : interactionPos;
+        facing = ZombiesObjectCodecs.horizontalDirection(facing);
     }
 
     public record UpgradeLevelData(

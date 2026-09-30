@@ -1,7 +1,20 @@
 {
   "variants": {
-    "": {
-      "model": "codpattern:block/zombies_weapon_wall_box"
+    "facing=north": {
+      "model": "codpattern:block/zombies_weapon_wall_box",
+      "y": 0
+    },
+    "facing=east": {
+      "model": "codpattern:block/zombies_weapon_wall_box",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "codpattern:block/zombies_weapon_wall_box",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "codpattern:block/zombies_weapon_wall_box",
+      "y": 270
     }
   }
 }

@@ -290,6 +290,13 @@ public class ZombiesDeployToolScreen extends Screen {
                     session.fields.put(key, String.join(delimiter(key), values));
                     withCommitted(this::rebuild);
                 });
+            } else if (key.equals("facing")) {
+                List<String> directions = List.of("north", "east", "south", "west");
+                String facing = session.fields.getOrDefault(key, "north");
+                button(tr("facing." + facing), inputX, y, Math.min(inputWidth, 96), () -> {
+                    session.fields.put(key, directions.get((directions.indexOf(facing) + 1) % directions.size()));
+                    withCommitted(this::rebuild);
+                }).active = schema.editable() && !session.busy();
             } else if (schema.type() == ZombiesDeployFieldSchema.FieldType.BOOLEAN) {
                 boolean checked = Boolean.parseBoolean(session.fields.get(key)) || "1".equals(session.fields.get(key));
                 button(tr(checked ? "editor.on" : "editor.off"), inputX, y, Math.min(inputWidth, 96), () -> {
@@ -399,7 +406,7 @@ public class ZombiesDeployToolScreen extends Screen {
     }
     private static int group(String key) {
         if (key.equals("objectId") || key.equals("name")) { return 0; }
-        if (key.equals("dimension") || key.equals("yaw") || key.equals("pitch") || key.matches("(?:pos|areaFrom|areaTo|interaction)[XYZ]")) { return 1; }
+        if (key.equals("dimension") || key.equals("facing") || key.equals("yaw") || key.equals("pitch") || key.matches("(?:pos|areaFrom|areaTo|interaction)[XYZ]")) { return 1; }
         return 2;
     }
     private static String delimiter(String key) { return key.equals("pricesByWeaponLevel") ? "," : ";"; }

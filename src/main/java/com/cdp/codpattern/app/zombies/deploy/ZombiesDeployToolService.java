@@ -15,26 +15,22 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesMysteryBoxData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
 import com.cdp.codpattern.app.zombies.service.ZombiesMapOccupancyService;
+import com.cdp.codpattern.app.zombies.service.ZombiesPurchasableBlockService;
 import com.cdp.codpattern.app.zombies.validation.ZombiesMapValidationProfile;
 import com.cdp.codpattern.app.zombies.validation.ZombiesMapValidationReport;
 import com.cdp.codpattern.app.zombies.validation.ZombiesMapValidator;
 import com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue;
 import com.cdp.codpattern.compat.fpsmatch.data.CodMapPersistence;
 import com.cdp.codpattern.compat.fpsmatch.map.zombies.ZombiesMap;
-import com.cdp.codpattern.common.block.CodPatternBlockRegister;
 import com.phasetranscrystal.fpsmatch.common.service.MapCreationService;
 import com.phasetranscrystal.fpsmatch.common.item.zombies.ZombiesDeployTool;
 import com.phasetranscrystal.fpsmatch.core.FPSMCore;
 import com.phasetranscrystal.fpsmatch.core.data.AreaData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -202,6 +198,15 @@ public final class ZombiesDeployToolService {
         }
         DraftSession session = draftSessions.get(sessionKey(player, draft.selectedMap()));
         if (session == null || Objects.equals(session.currentObjects(), map.objects())) {
+            // A clean draft can still have missing world blocks (for example an
+            // older deployment or a box removed after the previous save).
+            try {
+                ZombiesPurchasableBlockService.synchronize(
+                        map.objects(), map.objects(), player.serverLevel().getServer()::getLevel);
+            } catch (RuntimeException exception) {
+                return failure(player, stack, draft, "save_failed_rolled_back",
+                        "message.codpattern.zombies.deploy.save_failed_rollback", map.getMapName());
+            }
             ZombiesDeployTool.saveDraft(stack, draft);
             boolean invalid = validationLines(map, currentObjects, ZombiesDeployFieldSchema.PROFILE_MVP3).stream()
                     .anyMatch(line -> "error".equalsIgnoreCase(line.severity()));
@@ -220,25 +225,15 @@ public final class ZombiesDeployToolService {
             return ZombiesDeployServiceResult.failure("draft.revision_conflict", "message.codpattern.zombies.deploy.refreshed", result, "");
         }
         ZombiesMapObjects previous = session.baseObjects();
-        PlacementRollback placementRollback = null;
+        ZombiesPurchasableBlockService.PlacementChanges placementChanges = null;
         try {
+            placementChanges = ZombiesPurchasableBlockService.synchronize(
+                    previous, session.currentObjects(), player.serverLevel().getServer()::getLevel);
             map.applyObjects(session.currentObjects());
-            for (String type : List.of(
-                    ZombiesDeployFieldSchema.WEAPON_WALL,
-                    ZombiesDeployFieldSchema.AMMO_BOX,
-                    ZombiesDeployFieldSchema.ARMOR_STATION,
-                    ZombiesDeployFieldSchema.POWER_SWITCH,
-                    ZombiesDeployFieldSchema.SODA_MACHINE,
-                    ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
-                    ZombiesDeployFieldSchema.MYSTERY_BOX)) {
-                placementRollback = appendPlacementRollback(
-                        placementRollback,
-                        syncPurchasableBlocks(player.serverLevel(), type, previous, session.currentObjects(), ZombiesDeployObjectEditor.Operation.UPDATE));
-            }
-            PlacementRollback rollback = placementRollback;
+            ZombiesPurchasableBlockService.PlacementChanges rollback = placementChanges;
             CodMapPersistence.saveMapOrRollback(map, () -> {
                 map.applyObjects(previous);
-                restorePlacement(rollback);
+                rollback.rollback();
             });
             map.syncToClient();
             session.markSaved();
@@ -248,7 +243,9 @@ public final class ZombiesDeployToolService {
                     "draft.saved", "");
         } catch (RuntimeException exception) {
             map.applyObjects(previous);
-            restorePlacement(placementRollback);
+            if (placementChanges != null) {
+                placementChanges.rollback();
+            }
             return failure(player, stack, draft, "save_failed_rolled_back", "message.codpattern.zombies.deploy.save_failed_rollback", map.getMapName());
         }
     }
@@ -781,6 +778,7 @@ public final class ZombiesDeployToolService {
                 if (leftClick) {
                     setPosition(fields, "pos", placementPos);
                     setPosition(fields, "interaction", placementPos);
+                    fields.put("facing", player.getDirection().getOpposite().getName());
                 }
             }
             case ZombiesDeployFieldSchema.POWER_SWITCH -> {
@@ -1228,6 +1226,7 @@ public final class ZombiesDeployToolService {
             setPosition(fields, "areaFrom", pos);
             setPosition(fields, "areaTo", pos);
             fields.computeIfPresent("yaw", (key, value) -> Float.toString(player.getYRot()));
+            fields.computeIfPresent("facing", (key, value) -> player.getDirection().getOpposite().getName());
         }
         return fields;
     }
@@ -2244,252 +2243,6 @@ public final class ZombiesDeployToolService {
         return dimension == null || dimension.location() == null ? "" : dimension.location().toString();
     }
 
-    private boolean shouldSyncPurchasableBlock(
-            ServerPlayer player,
-            ZombiesDeployObjectEditor.Operation operation,
-            ZombiesDeployDraft draft,
-            ZombiesMapObjects previousObjects,
-            ZombiesMapObjects objects
-    ) {
-        String type = ZombiesDeployFieldSchema.normalizeObjectType(draft.objectType());
-        if (player == null || !isPurchasableBlockObject(type)) {
-            return false;
-        }
-        ZombiesDeployObjectEditor.Operation resolvedOperation = operation == null
-                ? ZombiesDeployObjectEditor.Operation.ADD
-                : operation;
-        if (resolvedOperation != ZombiesDeployObjectEditor.Operation.ADD
-                && resolvedOperation != ZombiesDeployObjectEditor.Operation.UPDATE
-                && resolvedOperation != ZombiesDeployObjectEditor.Operation.DELETE
-                && resolvedOperation != ZombiesDeployObjectEditor.Operation.CLEAR) {
-            return false;
-        }
-        ZombiesMapObjects before = previousObjects == null ? ZombiesMapObjects.EMPTY : previousObjects;
-        ZombiesMapObjects after = objects == null ? ZombiesMapObjects.EMPTY : objects;
-        return !purchasableObjects(before, type).isEmpty() || !purchasableObjects(after, type).isEmpty();
-    }
-
-    private PlacementRollback syncPurchasableBlocks(
-            ServerLevel level,
-            String objectType,
-            ZombiesMapObjects previousObjects,
-            ZombiesMapObjects nextObjects,
-            ZombiesDeployObjectEditor.Operation operation
-    ) {
-        if (level == null || !isPurchasableBlockObject(objectType)) {
-            return null;
-        }
-        List<PurchasablePlacement> previous = purchasableObjects(previousObjects, objectType);
-        List<PurchasablePlacement> next = purchasableObjects(nextObjects, objectType);
-        PlacementRollback rollback = null;
-        for (PurchasablePlacement previousPlacement : previous) {
-            if (!isCurrentLevelPlacement(level, previousPlacement)) {
-                continue;
-            }
-            Optional<PurchasablePlacement> sameObjectNext = next.stream()
-                    .filter(candidate -> sameObject(previousPlacement, candidate))
-                    .findFirst();
-            if (sameObjectNext.isPresent() && samePlacement(previousPlacement, sameObjectNext.get())) {
-                continue;
-            }
-            if (isPositionStillUsedByOther(next, previousPlacement)) {
-                continue;
-            }
-            rollback = appendPlacementRollback(
-                    rollback,
-                    removeManagedPurchasableBlock(level, previousPlacement.pos(), previousPlacement.block()));
-        }
-        if (operation != ZombiesDeployObjectEditor.Operation.DELETE
-                && operation != ZombiesDeployObjectEditor.Operation.CLEAR) {
-            for (PurchasablePlacement nextPlacement : next) {
-                if (!isCurrentLevelPlacement(level, nextPlacement)) {
-                    continue;
-                }
-                Optional<PurchasablePlacement> sameObjectPrevious = previous.stream()
-                        .filter(candidate -> sameObject(candidate, nextPlacement))
-                        .findFirst();
-                boolean sameObjectUpdate = sameObjectPrevious.isPresent();
-                if (sameObjectPrevious.isPresent() && samePlacement(sameObjectPrevious.get(), nextPlacement)) {
-                    continue;
-                }
-                rollback = appendPlacementRollback(
-                        rollback,
-                        placePurchasableBlock(level, nextPlacement, sameObjectUpdate));
-            }
-        }
-        return rollback;
-    }
-
-    private boolean isPurchasableBlockObject(String objectType) {
-        return switch (ZombiesDeployFieldSchema.normalizeObjectType(objectType)) {
-            case ZombiesDeployFieldSchema.WEAPON_WALL,
-                 ZombiesDeployFieldSchema.AMMO_BOX,
-                 ZombiesDeployFieldSchema.ARMOR_STATION,
-                 ZombiesDeployFieldSchema.SODA_MACHINE,
-                 ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
-                 ZombiesDeployFieldSchema.POWER_SWITCH,
-                 ZombiesDeployFieldSchema.MYSTERY_BOX -> true;
-            default -> false;
-        };
-    }
-
-    private List<PurchasablePlacement> purchasableObjects(ZombiesMapObjects objects, String objectType) {
-        ZombiesMapObjects resolved = objects == null ? ZombiesMapObjects.EMPTY : objects;
-        return switch (ZombiesDeployFieldSchema.normalizeObjectType(objectType)) {
-            case ZombiesDeployFieldSchema.WEAPON_WALL -> resolved.weaponWalls().stream()
-                    .map(wall -> new PurchasablePlacement(
-                            ZombiesDeployFieldSchema.WEAPON_WALL,
-                            wall.objectId(),
-                            wall.dimension(),
-                            wall.pos(),
-                            CodPatternBlockRegister.ZOMBIES_WEAPON_WALL_BOX.get()))
-                    .toList();
-            case ZombiesDeployFieldSchema.AMMO_BOX -> resolved.ammoBoxes().stream()
-                    .map(ammoBox -> new PurchasablePlacement(
-                            ZombiesDeployFieldSchema.AMMO_BOX,
-                            ammoBox.objectId(),
-                            ammoBox.dimension(),
-                            ammoBox.pos(),
-                            CodPatternBlockRegister.ZOMBIES_AMMO_BOX.get()))
-                    .toList();
-            case ZombiesDeployFieldSchema.ARMOR_STATION -> resolved.armorStations().stream()
-                    .map(armorStation -> new PurchasablePlacement(
-                            ZombiesDeployFieldSchema.ARMOR_STATION,
-                            armorStation.objectId(),
-                            armorStation.dimension(),
-                            armorStation.pos(),
-                            CodPatternBlockRegister.ZOMBIES_ARMOR_STATION_BOX.get()))
-                    .toList();
-            case ZombiesDeployFieldSchema.SODA_MACHINE -> resolved.sodaMachines().stream()
-                    .map(sodaMachine -> new PurchasablePlacement(
-                            ZombiesDeployFieldSchema.SODA_MACHINE,
-                            sodaMachine.objectId(),
-                            sodaMachine.dimension(),
-                            sodaMachine.pos(),
-                            CodPatternBlockRegister.ZOMBIES_SODA_MACHINE_BOX.get()))
-                    .toList();
-            case ZombiesDeployFieldSchema.ULTIMATE_MACHINE -> resolved.ultimateMachines().stream()
-                    .map(ultimateMachine -> new PurchasablePlacement(
-                            ZombiesDeployFieldSchema.ULTIMATE_MACHINE,
-                            ultimateMachine.objectId(),
-                            ultimateMachine.dimension(),
-                            ultimateMachine.pos(),
-                            CodPatternBlockRegister.ZOMBIES_ULTIMATE_MACHINE_BOX.get()))
-                    .toList();
-            case ZombiesDeployFieldSchema.MYSTERY_BOX -> resolved.mysteryBoxes().stream()
-                    .map(box -> new PurchasablePlacement(
-                            ZombiesDeployFieldSchema.MYSTERY_BOX,
-                            box.objectId(), box.dimension(), box.pos(),
-                            CodPatternBlockRegister.ZOMBIES_MYSTERY_BOX.get()))
-                    .toList();
-            case ZombiesDeployFieldSchema.POWER_SWITCH -> resolved.powerSwitch()
-                    .map(powerSwitch -> List.of(new PurchasablePlacement(
-                            ZombiesDeployFieldSchema.POWER_SWITCH,
-                            powerSwitch.objectId(),
-                            powerSwitch.dimension(),
-                            powerSwitch.pos(),
-                            CodPatternBlockRegister.ZOMBIES_POWER_SWITCH.get())))
-                    .orElseGet(List::of);
-            default -> List.of();
-        };
-    }
-
-    private boolean isCurrentLevelPlacement(ServerLevel level, PurchasablePlacement placement) {
-        return level != null
-                && placement != null
-                && placement.dimension() != null
-                && level.dimension().equals(placement.dimension());
-    }
-
-    private boolean sameObject(PurchasablePlacement first, PurchasablePlacement second) {
-        return first != null
-                && second != null
-                && Objects.equals(first.objectType(), second.objectType())
-                && Objects.equals(first.objectId(), second.objectId());
-    }
-
-    private boolean samePlacement(PurchasablePlacement first, PurchasablePlacement second) {
-        return first != null
-                && second != null
-                && Objects.equals(first.dimension(), second.dimension())
-                && Objects.equals(first.pos(), second.pos())
-                && first.block() == second.block();
-    }
-
-    private boolean isPositionStillUsedByOther(List<PurchasablePlacement> placements, PurchasablePlacement removed) {
-        if (placements == null || removed == null) {
-            return false;
-        }
-        for (PurchasablePlacement placement : placements) {
-            if (placement == null || sameObject(removed, placement)) {
-                continue;
-            }
-            if (placement.block() == removed.block()
-                    && Objects.equals(placement.dimension(), removed.dimension())
-                    && Objects.equals(placement.pos(), removed.pos())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private PlacementRollback placePurchasableBlock(
-            ServerLevel level,
-            PurchasablePlacement placement,
-            boolean sameObjectUpdate
-    ) {
-        if (level == null || placement == null || placement.pos() == null || placement.block() == null) {
-            return null;
-        }
-        BlockState previousState = level.getBlockState(placement.pos());
-        if (!previousState.isAir()
-                && !(sameObjectUpdate && previousState.getBlock() == placement.block())) {
-            throw new RuntimeException("Cannot place zombies purchasable block over existing block "
-                    + blockId(previousState) + " at " + formatPos(placement.pos()));
-        }
-        boolean placed = level.setBlock(placement.pos(), placement.block().defaultBlockState(), Block.UPDATE_ALL);
-        if (!placed) {
-            throw new RuntimeException("Failed to place zombies purchasable block at " + formatPos(placement.pos()));
-        }
-        return new PlacementRollback(level, placement.pos(), previousState);
-    }
-
-    private PlacementRollback removeManagedPurchasableBlock(ServerLevel level, BlockPos pos, Block expectedBlock) {
-        if (level == null || pos == null || expectedBlock == null) {
-            return null;
-        }
-        BlockState previousState = level.getBlockState(pos);
-        if (previousState.getBlock() != expectedBlock) {
-            return null;
-        }
-        boolean removed = level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-        if (!removed) {
-            throw new RuntimeException("Failed to remove stale zombies purchasable block at " + formatPos(pos));
-        }
-        return new PlacementRollback(level, pos, previousState);
-    }
-
-    private PlacementRollback appendPlacementRollback(
-            PlacementRollback current,
-            PlacementRollback next
-    ) {
-        if (next == null) {
-            return current;
-        }
-        if (current == null) {
-            return next;
-        }
-        return new PlacementRollback(next.level(), next.pos(), next.previousState(), current);
-    }
-
-    private void restorePlacement(PlacementRollback rollback) {
-        if (rollback == null || rollback.level() == null || rollback.pos() == null || rollback.previousState() == null) {
-            return;
-        }
-        rollback.level().setBlock(rollback.pos(), rollback.previousState(), Block.UPDATE_ALL);
-        restorePlacement(rollback.next());
-    }
-
     private void setPosition(Map<String, String> fields, String prefix, BlockPos pos) {
         if (!fields.containsKey(prefix + "X")) {
             return;
@@ -2566,10 +2319,6 @@ public final class ZombiesDeployToolService {
         return pos == null ? "-" : pos.getX() + ", " + pos.getY() + ", " + pos.getZ();
     }
 
-    private String blockId(BlockState state) {
-        return state == null ? "" : net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-    }
-
     private record IssueTarget(
             boolean mapStage,
             String workflowStep,
@@ -2616,32 +2365,6 @@ public final class ZombiesDeployToolService {
 
         private String label() {
             return role.isBlank() ? objectType + "[" + index + "]" : objectType + "[" + index + "]." + role;
-        }
-    }
-
-    private record PurchasablePlacement(
-            String objectType,
-            String objectId,
-            ResourceKey<Level> dimension,
-            BlockPos pos,
-            Block block
-    ) {
-        private PurchasablePlacement {
-            objectType = ZombiesDeployFieldSchema.normalizeObjectType(objectType);
-            objectId = Objects.requireNonNullElse(objectId, "").trim();
-            pos = pos == null ? BlockPos.ZERO : pos;
-            Objects.requireNonNull(block, "block");
-        }
-    }
-
-    private record PlacementRollback(
-            ServerLevel level,
-            BlockPos pos,
-            BlockState previousState,
-            PlacementRollback next
-    ) {
-        private PlacementRollback(ServerLevel level, BlockPos pos, BlockState previousState) {
-            this(level, pos, previousState, null);
         }
     }
 

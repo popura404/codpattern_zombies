@@ -470,37 +470,42 @@ public final class ZombiesGroundNavigationService {
         @Override
         public boolean canUse() {
             long now = mob.level().getGameTime();
-            if (now < state.nextRecovery || !mob.onGround() || !eligible(mob, mob.getTarget())
-                    || specialAction(mob) || engaged(mob, mob.getTarget())) {
+            LivingEntity target = mob.getTarget();
+            if (now < state.nextRecovery || !mob.onGround() || !eligible(mob, target)
+                    || specialAction(mob) || engaged(mob, target)) {
                 return false;
             }
             if (active() && now < deadline) {
                 return true; // Resume the same attempt, including its fourth round, after a native action.
             }
-            if (nativeProgressReady(now)) {
+            if (nativeProgressReady(now, target)) {
                 return true; // Verify a native escape too; its next obstacle must not inherit old attempts.
             }
             return now - Math.max(state.progress.getLastProgressGameTime(), state.lastEngagement) >= STALL_TICKS;
         }
 
-        private boolean nativeProgressReady(long now) {
+        private boolean nativeProgressReady(long now, LivingEntity target) {
             Path path = mob.getNavigation().getPath();
-            return state.attempts > 0 && state.nativeProgressOrigin != null
+            return target != null && state.attempts > 0 && state.nativeProgressOrigin != null
                     && now - state.nativeProgressSince >= MOVEMENT_HANDOFF_TICKS
                     && now - state.progress.getLastProgressGameTime() < STALL_TICKS
                     && mob.position().distanceToSqr(state.nativeProgressOrigin) >= 4.0D
                     && path != null && path.canReach() && !path.isDone()
-                    && path.getTarget().getX() == mob.getTarget().getBlockX()
-                    && path.getTarget().getZ() == mob.getTarget().getBlockZ()
-                    && Math.abs(path.getTarget().getY() - mob.getTarget().getBlockY()) <= 1;
+                    && path.getTarget().getX() == target.getBlockX()
+                    && path.getTarget().getZ() == target.getBlockZ()
+                    && Math.abs(path.getTarget().getY() - target.getBlockY()) <= 1;
         }
 
         @Override
         public boolean canContinueToUse() {
+            return canContinueToUse(mob.getTarget());
+        }
+
+        private boolean canContinueToUse(LivingEntity target) {
             long now = mob.level().getGameTime();
-            return active() && now < deadline && eligible(mob, mob.getTarget())
-                    && mob.getTarget().getUUID().equals(routeTarget)
-                    && !specialAction(mob) && !engaged(mob, mob.getTarget())
+            return active() && now < deadline && eligible(mob, target)
+                    && target.getUUID().equals(routeTarget)
+                    && !specialAction(mob) && !engaged(mob, target)
                     && !(now >= handoffAt && !blockedCreeperSwell(mob));
         }
 
@@ -509,10 +514,22 @@ public final class ZombiesGroundNavigationService {
         @Override
         public void start() {
             long now = mob.level().getGameTime();
-            UUID target = mob.getTarget().getUUID();
+            LivingEntity target = mob.getTarget();
+            // GoalSelector stops conflicting goals after canUse(); their stop() may clear the target.
+            if (!eligible(mob, target)) {
+                phase = Phase.IDLE;
+                route = null;
+                query = null;
+                routeTarget = null;
+                waitingForSearch.remove(mob.getUUID());
+                mob.getNavigation().stop();
+                diagnose("target-unavailable", now, null);
+                return;
+            }
+            UUID targetId = target.getUUID();
             if (active() && now < deadline) {
-                if (!target.equals(routeTarget)) {
-                    routeTarget = target;
+                if (!targetId.equals(routeTarget)) {
+                    routeTarget = targetId;
                     route = null;
                     query = null;
                     phase = Phase.TARGET;
@@ -532,7 +549,7 @@ public final class ZombiesGroundNavigationService {
                 diagnose("resume", now, route);
                 return;
             }
-            Path nativeRoute = nativeProgressReady(now) ? mob.getNavigation().getPath() : null;
+            Path nativeRoute = nativeProgressReady(now, target) ? mob.getNavigation().getPath() : null;
             phase = Phase.TARGET;
             deadline = now + RECOVERY_TICKS;
             handoffAt = now + MOVEMENT_HANDOFF_TICKS;
@@ -551,7 +568,7 @@ public final class ZombiesGroundNavigationService {
             if (state.attempts == 0) {
                 heading = Vec3.ZERO;
             }
-            routeTarget = target;
+            routeTarget = targetId;
             route = null;
             query = null;
             mob.getNavigation().stop();
@@ -561,7 +578,7 @@ public final class ZombiesGroundNavigationService {
                 routeOrigin = state.nativeProgressOrigin;
                 if (phase == Phase.VALIDATE) {
                     // Confirm the current physical target surface inside the shared geometry budget.
-                    query = new SearchQuery(mob.getTarget().position(), RouteKind.TARGET, mob.getTarget());
+                    query = new SearchQuery(target.position(), RouteKind.TARGET, target);
                 }
             }
             diagnose(probeOnly ? "recheck" : "stalled", now, null);
@@ -569,11 +586,11 @@ public final class ZombiesGroundNavigationService {
 
         @Override
         public void tick() {
-            if (!canContinueToUse()) {
+            LivingEntity target = mob.getTarget();
+            if (!canContinueToUse(target)) {
                 return;
             }
             long now = mob.level().getGameTime();
-            LivingEntity target = mob.getTarget();
             mob.getLookControl().setLookAt(target, 30.0F, 30.0F);
             switch (phase) {
                 case TARGET -> {
@@ -581,11 +598,11 @@ public final class ZombiesGroundNavigationService {
                         beginQuery(target.position(), RouteKind.TARGET, target);
                     }
                 }
-                case LOCAL -> nextLocalQuery();
-                case ALTERNATIVE -> nextAlternativeQuery(now);
+                case LOCAL -> nextLocalQuery(target);
+                case ALTERNATIVE -> nextAlternativeQuery(target);
                 case SEARCH -> searchNext(now);
                 case VALIDATE -> validateRoute(now);
-                case FOLLOW -> followRoute(now);
+                case FOLLOW -> followRoute(now, target);
                 default -> { }
             }
         }
@@ -641,13 +658,13 @@ public final class ZombiesGroundNavigationService {
             phase = Phase.SEARCH;
         }
 
-        private void nextLocalQuery() {
+        private void nextLocalQuery(LivingEntity target) {
             if (probeOnly || candidateIndex >= MAX_LOCAL_CANDIDATES) {
                 phase = probeOnly ? Phase.DONE : Phase.ALTERNATIVE;
                 return;
             }
             if (pointIndex >= candidates.size()) {
-                candidates = localCandidates();
+                candidates = localCandidates(target);
                 pointIndex = 0;
             }
             if (candidates.isEmpty()) {
@@ -667,9 +684,9 @@ public final class ZombiesGroundNavigationService {
             beginQuery(feet, RouteKind.LOCAL, null);
         }
 
-        private List<Vec3> localCandidates() {
+        private List<Vec3> localCandidates(LivingEntity target) {
             List<Vec3> points = new ArrayList<>(DIRECTIONS.length);
-            Vec3 towards = mob.getTarget().position().subtract(origin).multiply(1, 0, 1).normalize();
+            Vec3 towards = target.position().subtract(origin).multiply(1, 0, 1).normalize();
             int radius = mob.getType() == EntityType.SILVERFISH ? 2 : (state.attempts > 1 ? 4 : 2);
             for (int i = 0; i < DIRECTIONS.length; i++) {
                 int[] direction = DIRECTIONS[Math.floorMod(i + mob.getId(), DIRECTIONS.length)];
@@ -682,13 +699,13 @@ public final class ZombiesGroundNavigationService {
             return points;
         }
 
-        private void nextAlternativeQuery(long now) {
+        private void nextAlternativeQuery(LivingEntity target) {
             if (probeOnly || alternativesDone) {
                 phase = candidateIndex < MAX_LOCAL_CANDIDATES && !probeOnly ? Phase.LOCAL : Phase.DONE;
                 return;
             }
             List<ServerPlayer> alternatives = targetsFor(mob).stream()
-                    .filter(player -> player != mob.getTarget() && eligible(mob, player))
+                    .filter(player -> player != target && eligible(mob, player))
                     .sorted(Comparator.comparingDouble(mob::distanceToSqr)).limit(3).toList();
             if (alternativeIndex >= alternatives.size()) {
                 alternativesDone = true;
@@ -840,7 +857,7 @@ public final class ZombiesGroundNavigationService {
             diagnose(routeKind == RouteKind.LOCAL ? "local-route" : "target-route", now, route);
         }
 
-        private void followRoute(long now) {
+        private void followRoute(long now, LivingEntity target) {
             if (route.isDone()) {
                 finishRoute(now);
                 return;
@@ -873,7 +890,7 @@ public final class ZombiesGroundNavigationService {
                 if (!takeGeometryCheck(now)) {
                     return;
                 }
-                if (!ZombiesNavigationGeometry.targetCandidates(mob, mob.getTarget().position()).contains(route.getTarget())) {
+                if (!ZombiesNavigationGeometry.targetCandidates(mob, target.position()).contains(route.getTarget())) {
                     route = null;
                     phase = Phase.TARGET;
                     mob.getNavigation().stop();
@@ -944,12 +961,13 @@ public final class ZombiesGroundNavigationService {
         @Override
         public void stop() {
             long now = mob.level().getGameTime();
+            LivingEntity target = mob.getTarget();
             waitingForSearch.remove(mob.getUUID());
-            if (engaged(mob, mob.getTarget())) {
+            if (engaged(mob, target)) {
                 state.recovered();
                 phase = Phase.DONE;
             }
-            if (active() && now < deadline && eligible(mob, mob.getTarget())) {
+            if (active() && now < deadline && eligible(mob, target)) {
                 mob.getNavigation().stop();
                 state.nextRecovery = now + 1;
                 diagnose("yield", now, route);
@@ -957,7 +975,7 @@ public final class ZombiesGroundNavigationService {
             }
             boolean advancing = phase == Phase.FOLLOW && route != null && !mob.getNavigation().isDone()
                     && now - state.progress.getLastProgressGameTime() < STALL_TICKS
-                    && eligible(mob, mob.getTarget()) && mob.getTarget().getUUID().equals(routeTarget)
+                    && eligible(mob, target) && target.getUUID().equals(routeTarget)
                     && !specialAction(mob);
             boolean successful = state.attempts == 0 && routeKind != RouteKind.LOCAL && route != null;
             if (!successful && !advancing) {

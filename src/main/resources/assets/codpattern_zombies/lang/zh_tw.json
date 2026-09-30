@@ -1,4 +1,5 @@
 {
+    "screen.codpattern.zombies_room.create_tool_hint": "使用殭屍部署工具建立地圖",
     "block.codpattern.zombies_power_switch": "殭屍電源開關",
     "block.codpattern.zombies_red_player_barrier": "殭屍紅色玩家屏障",
     "item.codpattern.zombies_red_player_barrier": "%1$s紅色玩家屏障",

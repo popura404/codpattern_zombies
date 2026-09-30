@@ -1,4 +1,5 @@
 {
+    "screen.codpattern.zombies_room.create_tool_hint": "Use the Zombies Deploy Tool to create a map",
     "block.codpattern.zombies_power_switch": "Zombies Power Switch",
     "block.codpattern.zombies_red_player_barrier": "Zombies Red Player Barrier",
     "item.codpattern.zombies_red_player_barrier": "%1$s Red Player Barrier",

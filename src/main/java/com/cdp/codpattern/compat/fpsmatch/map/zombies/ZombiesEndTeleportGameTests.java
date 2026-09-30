@@ -73,11 +73,12 @@ public final class ZombiesEndTeleportGameTests {
             helper.assertTrue(toolMap.matchEndTeleportPoint().orElseThrow().equals(first), "later defaults do not overwrite maps");
 
             var source = server.createCommandSourceStack().withPermission(4);
-            int command = server.getCommands().getDispatcher().execute("cdp map create zombies " + prefix + "-command 0 0 0 4 4 4", source);
-            helper.assertTrue(command == 1, "command creates Zombies map");
-            var commandMap = (ZombiesMap) core.getMapByTypeWithName("zombies", prefix + "-command").orElseThrow();
-            maps.add(commandMap);
-            helper.assertTrue(commandMap.matchEndTeleportPoint().orElseThrow().equals(second), "command copies latest default");
+            var createdWithLatestDefault = ZombiesDeployToolService.instance().createMap(admin, deploy, ZombiesDeployDraft.empty()
+                    .withMapDraft(prefix + "-latest-default", BlockPos.ZERO, new BlockPos(4, 4, 4)));
+            helper.assertTrue(createdWithLatestDefault.success(), "second Zombies deployment succeeds: " + createdWithLatestDefault.code());
+            var latestDefaultMap = (ZombiesMap) core.getMapByTypeWithName("zombies", prefix + "-latest-default").orElseThrow();
+            maps.add(latestDefaultMap);
+            helper.assertTrue(latestDefaultMap.matchEndTeleportPoint().orElseThrow().equals(second), "deployment copies latest default");
 
             var before = EndTeleportService.read(admin, room);
             var request = MapAdminRequestPacket.teleport(MapAdminRequestPacket.Operation.SAVE_END_POINT,

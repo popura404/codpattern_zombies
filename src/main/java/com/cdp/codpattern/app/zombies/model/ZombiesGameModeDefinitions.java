@@ -31,7 +31,7 @@ public final class ZombiesGameModeDefinitions {
                 List.of(),
                 "mode.codpattern.zombies",
                 "screen.codpattern.zombies_room.header",
-                "/cdp map create zombies <名称> <起点> <终点>",
+                "screen.codpattern.zombies_room.create_tool_hint",
                 teams(),
                 ModeFamily.PVE_COOP,
                 TeamPolicy.SINGLE_COOP_TEAM,

@@ -1,0 +1,18 @@
+{
+  "wave_intro_normal": {
+    "sounds": [
+      {
+        "name": "codpattern_zombies:zombies/beginorm",
+        "stream": true
+      }
+    ]
+  },
+  "wave_intro_boss": {
+    "sounds": [
+      {
+        "name": "codpattern_zombies:zombies/beginboss1",
+        "stream": true
+      }
+    ]
+  }
+}

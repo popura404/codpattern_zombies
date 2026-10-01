@@ -3,6 +3,7 @@ package com.cdp.codpattern.app.zombies.bootstrap;
 import com.cdp.codpattern.app.match.ModeModules;
 import com.cdp.codpattern.app.zombies.ZombiesModeModule;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
+import com.cdp.codpattern.common.sound.ZombiesSoundRegister;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.DistExecutor;
@@ -29,5 +30,6 @@ public final class ZombiesBootstrap {
         CodPatternBlockRegister.BLOCKS.register(modEventBus);
         CodPatternBlockRegister.ITEMS.register(modEventBus);
         ZombiesItemRegister.ITEMS.register(modEventBus);
+        ZombiesSoundRegister.SOUNDS.register(modEventBus);
     }
 }

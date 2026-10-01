@@ -61,6 +61,10 @@ public final class ZombiesConfigPaths {
         return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WEAPON_FILTER_FILE);
     }
 
+    public static Path zombiesMapBarrierGroups(MinecraftServer server, String mapName) {
+        return zombiesMapRulesRoot(server, mapName).resolve(ZombiesBarrierGroupsConfig.FILE_NAME);
+    }
+
     public static Path zombiesMapMysteryBox(MinecraftServer server, String mapName) {
         return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_MYSTERY_BOX_FILE);
     }

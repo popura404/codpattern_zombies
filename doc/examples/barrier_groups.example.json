@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 2,
+  "groups": {
+    "10": {
+      "spawnGroupChanges": {
+        "enable": [
+          2
+        ],
+        "disable": [
+          0
+        ]
+      },
+      "entries": {
+        "1": {
+          "cost": 1000,
+          "requiredItem": ""
+        },
+        "2": {
+          "cost": 0,
+          "requiredItem": "minecraft:tripwire_hook{BarrierKey:\"group10\"}"
+        },
+        "3": {
+          "cost": 500,
+          "requiredItem": "minecraft:tripwire_hook{BarrierKey:\"group10\"}"
+        }
+      }
+    },
+    "20": {
+      "spawnGroupChanges": {
+        "enable": [],
+        "disable": []
+      },
+      "entries": {
+        "1": {
+          "cost": 0
+        }
+      }
+    }
+  }
+}

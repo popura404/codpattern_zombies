@@ -88,7 +88,7 @@
     "message.codpattern.zombies.interaction.failure.max_upgrade": "§e%s 已達到強化 %s/%s（%s 等級 %s）。",
     "message.codpattern.zombies.interaction.failure.mystery_box_empty": "§c%s 的獎池中沒有有效武器。",
     "message.codpattern.zombies.interaction.failure.generic": "§c%s 互動失敗：%s。",
-    "message.codpattern.zombies.interaction.success.barrier": "§a已開啟屏障 %s，花費 %s 點數（組 %s）。",
+    "message.codpattern.zombies.interaction.success.barrier": "§a已開啟屏障 %s，花費 %s 點數（組 %s）。（編號 %4$s）",
     "message.codpattern.zombies.interaction.success.weapon_wall": "§a已購買 %s 稀有度 %s，來源 %s，花費 %s 點數。",
     "message.codpattern.zombies.interaction.success.ammo": "§a已補滿 %s 等級 %s，補給點 %s，花費 %s 點數。",
     "message.codpattern.zombies.interaction.success.armor": "§a已購買 %s 級裝甲，來源 %s，花費 %s 點數。",
@@ -360,5 +360,18 @@
     "gui.codpattern.zombies.deploy.spawn_groups.summary": "啟用：%s；停用：%s",
     "gui.codpattern.zombies.deploy.spawn_groups.scope": "此操作設定套用於屏障連動組 %s 的所有屏障",
     "gui.codpattern.zombies.deploy.spawn_groups.conflict": "組 %s 同時出現在啟用和停用清單中",
-    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "%s 中的「%s」無效，請填寫非負整數"
+    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "%s 中的「%s」無效，請填寫非負整數",
+    "gui.codpattern.zombies.deploy.barrier_rules.source": "組規則檔案（唯讀）：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.invalid": "組規則設定錯誤：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.missing": "屏障組 %s 未設定，請編輯組規則檔案",
+    "gui.codpattern.zombies.deploy.barrier_rules.summary": "組費用：%s；啟用殭屍組：%s；停用殭屍組：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.unconfigured": "屏障組或編號未設定",
+    "message.codpattern.zombies.deploy.barrier_rules_file_only": "屏障編號費用、所需物品和組啟停規則只能在 barrier_groups.json 中編輯。",
+    "gui.codpattern.zombies.deploy.field.entryId": "規則編號",
+    "gui.codpattern.zombies.deploy.barrier_rules.missing_entry": "屏障組 %s / 編號 %s 未設定或未選擇",
+    "gui.codpattern.zombies.deploy.barrier_rules.entry_summary": "費用：%s；所需物品：%s；啟用殭屍組：%s；停用殭屍組：%s",
+    "hud.codpattern.zombies.barrier.target_entry": "屏障組 %s / 編號 %s",
+    "hud.codpattern.zombies.barrier.entry_price": "開啟 %s - %s 點",
+    "hud.codpattern.zombies.barrier.entry_item": "所需物品：%s",
+    "message.codpattern.zombies.interaction.failure.barrier_entry_rules_missing": "屏障組 %s / 編號 %s 未設定，請檢查 barrier_groups.json。"
 }

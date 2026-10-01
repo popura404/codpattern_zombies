@@ -367,11 +367,22 @@ public final class ZombiesObjectLabelWorldRenderer {
 
     private static ObjectLabel barrierLabel(CompoundTag payload) {
         int group = Math.max(0, payload.getInt(PAYLOAD_GROUP));
-        String title = group > 0 ? "屏障组 " + group : "屏障";
-        if (payload.getBoolean(PAYLOAD_CLEARED)) {
-            return new ObjectLabel(title, "已开启", READY_COLOR);
+        int entryId = Math.max(0, payload.getInt("entryId"));
+        String title = net.minecraft.network.chat.Component.translatable(
+                "hud.codpattern.zombies.barrier.target_entry", group, entryId).getString();
+        if (payload.getBoolean(PAYLOAD_CLEARED)) return new ObjectLabel(title, "已开启", READY_COLOR);
+        if (payload.contains("barrierGroupConfigured") && !payload.getBoolean("barrierGroupConfigured")) {
+            return new ObjectLabel(title, net.minecraft.network.chat.Component.translatable(
+                    "gui.codpattern.zombies.deploy.barrier_rules.unconfigured").getString(), DISABLED_COLOR);
         }
-        return pricedLabel(title, "开启", payload, true);
+        String detail = net.minecraft.network.chat.Component.translatable("hud.codpattern.zombies.barrier.entry_price",
+                title, Math.max(0, payload.getInt(ZombiesObjectStateKeys.PAYLOAD_COST))).getString();
+        String required = payload.getString(ZombiesObjectStateKeys.PAYLOAD_REQUIRED_ITEM).trim();
+        if (!required.isBlank()) detail += "; " + net.minecraft.network.chat.Component.translatable(
+                "hud.codpattern.zombies.barrier.entry_item",
+                com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem.displayName(required)).getString();
+        return new ObjectLabel(title, detail, TITLE_COLOR,
+                payload.getBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED) ? ACTIVE_COLOR : DISABLED_COLOR);
     }
 
     private static ObjectLabel weaponWallLabel(CompoundTag payload) {
@@ -462,6 +473,10 @@ public final class ZombiesObjectLabelWorldRenderer {
             boolean enabled,
             int titleColor
     ) {
+        if (payload.contains("barrierGroupConfigured") && !payload.getBoolean("barrierGroupConfigured")) {
+            return new ObjectLabel(title, net.minecraft.network.chat.Component.translatable(
+                    "gui.codpattern.zombies.deploy.barrier_rules.unconfigured").getString(), titleColor, DISABLED_COLOR);
+        }
         String detail = action + " - " + Math.max(0, payload.getInt(ZombiesObjectStateKeys.PAYLOAD_COST)) + "点";
         return new ObjectLabel(title, detail, titleColor, enabled ? ACTIVE_COLOR : DISABLED_COLOR);
     }

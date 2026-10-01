@@ -49,7 +49,11 @@ public final class ZombiesConfigRepository {
         ZombiesWeaponFilterConfig weaponFilter = read(resolved.resolve("weapon_filter.json"), ZombiesWeaponFilterConfig.class, ZombiesWeaponFilterConfig::defaults, statuses);
         List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> issues = new ArrayList<>(new ZombiesRulesValidator().validate(
                 new ZombiesServerConfig(mapName, room, weaponRules, weaponWall, mysteryBox, weaponFilter, List.of()).legacyRulesConfig()));
-        ZombiesServerConfig resultConfig = new ZombiesServerConfig(mapName, room, weaponRules, weaponWall, mysteryBox, weaponFilter, issues);
+        ZombiesBarrierGroupsConfig barrierGroups = ZombiesBarrierGroupsConfig.load(resolved.resolve("barrier_groups.json"));
+        issues.addAll(barrierGroups.fileValidationIssues());
+        statuses.add(new FileStatus(ZombiesBarrierGroupsConfig.FILE_NAME, barrierGroups.templateCreated(),
+                !barrierGroups.errors().isEmpty() ? "invalid_preserved" : barrierGroups.templateCreated() ? "empty_template_created" : "loaded"));
+        ZombiesServerConfig resultConfig = new ZombiesServerConfig(mapName, room, weaponRules, weaponWall, mysteryBox, weaponFilter, barrierGroups, issues);
         lastResult = new LoadResult(resultConfig, List.copyOf(statuses)); current = resultConfig; return lastResult;
     }
 

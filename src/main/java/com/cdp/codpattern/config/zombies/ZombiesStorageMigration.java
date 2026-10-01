@@ -28,6 +28,13 @@ public final class ZombiesStorageMigration {
                 // Reject malformed field types before the runtime loader could replace them with defaults.
                 new com.google.gson.Gson().fromJson(object, RULE_TYPES.get(name));
             }
+            // Missing new rules are configured manually after relocation; never infer legacy object values.
+            Path barrierGroups = root.resolve(ZombiesBarrierGroupsConfig.FILE_NAME);
+            StorageFiles.checkPath(barrierGroups);
+            if (Files.exists(barrierGroups)) {
+                var parsed = ZombiesBarrierGroupsConfig.parse(Files.readString(barrierGroups), barrierGroups);
+                if (!parsed.errors().isEmpty()) throw new IllegalStateException("Invalid barrier group rules " + barrierGroups + ": " + parsed.errors());
+            }
             // Parse all candidate JSON without invoking repositories (which create defaults on load).
             try (var paths = Files.walk(root)) {
                 for (Path file : paths.toList()) {

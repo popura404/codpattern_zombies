@@ -56,6 +56,12 @@ final class ZombiesDeployObjectEditor {
         String type = ZombiesDeployFieldSchema.normalizeObjectType(objectType);
         Map<String, String> resolvedFields = mergedFields(type, fields);
         try {
+            if (ZombiesDeployFieldSchema.BARRIER.equals(type)
+                    && (resolvedOperation == Operation.ADD || resolvedOperation == Operation.UPDATE)
+                    && fields != null && (fields.containsKey("cost") || fields.containsKey("requiredItem") || fields.containsKey("spawnGroupChanges")
+                    || fields.containsKey(ZombiesSpawnGroupFields.ENABLE) || fields.containsKey(ZombiesSpawnGroupFields.DISABLE))) {
+                throw failure("field.barrier_rules_file_only", "Edit barrier_groups.json for entry costs/items and group spawn actions.");
+            }
             return switch (resolvedOperation) {
                 case ADD -> add(objects, type, resolvedFields);
                 case UPDATE -> update(objects, type, selectedIndex, resolvedFields);
@@ -87,7 +93,7 @@ final class ZombiesDeployObjectEditor {
                 ZombiesBarrierData data = parseBarrier(objects, NO_EXCLUSION, fields);
                 List<ZombiesBarrierData> next = mutable(objects.barriers());
                 next.add(data);
-                int affected = 1 + synchronizeSpawnGroupChanges(next, data);
+                int affected = 1;
                 yield success(withBarriers(objects, next), type, next.size() - 1, fieldsFrom(data), affected);
             }
             case ZombiesDeployFieldSchema.WEAPON_WALL -> {
@@ -163,7 +169,7 @@ final class ZombiesDeployObjectEditor {
                 ZombiesBarrierData data = parseBarrier(objects, new ObjectRef(type, selectedIndex), fields);
                 List<ZombiesBarrierData> next = mutable(objects.barriers());
                 next.set(selectedIndex, data);
-                int affected = 1 + synchronizeSpawnGroupChanges(next, data);
+                int affected = 1;
                 yield success(withBarriers(objects, next), type, selectedIndex, fieldsFrom(data), affected);
             }
             case ZombiesDeployFieldSchema.WEAPON_WALL -> {
@@ -251,17 +257,18 @@ final class ZombiesDeployObjectEditor {
                         copyObjectId(objects, source.objectId(), type),
                         source.name(),
                         source.group(),
-                        source.cost(),
+                        -1,
                         source.blocksPlayersOnly(),
                         source.dimension(),
                         source.areaFrom(),
                         source.areaTo(),
                         source.interactionPos(),
-                        source.requiredItem(),
-                        source.spawnGroupChanges());
+                        "",
+                        ZombiesSpawnGroupChanges.NONE,
+                        source.entryId());
                 List<ZombiesBarrierData> next = mutable(objects.barriers());
                 next.add(data);
-                int affected = 1 + synchronizeSpawnGroupChanges(next, data);
+                int affected = 1;
                 yield success(withBarriers(objects, next), type, next.size() - 1, fieldsFrom(data), affected);
             }
             case ZombiesDeployFieldSchema.WEAPON_WALL -> {
@@ -535,43 +542,15 @@ final class ZombiesDeployObjectEditor {
                 objectId,
                 text(fields, "name"),
                 intField(fields, "group"),
-                intField(fields, "cost"),
+                -1,
                 booleanField(fields, "blocksPlayersOnly"),
                 dimension(fields),
                 blockPos(fields, "areaFrom"),
                 blockPos(fields, "areaTo"),
                 blockPos(fields, "interaction"),
-                requiredItemField(fields),
-                spawnGroupChanges(fields));
-    }
-
-    private static ZombiesSpawnGroupChanges spawnGroupChanges(Map<String, String> fields) {
-        try {
-            return ZombiesSpawnGroupFields.parse(fields);
-        } catch (ZombiesSpawnGroupFields.InvalidGroups exception) {
-            throw failure("field.invalid_spawn_groups", exception.getMessage());
-        }
-    }
-
-    private static int synchronizeSpawnGroupChanges(List<ZombiesBarrierData> barriers, ZombiesBarrierData edited) {
-        int changed = 0;
-        for (int i = 0; i < barriers.size(); i++) {
-            ZombiesBarrierData barrier = barriers.get(i);
-            if (barrier.group() == edited.group() && !barrier.spawnGroupChanges().equals(edited.spawnGroupChanges())) {
-                barriers.set(i, barrier.withSpawnGroupChanges(edited.spawnGroupChanges()));
-                changed++;
-            }
-        }
-        return changed;
-    }
-
-    private static String requiredItemField(Map<String, String> fields) {
-        String value = text(fields, "requiredItem");
-        try {
-            return ZombiesRequiredItem.normalize(value);
-        } catch (IllegalArgumentException exception) {
-            throw failure("field.invalid_item", "field requiredItem must be a valid item ID/SNBT: " + value);
-        }
+                "",
+                ZombiesSpawnGroupChanges.NONE,
+                intField(fields, "entryId"));
     }
 
     private static ZombiesAmmoBoxData parseAmmoBox(
@@ -799,11 +778,8 @@ final class ZombiesDeployObjectEditor {
         fields.put("objectId", data.objectId());
         fields.put("name", data.name());
         fields.put("group", Integer.toString(data.group()));
-        fields.put("cost", Integer.toString(data.cost()));
+        fields.put("entryId", Integer.toString(data.entryId()));
         fields.put("blocksPlayersOnly", Boolean.toString(data.blocksPlayersOnly()));
-        fields.put("requiredItem", data.requiredItem());
-        fields.put(ZombiesSpawnGroupFields.ENABLE, ZombiesSpawnGroupFields.format(data.spawnGroupChanges().enable()));
-        fields.put(ZombiesSpawnGroupFields.DISABLE, ZombiesSpawnGroupFields.format(data.spawnGroupChanges().disable()));
         fields.put("dimension", dimensionId(data.dimension()));
         putPosition(fields, "areaFrom", data.areaFrom());
         putPosition(fields, "areaTo", data.areaTo());

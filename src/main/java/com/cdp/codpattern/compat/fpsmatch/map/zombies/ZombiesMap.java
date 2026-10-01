@@ -151,6 +151,8 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
     private ZombiesWaveDirector waveDirector;
     private ZombiesRulesConfig rulesConfig;
     private ZombiesServerConfig serverConfig;
+    private com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig frozenBarrierGroupRules =
+            com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig.empty();
     private ZombiesWeaponFilterConfig weaponFilterConfig;
     private ZombiesMysteryBoxConfig mysteryBoxConfig;
     private List<ZombiesValidationIssue> rulesValidationIssues = List.of();
@@ -222,7 +224,8 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                         roomId,
                         purchase.group(),
                         this::levelForDimension),
-                () -> runtimeObjects().zombieSpawns());
+                () -> runtimeObjects().zombieSpawns(),
+                this::runtimeBarrierGroupRules);
         ZombiesWeaponInstanceService weaponInstanceService = new ZombiesWeaponInstanceService(economyService);
         ZombiesAmmoBoxService ammoBoxService = new ZombiesAmmoBoxService(economyService);
         ZombiesArmorService armorService = new ZombiesArmorService(economyService);
@@ -923,7 +926,20 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
     }
 
     private List<ZombiesValidationIssue> rulesValidationIssues() {
-        return rulesValidationIssues == null ? List.of() : List.copyOf(rulesValidationIssues);
+        List<ZombiesValidationIssue> issues = new java.util.ArrayList<>(
+                rulesValidationIssues == null ? List.of() : rulesValidationIssues);
+        issues.addAll(serverConfig().getBarrierGroups().bindingIssues(objects.barriers(), objects.zombieSpawns()));
+        return List.copyOf(issues);
+    }
+
+    /** Deployment reads fresh rules only outside a match; live views use the frozen startup bundle. */
+    public com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig barrierGroupRulesForPreview() {
+        if (objectsFrozen) return frozenBarrierGroupRules;
+        if (getServerLevel() == null || getServerLevel().getServer() == null) {
+            return serverConfig().getBarrierGroups();
+        }
+        return com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig.load(
+                ZombiesConfigPaths.zombiesMapBarrierGroups(getServerLevel().getServer(), getMapName()));
     }
 
     private ZombiesMapSnapshot currentMapSnapshot() {
@@ -933,7 +949,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 matchEndTeleportPoint.isPresent(),
                 getServerLevel().dimension().location().toString(),
                 ZombiesMapSnapshot.BoundsSnapshot.fromAreaData(getMapArea()),
-                objects);
+                serverConfig().getBarrierGroups().resolveObjects(objects));
     }
 
     private List<SpawnPointData> initialSpawnPoints() {
@@ -948,8 +964,12 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 .toList();
     }
 
+    private com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig runtimeBarrierGroupRules() {
+        return objectsFrozen ? frozenBarrierGroupRules : serverConfig().getBarrierGroups();
+    }
+
     private ZombiesMapObjects runtimeObjects() {
-        return objectsFrozen ? frozenObjects : objects;
+        return objectsFrozen ? frozenObjects : serverConfig().getBarrierGroups().resolveObjects(objects);
     }
 
     private List<UUID> normalizeStartMembers(Collection<UUID> memberSnapshot) {
@@ -1115,7 +1135,8 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
     }
 
     private void freezeObjectsForRuntime(int maxWave) {
-        frozenObjects = objects;
+        frozenBarrierGroupRules = serverConfig().getBarrierGroups();
+        frozenObjects = frozenBarrierGroupRules.resolveObjects(objects);
         objectsFrozen = true;
         resetObjectRuntime(1, maxWave);
     }
@@ -1126,6 +1147,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
             powerService.reset();
         }
         frozenObjects = ZombiesMapObjects.EMPTY;
+        frozenBarrierGroupRules = com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig.empty();
         objectsFrozen = false;
         mobRecycleService.reset();
         mobSpawnService.resetNavigationRuntime();

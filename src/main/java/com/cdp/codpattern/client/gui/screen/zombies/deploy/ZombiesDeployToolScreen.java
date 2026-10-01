@@ -363,6 +363,7 @@ public class ZombiesDeployToolScreen extends Screen {
     private List<FieldRow> fieldRows() {
         List<FieldRow> result = new ArrayList<>();
         List<ZombiesDeploySnapshot.FieldValue> fields = new ArrayList<>(snapshot().fields());
+        fields.removeIf(field -> field.key().startsWith("@barrierRules."));
         fields.sort(Comparator.comparingInt(field -> group(field.key())));
         int previous = -1;
         for (var field : fields) {
@@ -710,16 +711,29 @@ public class ZombiesDeployToolScreen extends Screen {
                 : tr("spawn_groups.invalid", translated(ZombiesDeployFieldSchema.labelKeyForField(error.field())), error.entry());
     }
 
+    private String barrierRuleMetadata(String key) {
+        return snapshot().fields().stream().filter(field -> field.key().equals("@barrierRules." + key))
+                .map(ZombiesDeploySnapshot.FieldValue::value).findFirst().orElse("");
+    }
+
     private String labelText(Label label) {
-        if (GROUP_SCOPE.equals(label.text())) { return tr("spawn_groups.scope", session.fields.getOrDefault("group", "")); }
-        if (!GROUP_SUMMARY.equals(label.text())) { return label.text(); }
-        try {
-            var changes = ZombiesSpawnGroupFields.parse(session.fields);
-            if (changes.enable().isEmpty() && changes.disable().isEmpty()) { return tr("spawn_groups.summary_none"); }
-            String enable = changes.enable().isEmpty() ? tr("spawn_groups.none") : ZombiesSpawnGroupFields.format(changes.enable());
-            String disable = changes.disable().isEmpty() ? tr("spawn_groups.none") : ZombiesSpawnGroupFields.format(changes.disable());
-            return tr("spawn_groups.summary", enable, disable);
-        } catch (ZombiesSpawnGroupFields.InvalidGroups error) { return groupInputError(error); }
+        if (GROUP_SCOPE.equals(label.text())) return tr("barrier_rules.source", barrierRuleMetadata("path"));
+        if (!GROUP_SUMMARY.equals(label.text())) return label.text();
+        String error = barrierRuleMetadata("error");
+        if (!error.isBlank()) return tr("barrier_rules.invalid", error);
+        String group = session.fields.getOrDefault("group", "").trim();
+        String entryId = session.fields.getOrDefault("entryId", "").trim();
+        String binding = group + "." + entryId;
+        String cost = barrierRuleMetadata("cost." + binding);
+        if (cost.isBlank()) return tr("barrier_rules.missing_entry", group, entryId);
+        String required = barrierRuleMetadata("requiredItem." + binding);
+        String itemName = required.isBlank() ? tr("spawn_groups.none")
+                : com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem.displayName(required).getString();
+        String enable = barrierRuleMetadata("enable." + group);
+        String disable = barrierRuleMetadata("disable." + group);
+        return tr("barrier_rules.entry_summary", cost, itemName,
+                enable.isBlank() ? tr("spawn_groups.none") : enable,
+                disable.isBlank() ? tr("spawn_groups.none") : disable);
     }
 
     private String readiness() {

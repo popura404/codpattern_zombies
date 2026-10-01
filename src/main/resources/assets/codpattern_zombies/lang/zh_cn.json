@@ -88,7 +88,7 @@
     "message.codpattern.zombies.interaction.failure.max_upgrade": "§e%s 已达到强化 %s/%s（%s 等级 %s）。",
     "message.codpattern.zombies.interaction.failure.mystery_box_empty": "§c%s 的奖池中没有有效武器。",
     "message.codpattern.zombies.interaction.failure.generic": "§c%s 交互失败：%s。",
-    "message.codpattern.zombies.interaction.success.barrier": "§a已开启屏障 %s，花费 %s 点数（组 %s）。",
+    "message.codpattern.zombies.interaction.success.barrier": "§a已开启屏障 %s，花费 %s 点数（组 %s）。（编号 %4$s）",
     "message.codpattern.zombies.interaction.success.weapon_wall": "§a已购买 %s 稀有度 %s，来源 %s，花费 %s 点数。",
     "message.codpattern.zombies.interaction.success.ammo": "§a已补满 %s 等级 %s，补给点 %s，花费 %s 点数。",
     "message.codpattern.zombies.interaction.success.armor": "§a已购买 %s 级装甲，来源 %s，花费 %s 点数。",
@@ -360,5 +360,18 @@
     "gui.codpattern.zombies.deploy.spawn_groups.summary": "启用：%s；禁用：%s",
     "gui.codpattern.zombies.deploy.spawn_groups.scope": "此操作配置应用于屏障联动组 %s 的所有屏障",
     "gui.codpattern.zombies.deploy.spawn_groups.conflict": "组 %s 同时出现在启用和禁用列表中",
-    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "%s 中的“%s”无效，请填写非负整数"
+    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "%s 中的“%s”无效，请填写非负整数",
+    "gui.codpattern.zombies.deploy.barrier_rules.source": "组规则文件（只读）：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.invalid": "组规则配置错误：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.missing": "屏障组 %s 未配置，请编辑组规则文件",
+    "gui.codpattern.zombies.deploy.barrier_rules.summary": "组费用：%s；激活僵尸组：%s；关闭僵尸组：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.unconfigured": "屏障组或编号未配置",
+    "message.codpattern.zombies.deploy.barrier_rules_file_only": "屏障编号费用、要求物品和组启停规则只能在 barrier_groups.json 中编辑。",
+    "gui.codpattern.zombies.deploy.field.entryId": "规则编号",
+    "gui.codpattern.zombies.deploy.barrier_rules.missing_entry": "屏障组 %s / 编号 %s 未配置或未选择",
+    "gui.codpattern.zombies.deploy.barrier_rules.entry_summary": "费用：%s；要求物品：%s；激活僵尸组：%s；关闭僵尸组：%s",
+    "hud.codpattern.zombies.barrier.target_entry": "屏障组 %s / 编号 %s",
+    "hud.codpattern.zombies.barrier.entry_price": "开启 %s - %s 点",
+    "hud.codpattern.zombies.barrier.entry_item": "需要物品：%s",
+    "message.codpattern.zombies.interaction.failure.barrier_entry_rules_missing": "屏障组 %s / 编号 %s 未配置，请检查 barrier_groups.json。"
 }

@@ -34,7 +34,8 @@ final class ZombiesDeployEditorSession {
     void accept(ZombiesDeploySnapshot value) {
         snapshot = value;
         fields.clear();
-        value.fields().forEach(field -> fields.put(field.key(), field.value()));
+        value.fields().stream().filter(field -> !field.key().startsWith("@barrierRules."))
+                .forEach(field -> fields.put(field.key(), field.value()));
         mapName = value.draftMapName();
         readCorner(cornerA, value.mapPos1());
         readCorner(cornerB, value.mapPos2());

@@ -16,6 +16,7 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 def mainProject = project(':codpattern-main')
+def barrierGroupRulesGameTests = project.hasProperty('barrierGroupRulesGameTests')
 def navigationLoadSize = findProperty('navigationLoad')?.toString()
 if (navigationLoadSize && !(navigationLoadSize in ['8', '32', '64'])) {
     throw new GradleException('navigationLoad must be 8, 32, or 64')
@@ -65,7 +66,9 @@ minecraft {
             // Forge's launch module graph must include the JDK random service providers.
             jvmArgs '--add-modules=jdk.random'
             workingDirectory gameTestRunDirectory
-            property 'forge.enabledGameTestNamespaces', navigationLoadSize ? "codpattern_navigation_load${navigationLoadSize}"
+            property 'codpattern.test.workspace', project.projectDir.absolutePath
+            property 'codpattern.test.results', (findProperty('barrierGroupRulesResultsPath') ?: 'build/verification/barrier-group-rules/forge-results.txt').toString()
+            property 'forge.enabledGameTestNamespaces', barrierGroupRulesGameTests ? 'codpattern_barrier_rules' : navigationLoadSize ? "codpattern_navigation_load${navigationLoadSize}"
                     : (project.hasProperty('navigationGameTests') ? 'codpattern_navigation'
                     : (findProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'))
             property 'codpattern.zombies.navigationDebug', project.hasProperty('navigationDebug') ? 'true' : 'false'
@@ -97,13 +100,34 @@ tasks.register('syncGameTestStructures', Copy) {
     include '**/*.snbt'
 }
 
+tasks.register('compileBarrierGroupRulesGameTests', JavaCompile) {
+    group = 'verification'
+    description = 'Compile only the barrier-group rule checks and their Forge GameTest entrypoints.'
+    source project.files(
+            'src/test/java/com/cdp/codpattern/config/zombies/ZombiesBarrierGroupsConfigCompatTest.java',
+            'src/test/java/com/cdp/codpattern/app/zombies/service/ZombiesBarrierGroupRulesPurchaseCompatTest.java',
+            'src/test/java/com/cdp/codpattern/app/zombies/deploy/ZombiesBarrierGroupRulesEditorCompatTest.java',
+            'src/test/java/com/cdp/codpattern/app/zombies/deploy/ZombiesBarrierGroupRulesGameTests.java')
+    classpath = sourceSets.test.compileClasspath + sourceSets.main.output
+    destinationDirectory.set(layout.buildDirectory.dir('verification/barrier-group-rules/forge-test-classes'))
+    javaCompiler.set(project.javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) })
+    options.encoding = 'UTF-8'
+    dependsOn tasks.named('classes')
+}
+
 tasks.register('syncZombiesDeployGameTestClasses', Sync) {
     group = 'verification'
     description = 'Stage addon-owned deploy tests without the test packages shared with the main mod.'
-    dependsOn tasks.named('testClasses')
-    from sourceSets.test.output.classesDirs
+    if (barrierGroupRulesGameTests) {
+        dependsOn tasks.named('compileBarrierGroupRulesGameTests')
+        from layout.buildDirectory.dir('verification/barrier-group-rules/forge-test-classes')
+        from('src/test/resources') { include 'data/codpattern_barrier_rules/**' }
+    } else {
+        dependsOn tasks.named('testClasses')
+        from sourceSets.test.output.classesDirs
+        include 'com/cdp/codpattern/app/zombies/deploy/**'
+    }
     into layout.buildDirectory.dir('gametest/deploy-tests')
-    include 'com/cdp/codpattern/app/zombies/deploy/**'
 }
 
 tasks.matching { it.name == 'runGameTestServer' }.configureEach {

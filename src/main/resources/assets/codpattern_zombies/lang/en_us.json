@@ -88,7 +88,7 @@
     "message.codpattern.zombies.interaction.failure.max_upgrade": "§e%s is already at upgrade %s/%s for %s level %s.",
     "message.codpattern.zombies.interaction.failure.mystery_box_empty": "§c%s has no valid weapons in its configured pool.",
     "message.codpattern.zombies.interaction.failure.generic": "§cInteraction failed for %s: %s.",
-    "message.codpattern.zombies.interaction.success.barrier": "§aOpened barrier %s for %s points (group %s).",
+    "message.codpattern.zombies.interaction.success.barrier": "§aOpened barrier %s for %s points (group %s). (entry %4$s)",
     "message.codpattern.zombies.interaction.success.weapon_wall": "§aBought %s rarity %s from %s for %s points.",
     "message.codpattern.zombies.interaction.success.ammo": "§aRefilled %s level %s at %s for %s points.",
     "message.codpattern.zombies.interaction.success.armor": "§aBought armor level %s from %s for %s points.",
@@ -360,5 +360,18 @@
     "gui.codpattern.zombies.deploy.spawn_groups.summary": "Enable: %s; disable: %s",
     "gui.codpattern.zombies.deploy.spawn_groups.scope": "These actions apply to every barrier in linked group %s",
     "gui.codpattern.zombies.deploy.spawn_groups.conflict": "Groups %s appear in both enable and disable lists",
-    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "Invalid entry in %s: \"%s\"; enter a non-negative integer"
+    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "Invalid entry in %s: \"%s\"; enter a non-negative integer",
+    "gui.codpattern.zombies.deploy.barrier_rules.source": "Group rules file (read-only): %s",
+    "gui.codpattern.zombies.deploy.barrier_rules.invalid": "Invalid group rules: %s",
+    "gui.codpattern.zombies.deploy.barrier_rules.missing": "Barrier group %s is not configured; edit the group rules file",
+    "gui.codpattern.zombies.deploy.barrier_rules.summary": "Group cost: %s; enable zombie groups: %s; disable zombie groups: %s",
+    "gui.codpattern.zombies.deploy.barrier_rules.unconfigured": "Barrier group or entry not configured",
+    "message.codpattern.zombies.deploy.barrier_rules_file_only": "Edit entry costs/items and group spawn actions in barrier_groups.json only.",
+    "gui.codpattern.zombies.deploy.field.entryId": "Rule entry",
+    "gui.codpattern.zombies.deploy.barrier_rules.missing_entry": "Barrier group %s / entry %s is not configured or selected",
+    "gui.codpattern.zombies.deploy.barrier_rules.entry_summary": "Cost: %s; required item: %s; enable zombie groups: %s; disable zombie groups: %s",
+    "hud.codpattern.zombies.barrier.target_entry": "Barrier group %s / entry %s",
+    "hud.codpattern.zombies.barrier.entry_price": "Open %s - %s points",
+    "hud.codpattern.zombies.barrier.entry_item": "Required item: %s",
+    "message.codpattern.zombies.interaction.failure.barrier_entry_rules_missing": "Barrier group %s / entry %s is not configured; check barrier_groups.json."
 }

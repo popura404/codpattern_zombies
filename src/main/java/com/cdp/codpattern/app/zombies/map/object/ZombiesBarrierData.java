@@ -17,8 +17,17 @@ public record ZombiesBarrierData(
         BlockPos areaTo,
         BlockPos interactionPos,
         String requiredItem,
-        ZombiesSpawnGroupChanges spawnGroupChanges
+        ZombiesSpawnGroupChanges spawnGroupChanges,
+        int entryId
 ) {
+    /** Old constructors retain an unselected entry; they never implicitly select entry 1. */
+    public ZombiesBarrierData(String objectId, String name, int group, int cost, boolean blocksPlayersOnly,
+            ResourceKey<Level> dimension, BlockPos areaFrom, BlockPos areaTo, BlockPos interactionPos,
+            String requiredItem, ZombiesSpawnGroupChanges spawnGroupChanges) {
+        this(objectId, name, group, cost, blocksPlayersOnly, dimension, areaFrom, areaTo, interactionPos,
+                requiredItem, spawnGroupChanges, 0);
+    }
+
     public ZombiesBarrierData(
             String objectId,
             String name,
@@ -52,9 +61,14 @@ public record ZombiesBarrierData(
                 requiredItem, ZombiesSpawnGroupChanges.NONE);
     }
 
+    public ZombiesBarrierData withEntryId(int value) {
+        return new ZombiesBarrierData(objectId, name, group, cost, blocksPlayersOnly, dimension,
+                areaFrom, areaTo, interactionPos, requiredItem, spawnGroupChanges, value);
+    }
+
     public ZombiesBarrierData withSpawnGroupChanges(ZombiesSpawnGroupChanges changes) {
         return new ZombiesBarrierData(objectId, name, group, cost, blocksPlayersOnly, dimension,
-                areaFrom, areaTo, interactionPos, requiredItem, changes);
+                areaFrom, areaTo, interactionPos, requiredItem, changes, entryId);
     }
 
     public ZombiesBarrierData {
@@ -68,7 +82,7 @@ public record ZombiesBarrierData(
         return name.isBlank() ? objectId : name;
     }
 
-    public static final Codec<ZombiesBarrierData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+    private static final Codec<ZombiesBarrierData> LEGACY_CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.STRING.fieldOf("objectId").forGetter(ZombiesBarrierData::objectId),
             Codec.STRING.optionalFieldOf("name", "").forGetter(ZombiesBarrierData::name),
             Codec.INT.optionalFieldOf("group", 1).forGetter(ZombiesBarrierData::group),
@@ -79,6 +93,23 @@ public record ZombiesBarrierData(
             BlockPos.CODEC.optionalFieldOf("areaTo", BlockPos.ZERO).forGetter(ZombiesBarrierData::areaTo),
             BlockPos.CODEC.optionalFieldOf("interactionPos", BlockPos.ZERO).forGetter(ZombiesBarrierData::interactionPos),
             Codec.STRING.optionalFieldOf("requiredItem", "").forGetter(ZombiesBarrierData::requiredItem),
-            ZombiesSpawnGroupChanges.CODEC.optionalFieldOf("spawnGroupChanges", ZombiesSpawnGroupChanges.NONE).forGetter(ZombiesBarrierData::spawnGroupChanges)
+            ZombiesSpawnGroupChanges.CODEC.optionalFieldOf("spawnGroupChanges", ZombiesSpawnGroupChanges.NONE).forGetter(ZombiesBarrierData::spawnGroupChanges),
+            Codec.INT.optionalFieldOf("entryId", 0).forGetter(ZombiesBarrierData::entryId)
     ).apply(instance, ZombiesBarrierData::new));
+
+    /** Accept legacy fields on read; group-rule policy is never stored back into map geometry. */
+    public static final Codec<ZombiesBarrierData> CODEC = new Codec<>() {
+        @Override
+        public <T> com.mojang.serialization.DataResult<com.mojang.datafixers.util.Pair<ZombiesBarrierData, T>> decode(
+                com.mojang.serialization.DynamicOps<T> ops, T input) {
+            return LEGACY_CODEC.decode(ops, input);
+        }
+        @Override
+        public <T> com.mojang.serialization.DataResult<T> encode(
+                ZombiesBarrierData input, com.mojang.serialization.DynamicOps<T> ops, T prefix) {
+            return LEGACY_CODEC.encode(input, ops, prefix)
+                    .map(value -> ops.remove(ops.remove(ops.remove(value, "cost"), "requiredItem"), "spawnGroupChanges"));
+        }
+    };
+
 }

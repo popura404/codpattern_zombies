@@ -316,6 +316,10 @@ public final class ZombiesMapValidator {
                 issues.add(ZombiesValidationIssue.error(MAP_INVALID_BARRIER, target,
                         "Barrier link group must be positive: " + barrier.group()));
             }
+            if (barrier.entryId() < 1) {
+                issues.add(ZombiesValidationIssue.error(ZombiesErrorCode.of("map.missing_barrier_entry_rules"), target,
+                        "Select a positive rule entryId for barrier group " + barrier.group() + "; legacy entry 0 is unselected."));
+            }
             if (!changes.valid()) {
                 issues.add(ZombiesValidationIssue.error(ZombiesErrorCode.of("map.invalid_spawn_group_changes"), target,
                         "Spawn targets must be non-negative and cannot be both enabled and disabled. Targets: "
@@ -389,7 +393,7 @@ public final class ZombiesMapValidator {
                         "Barrier groups unlocked by purchases require non-negative cost."));
             }
         }
-        addBarrierGroupPriceIssues(snapshot, issues);
+        // Prices are entry-scoped; different entries in one linked group may have different costs.
         addBarrierOverlapIssues(snapshot, issues);
         addBarrierRoomCellBudgetIssues(snapshot, issues);
 
@@ -632,29 +636,6 @@ public final class ZombiesMapValidator {
                     subject,
                     "Barrier cell count " + geometry.cellCount()
                             + " exceeds max " + ZombiesBarrierBlockRuntimeService.MAX_CELLS_PER_BARRIER + "."));
-        }
-    }
-
-    private static void addBarrierGroupPriceIssues(
-            ZombiesMapSnapshot snapshot,
-            List<ZombiesValidationIssue> issues
-    ) {
-        Map<Integer, Integer> costByGroup = new LinkedHashMap<>();
-        Map<Integer, String> subjectByGroup = new LinkedHashMap<>();
-        for (ZombiesMapSnapshot.BarrierSnapshot barrier : snapshot.barriers()) {
-            if (barrier == null || barrier.group() < 1) {
-                continue;
-            }
-            String subject = subject("barrier", barrier.objectId(), barrier.featureKey());
-            Integer previousCost = costByGroup.putIfAbsent(barrier.group(), barrier.cost());
-            subjectByGroup.putIfAbsent(barrier.group(), subject);
-            if (previousCost != null && previousCost != barrier.cost()) {
-                issues.add(ZombiesValidationIssue.error(
-                        MAP_INVALID_BARRIER,
-                        subject,
-                        "Barrier group " + barrier.group() + " cost " + barrier.cost()
-                                + " differs from " + previousCost + " at " + subjectByGroup.get(barrier.group()) + "."));
-            }
         }
     }
 

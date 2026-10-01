@@ -792,27 +792,27 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             boolean taczInteractKey
     ) {
         int group = Math.max(0, payload.getInt("group"));
-        String target = group > 0 ? "屏障组 " + group : "屏障";
-        if (payload.getBoolean("cleared") || !payload.getBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED)) {
-            return Optional.of(disabledPrompt(target + " 已开启"));
+        int entryId = Math.max(0, payload.getInt("entryId"));
+        String target = Component.translatable("hud.codpattern.zombies.barrier.target_entry", group, entryId).getString();
+        if (payload.getBoolean("cleared")) return Optional.of(disabledPrompt(target + " 已开启"));
+        if ((payload.contains("barrierGroupConfigured") && !payload.getBoolean("barrierGroupConfigured"))
+                || !payload.getBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED)) {
+            return Optional.of(disabledPrompt(Component.translatable(
+                    "gui.codpattern.zombies.deploy.barrier_rules.unconfigured").getString()));
         }
+        String price = Component.translatable("hud.codpattern.zombies.barrier.entry_price", target,
+                Math.max(0, payload.getInt(ZombiesObjectStateKeys.PAYLOAD_COST))).getString();
         String requiredItem = payload.getString(ZombiesObjectStateKeys.PAYLOAD_REQUIRED_ITEM).trim();
         if (!requiredItem.isEmpty()) {
             LocalPlayer player = Minecraft.getInstance().player;
             Component itemName = ZombiesRequiredItem.displayName(requiredItem);
-            boolean owned = player != null
-                    && ZombiesRequiredItem.inventoryContains(player.getInventory(), requiredItem);
-            String key = owned
-                    ? "hud.codpattern.zombies.barrier.required_item_owned"
+            boolean owned = player != null && ZombiesRequiredItem.inventoryContains(player.getInventory(), requiredItem);
+            String key = owned ? "hud.codpattern.zombies.barrier.required_item_owned"
                     : "hud.codpattern.zombies.barrier.required_item_missing";
-            return Optional.of(new InteractionPromptLine(
-                    Component.translatable(key, itemName).getString(),
-                    owned,
-                    owned && taczInteractKey,
-                    owned ? TEXT_OK : TEXT_DANGER));
+            return Optional.of(new InteractionPromptLine(price + "; " + Component.translatable(key, itemName).getString(),
+                    owned, owned && taczInteractKey, owned ? TEXT_OK : TEXT_DANGER));
         }
-        return Optional.of(activePrompt("开启 " + target + " - "
-                + Math.max(0, payload.getInt(ZombiesObjectStateKeys.PAYLOAD_COST)) + "点", taczInteractKey));
+        return Optional.of(activePrompt(price, taczInteractKey));
     }
 
     private static boolean isPromptObjectType(String type) {

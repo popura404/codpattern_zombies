@@ -177,6 +177,10 @@ public final class ZombiesDeployToolService {
             ZombiesDeployDraft request
     ) {
         validationCache.clear();
+        if (hasLegacyBarrierRuleFields(request)) {
+            return failure(player, stack, request, "field.barrier_rules_file_only",
+                    "message.codpattern.zombies.deploy.barrier_rules_file_only", "barrier_groups.json");
+        }
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         Optional<ZombiesMap> resolvedMap = resolveMap(draft.selectedMap());
         if (resolvedMap.isEmpty()) {
@@ -823,6 +827,10 @@ public final class ZombiesDeployToolService {
             String successCode
     ) {
         cleanupExpiredDraftSessions();
+        if (hasLegacyBarrierRuleFields(request)) {
+            return failure(player, stack, request, "field.barrier_rules_file_only",
+                    "message.codpattern.zombies.deploy.barrier_rules_file_only", "barrier_groups.json");
+        }
         ZombiesDeployDraft draft = normalizeDraft(player, stack, request);
         ZombiesDeployObjectEditor.Operation resolvedOperation = operation == null
                 ? ZombiesDeployObjectEditor.Operation.ADD
@@ -980,7 +988,9 @@ public final class ZombiesDeployToolService {
     ) {
         Optional<ZombiesMap> map = resolveMap(draft.selectedMap());
         ZombiesMapObjects objects = map.map(value -> draftObjects(player, draft, value)).orElse(ZombiesMapObjects.EMPTY);
-        List<ZombiesDeploySnapshot.ObjectSummary> summaries = objectSummaries(objects, draft.objectType());
+        var barrierRules = map.map(ZombiesMap::barrierGroupRulesForPreview)
+                .orElseGet(com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig::empty);
+        List<ZombiesDeploySnapshot.ObjectSummary> summaries = objectSummaries(barrierRules.resolveObjects(objects), draft.objectType());
         boolean activeMap = map
                 .map(value -> ZombiesMapOccupancyService.instance().isOccupied(BuiltInGameModes.ZOMBIES, value.getMapName()))
                 .orElse(false);
@@ -1027,14 +1037,14 @@ public final class ZombiesDeployToolService {
                 binding.slotB(),
                 draft.selectedIndex(),
                 summaries,
-                fieldValues(draft.objectType(), draft.fields()),
+                fieldValues(draft.objectType(), draft.fields(), barrierRules),
                 draft.validationView(),
                 ZombiesDeployFieldSchema.profiles(),
                 selectedValidationLines,
                 issueTargets,
                 map.map(value -> validationSummaries(value, objects)).orElse(List.of()),
                 objectCounts(objects),
-                stepStatuses(map.isPresent(), objects),
+                stepStatuses(map.isPresent(), barrierRules.resolveObjects(objects)),
                 dirty,
                 nearestObjectHint,
                 activeMap,
@@ -1231,6 +1241,13 @@ public final class ZombiesDeployToolService {
         return fields;
     }
 
+    private static boolean hasLegacyBarrierRuleFields(ZombiesDeployDraft request) {
+        return request != null && ZombiesDeployFieldSchema.BARRIER.equals(request.objectType())
+                && (request.fields().containsKey("cost") || request.fields().containsKey("requiredItem") || request.fields().containsKey("spawnGroupChanges")
+                || request.fields().containsKey(ZombiesSpawnGroupFields.ENABLE)
+                || request.fields().containsKey(ZombiesSpawnGroupFields.DISABLE));
+    }
+
     private Map<String, String> mergeDefaults(String objectType, Map<String, String> fields) {
         Map<String, String> merged = new LinkedHashMap<>(ZombiesDeployFieldSchema.defaultFields(objectType));
         if (fields != null) {
@@ -1247,19 +1264,33 @@ public final class ZombiesDeployToolService {
         return LOOK_AT_X.equals(key) || LOOK_AT_Y.equals(key) || LOOK_AT_Z.equals(key);
     }
 
-    private List<ZombiesDeploySnapshot.FieldValue> fieldValues(String objectType, Map<String, String> fields) {
+    private List<ZombiesDeploySnapshot.FieldValue> fieldValues(
+            String objectType, Map<String, String> fields,
+            com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig barrierRules
+    ) {
         Map<String, String> resolvedFields = mergeDefaults(objectType, fields);
-        return ZombiesDeployFieldSchema.objectType(objectType)
-                .orElse(ZombiesDeployFieldSchema.objectTypes().get(0))
-                .fields()
-                .stream()
-                .map(field -> new ZombiesDeploySnapshot.FieldValue(
-                        field.key(),
-                        field.labelKey(),
-                        field.type(),
-                        resolvedFields.getOrDefault(field.key(), field.defaultValue()),
-                        field.editable()))
-                .toList();
+        List<ZombiesDeploySnapshot.FieldValue> values = new ArrayList<>(ZombiesDeployFieldSchema.objectType(objectType)
+                .orElse(ZombiesDeployFieldSchema.objectTypes().get(0)).fields().stream()
+                .map(field -> new ZombiesDeploySnapshot.FieldValue(field.key(), field.labelKey(), field.type(),
+                        resolvedFields.getOrDefault(field.key(), field.defaultValue()), field.editable())).toList());
+        if (ZombiesDeployFieldSchema.BARRIER.equals(objectType)) {
+            addBarrierRuleMetadata(values, "path", barrierRules.sourcePath());
+            addBarrierRuleMetadata(values, "error", String.join("; ", barrierRules.errors()));
+            barrierRules.groups().forEach((group, rule) -> {
+                addBarrierRuleMetadata(values, "enable." + group, ZombiesSpawnGroupFields.format(rule.spawnGroupChanges().enable()));
+                addBarrierRuleMetadata(values, "disable." + group, ZombiesSpawnGroupFields.format(rule.spawnGroupChanges().disable()));
+                rule.entries().forEach((entryId, entry) -> {
+                    String binding = group + "." + entryId;
+                    addBarrierRuleMetadata(values, "cost." + binding, Integer.toString(entry.cost()));
+                    addBarrierRuleMetadata(values, "requiredItem." + binding, entry.requiredItem());
+                });
+            });
+        }
+        return List.copyOf(values);
+    }
+
+    private static void addBarrierRuleMetadata(List<ZombiesDeploySnapshot.FieldValue> fields, String key, String value) {
+        fields.add(new ZombiesDeploySnapshot.FieldValue("@barrierRules." + key, "", ZombiesDeployFieldSchema.FieldType.TEXT, value, false));
     }
 
     private List<ZombiesDeploySnapshot.ObjectSummary> objectSummaries(ZombiesMapObjects objects, String objectType) {
@@ -1282,9 +1313,11 @@ public final class ZombiesDeployToolService {
             case ZombiesDeployFieldSchema.BARRIER -> {
                 for (int i = 0; i < resolved.barriers().size(); i++) {
                     ZombiesBarrierData data = resolved.barriers().get(i);
-                    summaries.add(summary(i, type, data.objectId(), "group " + data.group(), formatPos(data.areaFrom()) + " -> " + formatPos(data.areaTo())
+                    summaries.add(summary(i, type, data.objectId(), "group " + data.group() + " / entry " + data.entryId(), formatPos(data.areaFrom()) + " -> " + formatPos(data.areaTo())
+                            + (data.cost() < 0 ? "; group/entry not configured" : "; cost=" + data.cost()
+                            + "; requiredItem=" + (data.requiredItem().isBlank() ? "-" : data.requiredItem())
                             + "; enable=" + ZombiesSpawnGroupFields.format(data.spawnGroupChanges().enable())
-                            + "; disable=" + ZombiesSpawnGroupFields.format(data.spawnGroupChanges().disable())));
+                            + "; disable=" + ZombiesSpawnGroupFields.format(data.spawnGroupChanges().disable()))));
                 }
             }
             case ZombiesDeployFieldSchema.WEAPON_WALL -> {
@@ -1350,16 +1383,20 @@ public final class ZombiesDeployToolService {
                 case ZombiesDeployFieldSchema.PROFILE_MVP3 -> ZombiesMapValidationProfile.MVP3_FULL_INITIAL;
                 default -> ZombiesMapValidationProfile.MVP1_MINIMAL;
             };
+            var barrierRules = map.barrierGroupRulesForPreview();
             ZombiesMapSnapshot snapshot = ZombiesMapSnapshot.fromMapObjects(
                     RoomId.of(BuiltInGameModes.ZOMBIES, map.getMapName()),
                     map.getMapName(),
                     map.matchEndTeleportPoint().isPresent(),
                     map.getServerLevel().dimension().location().toString(),
                     ZombiesMapSnapshot.BoundsSnapshot.fromAreaData(map.getMapArea()),
-                    objects);
+                    barrierRules.resolveObjects(objects));
             ValidationCacheKey cacheKey = new ValidationCacheKey(snapshot, profile.key());
-            return validationCache.computeIfAbsent(cacheKey, ignored ->
-                    new ZombiesMapValidator(profile).validate(snapshot).issues().stream().map(this::validationLine).toList());
+            List<ZombiesDeploySnapshot.ValidationLine> lines = new ArrayList<>(validationCache.computeIfAbsent(cacheKey, ignored ->
+                    new ZombiesMapValidator(profile).validate(snapshot).issues().stream().map(this::validationLine).toList()));
+            barrierRules.fileValidationIssues().stream().map(this::validationLine).forEach(lines::add);
+            barrierRules.bindingIssues(objects.barriers(), objects.zombieSpawns()).stream().map(this::validationLine).forEach(lines::add);
+            return List.copyOf(lines);
         } catch (RuntimeException e) {
             return List.of(new ZombiesDeploySnapshot.ValidationLine(
                     "error",
@@ -1458,8 +1495,10 @@ public final class ZombiesDeployToolService {
             zombieSpawnGroups.add(spawn.group());
         }
         Set<Integer> barrierGroups = new TreeSet<>();
+        Set<String> entryBindings = new TreeSet<>();
         for (ZombiesBarrierData barrier : resolved.barriers()) {
             barrierGroups.add(barrier.group());
+            entryBindings.add(barrier.group() + "/" + barrier.entryId());
         }
         Set<Integer> enabledSpawnGroups = new TreeSet<>();
         Set<Integer> disabledSpawnGroups = new TreeSet<>();
@@ -1488,9 +1527,10 @@ public final class ZombiesDeployToolService {
                 + ";ultimateMachine=" + (hasUltimateMachine ? "1" : "0")
                 + ";sodaMachine=" + resolved.sodaMachines().size()
                 + ";total=" + interactionTotal;
-        boolean barrierComplete = true;
+        boolean barrierComplete = resolved.barriers().stream().allMatch(barrier -> barrier.cost() >= 0);
         String barrierDetail = "barrier=" + resolved.barriers().size()
                 + ";barrierGroups=" + formatGroupSet(barrierGroups)
+                + ";entryBindings=" + String.join(",", entryBindings)
                 + ";spawnGroups=" + formatGroupSet(zombieSpawnGroups)
                 + ";enableGroups=" + formatGroupSet(enabledSpawnGroups)
                 + ";disableGroups=" + formatGroupSet(disabledSpawnGroups);

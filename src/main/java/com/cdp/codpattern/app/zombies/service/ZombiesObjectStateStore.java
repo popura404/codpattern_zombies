@@ -443,12 +443,14 @@ public final class ZombiesObjectStateStore {
         payload.putString(PAYLOAD_OBJECT_ID, objectId);
         payload.putString(ZombiesObjectStateKeys.PAYLOAD_TYPE, OBJECT_TYPE_BARRIER);
         payload.putInt(PAYLOAD_GROUP, barrier.group());
+        payload.putInt("entryId", barrier.entryId());
         payload.putString(PAYLOAD_NAME, barrier.displayName());
-        payload.putInt(ZombiesObjectStateKeys.PAYLOAD_COST, Math.max(0, barrier.cost()));
+        payload.putInt(ZombiesObjectStateKeys.PAYLOAD_COST, barrier.cost());
+        payload.putBoolean("barrierGroupConfigured", barrier.cost() >= 0);
         payload.putString(ZombiesObjectStateKeys.PAYLOAD_REQUIRED_ITEM, barrier.requiredItem());
         payload.put("spawnGroupChanges", barrier.spawnGroupChanges().toTag());
         payload.putBoolean(PAYLOAD_CLEARED, state.cleared());
-        payload.putBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED, !state.cleared());
+        payload.putBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED, !state.cleared() && barrier.cost() >= 0);
         putBarrierAreaPayload(payload, barrier);
         return new ModeObjectState(
                 objectId,

@@ -12,12 +12,20 @@ public final class ZombiesServerConfig {
     private final ZombiesWeaponWallConfig weaponWall;
     private final ZombiesMysteryBoxConfig mysteryBox;
     private final ZombiesWeaponFilterConfig weaponFilter;
+    private final ZombiesBarrierGroupsConfig barrierGroups;
     private final List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> validationIssues;
 
     public ZombiesServerConfig(String mapName, ZombiesRoomConfig room, ZombiesWeaponRulesConfig weaponRules,
                                ZombiesWeaponWallConfig weaponWall, ZombiesMysteryBoxConfig mysteryBox,
                                ZombiesWeaponFilterConfig weaponFilter,
                                List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> validationIssues) {
+        this(mapName, room, weaponRules, weaponWall, mysteryBox, weaponFilter, ZombiesBarrierGroupsConfig.empty(), validationIssues);
+    }
+    public ZombiesServerConfig(String mapName, ZombiesRoomConfig room, ZombiesWeaponRulesConfig weaponRules,
+                               ZombiesWeaponWallConfig weaponWall, ZombiesMysteryBoxConfig mysteryBox,
+                               ZombiesWeaponFilterConfig weaponFilter, ZombiesBarrierGroupsConfig barrierGroups,
+                               List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> validationIssues) {
+        this.barrierGroups = barrierGroups == null ? ZombiesBarrierGroupsConfig.empty() : barrierGroups;
         this.mapName = Objects.requireNonNullElse(mapName, "default"); this.room = room == null ? ZombiesRoomConfig.defaults() : room;
         this.weaponRules = weaponRules == null ? ZombiesWeaponRulesConfig.defaults() : weaponRules;
         this.weaponWall = weaponWall == null ? ZombiesWeaponWallConfig.defaults() : weaponWall;
@@ -27,6 +35,7 @@ public final class ZombiesServerConfig {
     }
     public static ZombiesServerConfig defaults(String mapName) { return new ZombiesServerConfig(mapName, null, null, null, null, null, List.of()); }
     public String getMapName() { return mapName; }
+    public ZombiesBarrierGroupsConfig getBarrierGroups() { return barrierGroups; }
     public ZombiesRoomConfig getRoom() { return room; }
     public ZombiesRoomConfig room() { return room; }
     public ZombiesWeaponRulesConfig getWeaponRules() { return weaponRules; }

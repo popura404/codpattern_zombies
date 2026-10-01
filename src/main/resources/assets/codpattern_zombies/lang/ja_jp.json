@@ -88,7 +88,7 @@
     "message.codpattern.zombies.interaction.failure.max_upgrade": "§e%s はすでに強化 %s/%s です（%s レベル %s）。",
     "message.codpattern.zombies.interaction.failure.mystery_box_empty": "§c%s の設定された抽選プールに有効な武器がありません。",
     "message.codpattern.zombies.interaction.failure.generic": "§c%s の操作に失敗しました: %s。",
-    "message.codpattern.zombies.interaction.success.barrier": "§aバリア %s を開きました。消費 %s ポイント（グループ %s）。",
+    "message.codpattern.zombies.interaction.success.barrier": "§aバリア %s を開きました。消費 %s ポイント（グループ %s）。（番号 %4$s）",
     "message.codpattern.zombies.interaction.success.weapon_wall": "§a%s レアリティ %s を %s で購入しました。消費 %s ポイント。",
     "message.codpattern.zombies.interaction.success.ammo": "§a%s レベル %s の弾薬を %s で補充しました。消費 %s ポイント。",
     "message.codpattern.zombies.interaction.success.armor": "§aアーマーレベル %s を %s で購入しました。消費 %s ポイント。",
@@ -360,5 +360,18 @@
     "gui.codpattern.zombies.deploy.spawn_groups.summary": "有効化：%s；無効化：%s",
     "gui.codpattern.zombies.deploy.spawn_groups.scope": "この設定は連動グループ %s の全バリアに適用されます",
     "gui.codpattern.zombies.deploy.spawn_groups.conflict": "グループ %s が有効化と無効化の両方に指定されています",
-    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "%s の「%s」は無効です。0 以上の整数を入力してください"
+    "gui.codpattern.zombies.deploy.spawn_groups.invalid": "%s の「%s」は無効です。0 以上の整数を入力してください",
+    "gui.codpattern.zombies.deploy.barrier_rules.source": "グループ設定ファイル（読取専用）：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.invalid": "グループ設定エラー：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.missing": "バリアグループ %s が未設定です。設定ファイルを編集してください",
+    "gui.codpattern.zombies.deploy.barrier_rules.summary": "費用：%s、有効なゾンビグループ：%s、無効なゾンビグループ：%s",
+    "gui.codpattern.zombies.deploy.barrier_rules.unconfigured": "バリアグループまたは番号が未設定です",
+    "message.codpattern.zombies.deploy.barrier_rules_file_only": "費用・必要アイテム・スポーン設定は barrier_groups.json で編集してください。",
+    "gui.codpattern.zombies.deploy.field.entryId": "ルール番号",
+    "gui.codpattern.zombies.deploy.barrier_rules.missing_entry": "バリアグループ %s / 番号 %s が未設定または未選択です",
+    "gui.codpattern.zombies.deploy.barrier_rules.entry_summary": "費用：%s、必要アイテム：%s、有効なゾンビグループ：%s、無効なゾンビグループ：%s",
+    "hud.codpattern.zombies.barrier.target_entry": "バリアグループ %s / 番号 %s",
+    "hud.codpattern.zombies.barrier.entry_price": "%s を開く - %s ポイント",
+    "hud.codpattern.zombies.barrier.entry_item": "必要アイテム：%s",
+    "message.codpattern.zombies.interaction.failure.barrier_entry_rules_missing": "バリアグループ %s / 番号 %s が未設定です。barrier_groups.json を確認してください。"
 }

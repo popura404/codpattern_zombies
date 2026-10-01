@@ -233,12 +233,13 @@ public record ZombiesMapSnapshot(
                         barrier.group(),
                         barrier.cost(),
                         barrier.blocksPlayersOnly(),
-                        barrier.dimension(),
+                        ZombiesMapSnapshot.dimensionId(barrier.dimension()),
                         barrier.interactionPos(),
                         barrier.areaFrom(),
                         barrier.areaTo(),
                         barrier.requiredItem(),
-                        barrier.spawnGroupChanges()))
+                        barrier.spawnGroupChanges(),
+                        barrier.entryId()))
                 .toList();
         List<WeaponWallSnapshot> weaponWalls = resolved.weaponWalls().stream()
                 .map(weaponWall -> new WeaponWallSnapshot(
@@ -553,8 +554,17 @@ public record ZombiesMapSnapshot(
             BlockPos areaFrom,
             BlockPos areaTo,
             String requiredItem,
-            ZombiesSpawnGroupChanges spawnGroupChanges
+            ZombiesSpawnGroupChanges spawnGroupChanges,
+            int entryId
     ) {
+        /** Legacy snapshots do not silently acquire a rule entry. */
+        public BarrierSnapshot(String objectId, String featureKey, int group, int cost, boolean blocksPlayersOnly,
+                String dimensionId, BlockPos pos, BlockPos areaFrom, BlockPos areaTo, String requiredItem,
+                ZombiesSpawnGroupChanges spawnGroupChanges) {
+            this(objectId, featureKey, group, cost, blocksPlayersOnly, dimensionId, pos, areaFrom, areaTo,
+                    requiredItem, spawnGroupChanges, 0);
+        }
+
         public BarrierSnapshot(String objectId, String featureKey) {
             this(objectId, featureKey, 1, 0);
         }

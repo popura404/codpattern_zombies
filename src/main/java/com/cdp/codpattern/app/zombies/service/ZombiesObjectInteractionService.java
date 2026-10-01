@@ -672,7 +672,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         ZombiesServiceResult<ZombiesBarrierService.BarrierPurchaseResult> result =
                 barrierService.purchase(player, barrier);
         if (result.success()) {
-            sendMessage(player, SUCCESS_BARRIER, target.objectId(), barrier.cost(), barrier.group());
+            sendMessage(player, SUCCESS_BARRIER, target.objectId(), result.value().orElseThrow().cost(), barrier.group(), result.value().orElseThrow().entryId());
             announcementService.broadcastSubtitle(
                     ANNOUNCEMENT_BARRIER,
                     playerDisplayName(player),
@@ -1382,6 +1382,12 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
             InteractionTarget target,
             ZombiesServiceResult<?> result
     ) {
+        if (result != null && "barrier.missing_entry_rules".equals(result.code().key())
+                && target != null && target.data() instanceof ZombiesBarrierData barrier) {
+            sendMessage(player, MESSAGE_PREFIX + "failure.barrier_entry_rules_missing", barrier.group(), barrier.entryId());
+            return;
+        }
+
         ZombiesErrorCode code = result == null ? ZombiesErrorCode.OBJECT_NOT_FOUND : result.code();
         if (ZombiesErrorCode.PLAYER_DEAD.equals(code)) {
             sendMessage(player, FAILURE_DEAD, target.objectId());

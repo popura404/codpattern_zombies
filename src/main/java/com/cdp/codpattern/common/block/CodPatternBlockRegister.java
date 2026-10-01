@@ -23,6 +23,7 @@ public final class CodPatternBlockRegister {
     public static final RegistryObject<ZombiesPowerSwitchBlock> ZOMBIES_POWER_SWITCH = BLOCKS.register(
             "zombies_power_switch",
             () -> new ZombiesPowerSwitchBlock(BlockBehaviour.Properties.copy(Blocks.IRON_BLOCK)
+                    .noOcclusion()
                     .strength(2.0F, 6.0F)
                     .sound(SoundType.METAL))
     );

@@ -663,8 +663,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         interactionDispatcher.register(InteractionType.ULTIMATE_MACHINE, dispatch -> useUltimateMachine(
                 dispatch.player(),
                 dispatch.target(),
-                (ZombiesUltimateMachineData) dispatch.target().data(),
-                dispatch.context().itemStack()));
+                (ZombiesUltimateMachineData) dispatch.target().data()));
         interactionDispatcher.register(InteractionType.MYSTERY_BOX, dispatch -> purchaseMysteryBox(
                 dispatch.player(), dispatch.target(), (ZombiesMysteryBoxData) dispatch.target().data()));
     }
@@ -1052,18 +1051,25 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
     private InteractionResult useUltimateMachine(
             ServerPlayer player,
             InteractionTarget target,
-            ZombiesUltimateMachineData ultimateMachine,
-            ItemStack currentItemStack
+            ZombiesUltimateMachineData ultimateMachine
     ) {
+        ItemStack currentItemStack = player.getMainHandItem();
+        Optional<ZombiesWeaponItemStackService.ZombiesWeaponTagData> currentWeaponTag =
+                weaponInventoryService.currentWeaponTag(roomId, currentItemStack);
+        if (currentWeaponTag.isEmpty() || !TaczGatewayProvider.gateway().isGun(currentItemStack)) {
+            sendFailureMessage(player, target,
+                    ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON));
+            return InteractionResult.FAIL;
+        }
+        ZombiesWeaponItemStackService.ZombiesWeaponTagData tag = currentWeaponTag.get();
         ZombiesServiceResult<ZombiesUltimateMachineService.WeaponUpgradeResult> result =
-                useUltimateMachine(player.getUUID(), ultimateMachine, (currentWeapon, upgradedWeapon) ->
-                        weaponInventoryService.syncReserveAmmo(
-                                player,
-                                roomId,
-                                ZombiesEquipmentSlot.PRIMARY,
-                                upgradedWeapon,
-                                currentItemStack));
+                ultimateMachineService.upgradeHeldWeapon(
+                        player.getUUID(), tag.slot(), tag.toWeaponState(), ultimateMachineRules(),
+                        ultimateMachine.requiresPower(), (currentWeapon, upgradedWeapon) ->
+                                weaponInventoryService.syncMainHandWeapon(
+                                        player, roomId, currentItemStack, tag, upgradedWeapon));
         if (result.success()) {
+            objectStateStore.markUltimateMachineUsed(ultimateMachine);
             ZombiesUltimateMachineService.WeaponUpgradeResult upgrade = result.value().orElse(null);
             String gunId = upgrade == null ? "" : upgrade.weapon().gunId();
             int weaponLevel = upgrade == null ? 0 : upgrade.weapon().weaponLevel();

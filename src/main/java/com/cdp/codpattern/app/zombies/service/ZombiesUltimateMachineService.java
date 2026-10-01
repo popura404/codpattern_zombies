@@ -2,6 +2,7 @@ package com.cdp.codpattern.app.zombies.service;
 
 import com.cdp.codpattern.app.match.model.ModePlayerValue;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesUltimateMachineData;
+import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot;
 import com.cdp.codpattern.app.zombies.model.ZombiesPlayerRuntimeState;
 import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
@@ -12,7 +13,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Pure current-primary weapon upgrade service for ultimate machines.
+ * Pure slot-aware weapon upgrade service for ultimate machines.
  */
 public final class ZombiesUltimateMachineService {
     private static final ZombiesErrorCode ULTIMATE_INVALID_LEVEL = ZombiesErrorCode.of("ultimate.invalid_level");
@@ -96,8 +97,40 @@ public final class ZombiesUltimateMachineService {
                 commitGuard);
     }
 
+    public ZombiesServiceResult<WeaponUpgradeResult> upgradeHeldWeapon(
+            UUID playerId,
+            ZombiesEquipmentSlot slot,
+            ZombiesWeaponInstanceState heldWeapon,
+            ZombiesRulesConfig.UltimateMachine rules,
+            boolean requiresPower,
+            WeaponUpgradeCommitGuard commitGuard
+    ) {
+        if (slot == null || !isValidCurrentWeapon(heldWeapon)) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
+        }
+        if (rules == null) {
+            return ZombiesServiceResult.failure(ULTIMATE_INVALID_LEVEL);
+        }
+        return upgradeWeaponResolved(playerId, slot, heldWeapon,
+                Math.max(0, rules.getMaxUpgradeLevel() == null ? 0 : rules.getMaxUpgradeLevel()),
+                ruleLevels(rules.getLevels()), requiresPower, commitGuard);
+    }
+
     private ZombiesServiceResult<WeaponUpgradeResult> upgradePrimaryWeaponResolved(
             UUID playerId,
+            int maxUpgradeLevel,
+            Map<String, LevelData> levels,
+            boolean requiresPower,
+            WeaponUpgradeCommitGuard commitGuard
+    ) {
+        return upgradeWeaponResolved(playerId, ZombiesEquipmentSlot.PRIMARY, null,
+                maxUpgradeLevel, levels, requiresPower, commitGuard);
+    }
+
+    private ZombiesServiceResult<WeaponUpgradeResult> upgradeWeaponResolved(
+            UUID playerId,
+            ZombiesEquipmentSlot slot,
+            ZombiesWeaponInstanceState heldWeapon,
             int maxUpgradeLevel,
             Map<String, LevelData> levels,
             boolean requiresPower,
@@ -108,8 +141,9 @@ public final class ZombiesUltimateMachineService {
         }
 
         ZombiesPlayerRuntimeState currentState = economyService.state(playerId).orElse(null);
-        ZombiesWeaponInstanceState currentWeapon = currentState == null ? null : currentState.primaryWeapon().orElse(null);
-        if (!isValidCurrentWeapon(currentWeapon)) {
+        ZombiesWeaponInstanceState trackedWeapon = weaponInSlot(currentState, slot);
+        ZombiesWeaponInstanceState currentWeapon = heldWeapon == null ? trackedWeapon : heldWeapon;
+        if (!isValidCurrentWeapon(currentWeapon) || !matchesHeldWeapon(trackedWeapon, heldWeapon)) {
             return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
         }
         if (currentWeapon.upgradeLevel() >= maxUpgradeLevel) {
@@ -123,8 +157,9 @@ public final class ZombiesUltimateMachineService {
         }
 
         return economyService.spendAtomically(playerId, target.cost(), state -> {
-            ZombiesWeaponInstanceState lockedWeapon = state.primaryWeapon().orElse(null);
-            if (!isValidCurrentWeapon(lockedWeapon)) {
+            ZombiesWeaponInstanceState lockedTrackedWeapon = weaponInSlot(state, slot);
+            ZombiesWeaponInstanceState lockedWeapon = heldWeapon == null ? lockedTrackedWeapon : heldWeapon;
+            if (!isValidCurrentWeapon(lockedWeapon) || !matchesHeldWeapon(lockedTrackedWeapon, heldWeapon)) {
                 return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
             }
             if (lockedWeapon.upgradeLevel() >= maxUpgradeLevel) {
@@ -147,9 +182,34 @@ public final class ZombiesUltimateMachineService {
                         guardResult == null ? Map.of() : guardResult.params(),
                         guardResult == null ? "" : guardResult.logMessage());
             }
-            state.setPrimaryWeapon(upgradedWeapon);
+            switch (slot) {
+                case STARTER -> state.setStarterWeapon(upgradedWeapon);
+                case PRIMARY -> state.setPrimaryWeapon(upgradedWeapon);
+                case MYSTERY_BOX -> state.setMysteryBoxWeapon(upgradedWeapon);
+            }
             return ZombiesServiceResult.success(new WeaponUpgradeResult(upgradedWeapon, lockedTarget.cost()));
         });
+    }
+
+    private static ZombiesWeaponInstanceState weaponInSlot(
+            ZombiesPlayerRuntimeState state, ZombiesEquipmentSlot slot
+    ) {
+        if (state == null || slot == null) {
+            return null;
+        }
+        return switch (slot) {
+            case STARTER -> state.starterWeapon().orElse(null);
+            case PRIMARY -> state.primaryWeapon().orElse(null);
+            case MYSTERY_BOX -> state.mysteryBoxWeapon().orElse(null);
+        };
+    }
+
+    private static boolean matchesHeldWeapon(
+            ZombiesWeaponInstanceState trackedWeapon, ZombiesWeaponInstanceState heldWeapon
+    ) {
+        // Live reserve ammo can be newer than the runtime snapshot after firing/reloading.
+        return heldWeapon == null || (trackedWeapon != null
+                && trackedWeapon.withReserveAmmo(0).equals(heldWeapon.withReserveAmmo(0)));
     }
 
     private static boolean isValidCurrentWeapon(ZombiesWeaponInstanceState weapon) {

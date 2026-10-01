@@ -234,6 +234,36 @@ public final class ZombiesWeaponInventoryService {
                 .filter(tag -> matchesRoom(roomId, tag.roomId()));
     }
 
+    /** Updates only the captured main-hand instance; never searches other inventory slots. */
+    public ZombiesServiceResult<InventoryMutationResult> syncMainHandWeapon(
+            ServerPlayer player,
+            RoomId roomId,
+            ItemStack expectedStack,
+            ZombiesWeaponItemStackService.ZombiesWeaponTagData expectedTag,
+            ZombiesWeaponInstanceState weaponState
+    ) {
+        if (player == null || expectedTag == null || player.getMainHandItem() != expectedStack
+                || !TaczGatewayProvider.gateway().isGun(expectedStack)
+                || currentWeaponTag(roomId, expectedStack).filter(expectedTag::equals).isEmpty()) {
+            return ZombiesServiceResult.failure(
+                    ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON, weaponParams(weaponState), "");
+        }
+        ItemStack snapshot = expectedStack.copy();
+        try {
+            ZombiesServiceResult<InventoryMutationResult> result =
+                    syncReserveAmmo(expectedStack, roomId, expectedTag.slot(), weaponState);
+            if (!result.success()) {
+                expectedStack.setTag(snapshot.getTag());
+                return result;
+            }
+            syncInventory(player);
+            return result;
+        } catch (RuntimeException exception) {
+            expectedStack.setTag(snapshot.getTag());
+            return itemCommitFailure(weaponState, exception);
+        }
+    }
+
     public ZombiesServiceResult<InventoryMutationResult> validateReserveAmmoSync(
             ServerPlayer player,
             RoomId roomId,

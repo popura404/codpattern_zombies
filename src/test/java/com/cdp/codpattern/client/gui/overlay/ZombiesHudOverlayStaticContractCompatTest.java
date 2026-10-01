@@ -23,9 +23,23 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
         requireAbsent(overlay, "Power \"", "zombies overlay must not render the bottom-right power text");
         requireAbsent(overlay, "Buffs \"", "zombies overlay must not render the bottom-right buffs text");
         requireContains(overlay, "private static final int PLAYER_STATUS_BAR_WIDTH = 210;",
-                "local player health bar width must stay 210");
+                "local player content width must stay 210 to preserve other layout");
         requireContains(overlay, "private static final int TEAMMATE_BAR_WIDTH = 150;",
-                "teammate health bar width must stay 150");
+                "teammate content width must stay 150 to preserve other layout");
+        requireContains(overlay, "private static final int PLAYER_STATUS_HEALTH_BAR_WIDTH = 105;",
+                "local health bar must be 50 percent shorter");
+        requireContains(overlay, "private static final int TEAMMATE_HEALTH_BAR_WIDTH = 90;",
+                "teammate health bar must be 40 percent shorter");
+        requireContains(overlay, "private static final int TEAMMATE_COMPACT_ROW_GAP = 2;",
+                "visible teammate rows must use a compact two-pixel gap");
+        requireContains(overlay, "private static final int TEAMMATE_COMPACT_STATUS_BOTTOM_GAP = 5;",
+                "visible teammates must sit closer to the local player");
+        requireContains(overlay, "renderRoomTeammateRow(graphics, font, teammate, avatarX, barX, compactRowY);",
+                "compact only rendered rows, not soda exclusion bounds");
+        requireContains(overlay, "int filledWidth = Math.round(TEAMMATE_HEALTH_BAR_WIDTH * ratio);",
+                "teammate health fill must use the shortened width");
+        requireContains(overlay, "int filledWidth = Math.round(healthBarWidth * healthRatio);",
+                "local health fill must use the shortened width");
         requireContains(overlay, "private static final int TEAMMATE_BAR_HEIGHT = 2;",
                 "teammate health bar height must stay 2");
         requireContains(overlay, "ClientZombiesState.roomTeammates()",

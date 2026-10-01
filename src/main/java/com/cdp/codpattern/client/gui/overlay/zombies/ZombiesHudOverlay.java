@@ -77,17 +77,23 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
     private static final int PLAYER_STATUS_BOTTOM_MARGIN = 28;
     private static final int PLAYER_STATUS_AVATAR_SIZE = 28;
     private static final int PLAYER_STATUS_AVATAR_GAP = 8;
+    // Preserve text anchors and soda-HUD clearance; shrink only the visible health bar.
     private static final int PLAYER_STATUS_BAR_WIDTH = 210;
+    private static final int PLAYER_STATUS_HEALTH_BAR_WIDTH = 105;
     private static final int PLAYER_STATUS_BAR_MIN_WIDTH = 48;
     private static final int PLAYER_STATUS_BAR_HEIGHT = 4;
     private static final int PLAYER_STATUS_LINE_GAP = 1;
     private static final int TEAMMATE_AVATAR_SIZE = 20;
     private static final int TEAMMATE_AVATAR_GAP = 6;
     private static final int TEAMMATE_BAR_WIDTH = 150;
+    private static final int TEAMMATE_HEALTH_BAR_WIDTH = 90;
     private static final int TEAMMATE_BAR_HEIGHT = 2;
     private static final int TEAMMATE_POINTS_GAP = 8;
     private static final int TEAMMATE_ROW_GAP = 5;
     private static final int TEAMMATE_STATUS_BOTTOM_GAP = 8;
+    // Compact visible rows without moving the original soda-HUD exclusion bounds.
+    private static final int TEAMMATE_COMPACT_ROW_GAP = 2;
+    private static final int TEAMMATE_COMPACT_STATUS_BOTTOM_GAP = 5;
     private static final int TEAMMATE_MIN_RIGHT_MARGIN = 8;
     private static final int LEADERBOARD_LEFT = 8;
     private static final int LEADERBOARD_ROW_WIDTH = 156;
@@ -288,6 +294,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
 
         int localAvatarY = screenHeight - PLAYER_STATUS_BOTTOM_MARGIN - PLAYER_STATUS_AVATAR_SIZE - 6;
         int rowHeight = Math.max(TEAMMATE_AVATAR_SIZE, TEAMMATE_BAR_HEIGHT + 3 + font.lineHeight) + TEAMMATE_ROW_GAP;
+        int compactRowHeight = rowHeight - TEAMMATE_ROW_GAP + TEAMMATE_COMPACT_ROW_GAP;
+        int compactRowY = localAvatarY - TEAMMATE_COMPACT_STATUS_BOTTOM_GAP - teammates.size() * compactRowHeight;
         int listBottomY = localAvatarY - TEAMMATE_STATUS_BOTTOM_GAP;
         int rowY = listBottomY - teammates.size() * rowHeight;
         if (rowY < 2) {
@@ -295,13 +303,14 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         }
 
         for (ClientZombiesState.SurvivorStatus teammate : teammates) {
-            renderRoomTeammateRow(graphics, font, teammate, avatarX, barX, rowY);
+            renderRoomTeammateRow(graphics, font, teammate, avatarX, barX, compactRowY);
             int pointsRight = barX + TEAMMATE_BAR_WIDTH + TEAMMATE_POINTS_GAP
                     + font.width(Integer.toString(Math.max(0, teammate.points()))) + 1;
             int bottom = rowY + Math.max(TEAMMATE_AVATAR_SIZE + 1,
                     TEAMMATE_BAR_HEIGHT + 3 + font.lineHeight + 1);
             occupied.add(new ZombiesSodaHudLayout.Bounds(avatarX - 1, rowY - 1, pointsRight, bottom));
             rowY += rowHeight;
+            compactRowY += compactRowHeight;
         }
     }
 
@@ -323,13 +332,13 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         double maxHealth = Math.max(1.0D, teammate.maxHealth());
         double health = Math.max(0.0D, teammate.health());
         float ratio = Mth.clamp((float) (health / maxHealth), 0.0F, 1.0F);
-        int filledWidth = Math.round(TEAMMATE_BAR_WIDTH * ratio);
+        int filledWidth = Math.round(TEAMMATE_HEALTH_BAR_WIDTH * ratio);
         if (health > 0.0D && filledWidth <= 0) {
             filledWidth = 1;
         }
 
-        graphics.fill(barX - 1, barY - 1, barX + TEAMMATE_BAR_WIDTH + 1, barY + TEAMMATE_BAR_HEIGHT + 1, 0xDDFFFFFF);
-        graphics.fill(barX, barY, barX + TEAMMATE_BAR_WIDTH, barY + TEAMMATE_BAR_HEIGHT, 0xFF14171A);
+        graphics.fill(barX - 1, barY - 1, barX + TEAMMATE_HEALTH_BAR_WIDTH + 1, barY + TEAMMATE_BAR_HEIGHT + 1, 0xDDFFFFFF);
+        graphics.fill(barX, barY, barX + TEAMMATE_HEALTH_BAR_WIDTH, barY + TEAMMATE_BAR_HEIGHT, 0xFF14171A);
         if (filledWidth > 0) {
             graphics.fill(barX, barY, barX + filledWidth, barY + TEAMMATE_BAR_HEIGHT, PLAYER_STATUS_HEALTH_COLOR);
         }
@@ -1257,6 +1266,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             return;
         }
         int barWidth = Math.min(PLAYER_STATUS_BAR_WIDTH, maxBarWidth);
+        int healthBarWidth = Math.max(1, Math.round((float) barWidth
+                * PLAYER_STATUS_HEALTH_BAR_WIDTH / PLAYER_STATUS_BAR_WIDTH));
 
         int idY = avatarY - 1;
         int pointsY = idY + font.lineHeight + PLAYER_STATUS_LINE_GAP;
@@ -1274,12 +1285,12 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
 
         float maxHealth = Math.max(1.0F, player.getMaxHealth());
         float healthRatio = Mth.clamp(player.getHealth() / maxHealth, 0.0F, 1.0F);
-        int filledWidth = Math.round(barWidth * healthRatio);
+        int filledWidth = Math.round(healthBarWidth * healthRatio);
         if (player.getHealth() > 0.0F && filledWidth <= 0) {
             filledWidth = 1;
         }
-        graphics.fill(barX - 1, barY - 1, barX + barWidth + 1, barY + PLAYER_STATUS_BAR_HEIGHT + 1, 0xDDFFFFFF);
-        graphics.fill(barX, barY, barX + barWidth, barY + PLAYER_STATUS_BAR_HEIGHT, 0xFF14171A);
+        graphics.fill(barX - 1, barY - 1, barX + healthBarWidth + 1, barY + PLAYER_STATUS_BAR_HEIGHT + 1, 0xDDFFFFFF);
+        graphics.fill(barX, barY, barX + healthBarWidth, barY + PLAYER_STATUS_BAR_HEIGHT, 0xFF14171A);
         if (filledWidth > 0) {
             graphics.fill(barX, barY, barX + filledWidth, barY + PLAYER_STATUS_BAR_HEIGHT, PLAYER_STATUS_HEALTH_COLOR);
         }

@@ -93,7 +93,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
+import com.cdp.codpattern.common.sound.ZombiesSoundRegister;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.GameType;
@@ -677,9 +677,12 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         notifySurvivors(startupFailureMessage(result));
     }
 
-    private void playIntermissionBell() {
+    private void playWaveIntro() {
+        var definition = waveDirector == null ? null
+                : waveDirector.waveDefinition(runtimeState.waveState().targetWave()).orElse(null);
+        var sound = ZombiesSoundRegister.forWave(definition);
         for (ServerPlayer player : survivorPlayers()) {
-            player.playNotifySound(SoundEvents.BELL_BLOCK, SoundSource.PLAYERS, 1.0F, 1.0F);
+            player.playNotifySound(sound, SoundSource.PLAYERS, 1.0F, 1.0F);
         }
     }
 
@@ -1689,7 +1692,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                         runtimeState.waveState().targetWave(),
                         runtimeState.waveState().maxWave());
                 reviveIntermissionDeadSpectators();
-                playIntermissionBell();
+                playWaveIntro();
                 waveTextScheduler.startWave(runtimeState.waveState().targetWave(), ZombiesMap.this::sendWaveText);
             }
             if (runtimeState.phase() == ZombiesGamePhase.WAVE_ACTIVE && waveDirector != null) {

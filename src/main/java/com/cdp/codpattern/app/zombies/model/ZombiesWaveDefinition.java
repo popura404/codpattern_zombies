@@ -9,6 +9,8 @@ import java.util.List;
 
 public class ZombiesWaveDefinition {
     private Integer wave;
+    // Optional audio-only marker; omitted values use the normal wave intro.
+    private boolean bossIntro;
     // Optional example/documentation metadata; validation and runtime wave logic ignore it.
     private Object description;
     private Double healthMultiplier;
@@ -32,6 +34,10 @@ public class ZombiesWaveDefinition {
 
     public int getWave() {
         return wave != null ? wave : fileWave;
+    }
+
+    public boolean isBossIntro() {
+        return bossIntro;
     }
 
     public Object getDescription() {

@@ -1,0 +1,26 @@
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    def candidate = p.file(p.findProperty('waveIntroProbeRoot') ?: p.projectDir)
+    def output = p.layout.buildDirectory.dir('verification/wave-intro/probe-' + (p.findProperty('waveIntroProbeLabel') ?: 'current'))
+    def compileCp = p.files(p.layout.buildDirectory.dir('classes/java/main'),
+            p.project(':codpattern-main').layout.buildDirectory.dir('classes/java/main')) + p.sourceSets.main.compileClasspath
+    def compileProbe = p.tasks.register('compileWaveIntroProbe', JavaCompile) {
+        dependsOn p.tasks.named('classes')
+        source p.files(new File(candidate, 'src/main/java/com/cdp/codpattern/app/zombies/model/ZombiesWaveDefinition.java'),
+                new File(candidate, 'src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesWaveConfigRepository.java'),
+                p.file('src/test/java/com/cdp/codpattern/app/zombies/service/ZombiesWaveIntroCompatTest.java'))
+        classpath = compileCp
+        destinationDirectory.set(output)
+        javaCompiler.set(p.javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) })
+        options.encoding = 'UTF-8'
+        options.compilerArgs += ['-proc:none']
+    }
+    p.tasks.register('runWaveIntroProbe', JavaExec) {
+        dependsOn compileProbe
+        classpath = p.files(output) + compileCp
+        mainClass = 'com.cdp.codpattern.app.zombies.service.ZombiesWaveIntroCompatTest'
+        javaLauncher.set(p.javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) })
+        args candidate.absolutePath
+        systemProperty 'file.encoding', 'UTF-8'
+    }
+}

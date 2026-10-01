@@ -28,6 +28,7 @@ public final class ZombiesWaveConfigRepository {
     private static final String DEFAULT_WAVE_JSON = """
             {
               "wave": 1,
+              "bossIntro": false,
               "description": "Example wave generated when no wave_*.json files are present. Copy or edit it for your map.",
               "healthMultiplier": 1.25,
               "damageMultiplier": 1.10,
@@ -188,6 +189,12 @@ public final class ZombiesWaveConfigRepository {
                 return Optional.empty();
             }
             JsonObject object = element.getAsJsonObject();
+            JsonElement bossIntro = object.get("bossIntro");
+            // Gson accepts string booleans by default; this config flag must be a JSON boolean.
+            if (bossIntro != null && (!bossIntro.isJsonPrimitive()
+                    || !bossIntro.getAsJsonPrimitive().isBoolean())) {
+                return Optional.empty();
+            }
             ZombiesWaveDefinition wave = GSON.fromJson(object, ZombiesWaveDefinition.class);
             if (wave == null) {
                 return Optional.empty();

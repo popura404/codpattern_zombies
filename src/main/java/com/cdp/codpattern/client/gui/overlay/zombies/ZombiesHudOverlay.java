@@ -2,6 +2,7 @@ package com.cdp.codpattern.client.gui.overlay.zombies;
 
 import com.cdp.codpattern.app.match.model.ModeObjectState;
 import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
+import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponItemStackService;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponInventoryService;
 import com.cdp.codpattern.app.zombies.sync.ZombiesObjectStateKeys;
@@ -1136,7 +1137,10 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         String rarityId = tag.contains(ZombiesWeaponItemStackService.TAG_RARITY_ID, Tag.TAG_STRING)
                 ? tag.getString(ZombiesWeaponItemStackService.TAG_RARITY_ID).trim() : "";
         int weaponLevel = positiveIntTag(tag, ZombiesWeaponItemStackService.TAG_WEAPON_LEVEL);
-        if (!taggedRoom.equals(roomKey) || gunId.isBlank() || rarityId.isBlank() || weaponLevel <= 0) {
+        boolean starterWeapon = ZombiesEquipmentSlot.STARTER.key()
+                .equals(tag.getString(ZombiesWeaponItemStackService.TAG_SLOT).trim());
+        if (!taggedRoom.equals(roomKey) || gunId.isBlank()
+                || (rarityId.isBlank() && !starterWeapon) || weaponLevel <= 0) {
             return Optional.empty();
         }
 

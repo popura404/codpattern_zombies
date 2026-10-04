@@ -209,7 +209,22 @@ public final class ZombiesUltimateMachineService {
     ) {
         // Live reserve ammo can be newer than the runtime snapshot after firing/reloading.
         return heldWeapon == null || (trackedWeapon != null
-                && trackedWeapon.withReserveAmmo(0).equals(heldWeapon.withReserveAmmo(0)));
+                && trackedWeapon.gunId().equals(heldWeapon.gunId())
+                && trackedWeapon.rarityId().equals(heldWeapon.rarityId())
+                && trackedWeapon.weaponLevel() == heldWeapon.weaponLevel()
+                && trackedWeapon.upgradeLevel() == heldWeapon.upgradeLevel()
+                && trackedWeapon.maxReserveAmmo() == heldWeapon.maxReserveAmmo()
+                && matchesNbtMultiplier(trackedWeapon.levelDamageMultiplier(), heldWeapon.levelDamageMultiplier())
+                && matchesNbtMultiplier(trackedWeapon.upgradeDamageMultiplier(), heldWeapon.upgradeDamageMultiplier()));
+    }
+
+    private static boolean matchesNbtMultiplier(double tracked, double held) {
+        // Weapon tags persist these multipliers as floats; compare at that same precision.
+        float trackedFloat = (float) tracked;
+        float heldFloat = (float) held;
+        return Float.isFinite(trackedFloat) && trackedFloat > 0.0F
+                && Float.isFinite(heldFloat) && heldFloat > 0.0F
+                && Float.compare(trackedFloat, heldFloat) == 0;
     }
 
     private static boolean isValidCurrentWeapon(ZombiesWeaponInstanceState weapon) {

@@ -788,6 +788,7 @@ public final class ZombiesDeployToolService {
             case ZombiesDeployFieldSchema.POWER_SWITCH -> {
                 if (leftClick) {
                     setPosition(fields, "pos", placementPos);
+                    fields.put("facing", player.getDirection().getOpposite().getName());
                 }
             }
             default -> {

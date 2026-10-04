@@ -336,7 +336,8 @@ public final class ZombiesDeployPreviewService {
             case ZombiesDeployFieldSchema.INITIAL, ZombiesDeployFieldSchema.ZOMBIE_SPAWN -> floatField(fields, "yaw");
             case ZombiesDeployFieldSchema.WEAPON_WALL, ZombiesDeployFieldSchema.AMMO_BOX,
                     ZombiesDeployFieldSchema.ARMOR_STATION, ZombiesDeployFieldSchema.SODA_MACHINE,
-                    ZombiesDeployFieldSchema.ULTIMATE_MACHINE, ZombiesDeployFieldSchema.MYSTERY_BOX -> boxFacingYaw(fields);
+                    ZombiesDeployFieldSchema.ULTIMATE_MACHINE, ZombiesDeployFieldSchema.MYSTERY_BOX,
+                    ZombiesDeployFieldSchema.POWER_SWITCH -> boxFacingYaw(fields);
             default -> Float.NaN;
         };
         return DraftPreview.point(dimension, blockPos(fields, "pos"), optionalBlockPos(fields, "interaction"), lookAtPos, yaw);
@@ -471,7 +472,7 @@ public final class ZombiesDeployPreviewService {
                         objectColor(type, selectedIndex == 0),
                         data.dimension(),
                         data.pos(),
-                        Float.NaN);
+                        data.facing().toYRot());
                 sendSlotPointForField(player, key, label, binding, "pos", data.dimension(), data.pos(), selectedIndex == 0);
             });
             case ZombiesDeployFieldSchema.SODA_MACHINE -> {

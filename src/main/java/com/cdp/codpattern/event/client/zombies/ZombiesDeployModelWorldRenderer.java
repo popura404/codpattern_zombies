@@ -74,7 +74,7 @@ public final class ZombiesDeployModelWorldRenderer {
             try {
                 poseStack.translate(pos.getX() - cameraPos.x, pos.getY() - cameraPos.y, pos.getZ() - cameraPos.z);
                 BlockState previewState = block.defaultBlockState();
-                if (block instanceof ZombiesBoxInteractionBlock && Float.isFinite(point.yaw())) {
+                if (previewState.hasProperty(ZombiesBoxInteractionBlock.FACING) && Float.isFinite(point.yaw())) {
                     previewState = previewState.setValue(ZombiesBoxInteractionBlock.FACING, Direction.fromYRot(point.yaw()));
                 }
                 minecraft.getBlockRenderer().renderSingleBlock(previewState, poseStack, buffers,

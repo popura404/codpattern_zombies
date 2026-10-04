@@ -54,7 +54,7 @@ public final class ZombiesPurchasableBlockService {
                 CodPatternBlockRegister.ZOMBIES_ARMOR_STATION_BOX.get(), object.facing())));
         resolved.powerSwitch().ifPresent(object -> placements.add(new Placement(
                 "power_switch", object.objectId(), object.dimension(), object.pos(),
-                CodPatternBlockRegister.ZOMBIES_POWER_SWITCH.get(), Direction.NORTH)));
+                CodPatternBlockRegister.ZOMBIES_POWER_SWITCH.get(), object.facing())));
         resolved.sodaMachines().forEach(object -> placements.add(new Placement(
                 "soda_machine", object.objectId(), object.dimension(), object.pos(),
                 CodPatternBlockRegister.ZOMBIES_SODA_MACHINE_BOX.get(), object.facing())));

@@ -103,6 +103,7 @@ public final class ZombiesDeployFieldSchema {
             new ObjectTypeSchema(POWER_SWITCH, "gui.codpattern.zombies.deploy.type.power_switch", false, true, List.of(
                     field("objectId", FieldType.TEXT, "power_switch"),
                     field("block", FieldType.TEXT, "codpattern:zombies_power_switch"),
+                    field("facing", FieldType.TEXT, "north"),
                     field("cost", FieldType.INTEGER, "1000"),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("posX", FieldType.INTEGER, "0"),

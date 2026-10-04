@@ -617,7 +617,7 @@ final class ZombiesDeployObjectEditor {
                 intField(fields, "cost"),
                 dimension(fields),
                 blockPos(fields, "pos"),
-                Optional.empty());
+                Optional.empty(), facingField(fields));
     }
 
     private static ZombiesSodaMachineData parseSodaMachine(
@@ -819,6 +819,7 @@ final class ZombiesDeployObjectEditor {
         fields.put("objectId", data.objectId());
         fields.put("block", data.block());
         fields.put("cost", Integer.toString(data.cost()));
+        fields.put("facing", data.facing().getName());
         return fields;
     }
 

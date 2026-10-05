@@ -106,7 +106,11 @@ tasks.register('compileBarrierGroupRulesGameTests', JavaCompile) {
     source project.files(
             'src/test/java/com/cdp/codpattern/config/zombies/ZombiesBarrierGroupsConfigCompatTest.java',
             'src/test/java/com/cdp/codpattern/app/zombies/service/ZombiesBarrierGroupRulesPurchaseCompatTest.java',
+            'src/test/java/com/cdp/codpattern/app/zombies/service/ZombiesSpawnAssignmentServiceCompatTest.java',
+            'src/test/java/com/cdp/codpattern/app/zombies/validation/ZombiesMapValidatorMvp2Mvp3CompatTest.java',
             'src/test/java/com/cdp/codpattern/app/zombies/deploy/ZombiesBarrierGroupRulesEditorCompatTest.java',
+            'src/test/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployObjectEditorCompatTest.java',
+            'src/test/java/com/cdp/codpattern/app/zombies/deploy/ZombiesPlayerSpawnRuntimeGameTestSupport.java',
             'src/test/java/com/cdp/codpattern/app/zombies/deploy/ZombiesBarrierGroupRulesGameTests.java')
     classpath = sourceSets.test.compileClasspath + sourceSets.main.output
     destinationDirectory.set(layout.buildDirectory.dir('verification/barrier-group-rules/forge-test-classes'))

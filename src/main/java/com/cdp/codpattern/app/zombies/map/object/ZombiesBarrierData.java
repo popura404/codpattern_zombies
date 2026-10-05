@@ -18,8 +18,16 @@ public record ZombiesBarrierData(
         BlockPos interactionPos,
         String requiredItem,
         ZombiesSpawnGroupChanges spawnGroupChanges,
-        int entryId
+        int entryId,
+        ZombiesSpawnGroupChanges playerSpawnGroupChanges
 ) {
+    public ZombiesBarrierData(String objectId, String name, int group, int cost, boolean blocksPlayersOnly,
+            ResourceKey<Level> dimension, BlockPos areaFrom, BlockPos areaTo, BlockPos interactionPos,
+            String requiredItem, ZombiesSpawnGroupChanges spawnGroupChanges, int entryId) {
+        this(objectId, name, group, cost, blocksPlayersOnly, dimension, areaFrom, areaTo, interactionPos,
+                requiredItem, spawnGroupChanges, entryId, ZombiesSpawnGroupChanges.NONE);
+    }
+
     /** Old constructors retain an unselected entry; they never implicitly select entry 1. */
     public ZombiesBarrierData(String objectId, String name, int group, int cost, boolean blocksPlayersOnly,
             ResourceKey<Level> dimension, BlockPos areaFrom, BlockPos areaTo, BlockPos interactionPos,
@@ -63,16 +71,22 @@ public record ZombiesBarrierData(
 
     public ZombiesBarrierData withEntryId(int value) {
         return new ZombiesBarrierData(objectId, name, group, cost, blocksPlayersOnly, dimension,
-                areaFrom, areaTo, interactionPos, requiredItem, spawnGroupChanges, value);
+                areaFrom, areaTo, interactionPos, requiredItem, spawnGroupChanges, value, playerSpawnGroupChanges);
     }
 
     public ZombiesBarrierData withSpawnGroupChanges(ZombiesSpawnGroupChanges changes) {
         return new ZombiesBarrierData(objectId, name, group, cost, blocksPlayersOnly, dimension,
-                areaFrom, areaTo, interactionPos, requiredItem, changes, entryId);
+                areaFrom, areaTo, interactionPos, requiredItem, changes, entryId, playerSpawnGroupChanges);
+    }
+
+    public ZombiesBarrierData withPlayerSpawnGroupChanges(ZombiesSpawnGroupChanges changes) {
+        return new ZombiesBarrierData(objectId, name, group, cost, blocksPlayersOnly, dimension,
+                areaFrom, areaTo, interactionPos, requiredItem, spawnGroupChanges, entryId, changes);
     }
 
     public ZombiesBarrierData {
         spawnGroupChanges = spawnGroupChanges == null ? ZombiesSpawnGroupChanges.NONE : spawnGroupChanges;
+        playerSpawnGroupChanges = playerSpawnGroupChanges == null ? ZombiesSpawnGroupChanges.NONE : playerSpawnGroupChanges;
         objectId = objectId == null ? "" : objectId.trim();
         name = name == null ? "" : name.trim();
         requiredItem = requiredItem == null ? "" : requiredItem.trim();
@@ -94,7 +108,8 @@ public record ZombiesBarrierData(
             BlockPos.CODEC.optionalFieldOf("interactionPos", BlockPos.ZERO).forGetter(ZombiesBarrierData::interactionPos),
             Codec.STRING.optionalFieldOf("requiredItem", "").forGetter(ZombiesBarrierData::requiredItem),
             ZombiesSpawnGroupChanges.CODEC.optionalFieldOf("spawnGroupChanges", ZombiesSpawnGroupChanges.NONE).forGetter(ZombiesBarrierData::spawnGroupChanges),
-            Codec.INT.optionalFieldOf("entryId", 0).forGetter(ZombiesBarrierData::entryId)
+            Codec.INT.optionalFieldOf("entryId", 0).forGetter(ZombiesBarrierData::entryId),
+            ZombiesSpawnGroupChanges.CODEC.optionalFieldOf("playerSpawnGroupChanges", ZombiesSpawnGroupChanges.NONE).forGetter(ZombiesBarrierData::playerSpawnGroupChanges)
     ).apply(instance, ZombiesBarrierData::new));
 
     /** Accept legacy fields on read; group-rule policy is never stored back into map geometry. */
@@ -108,7 +123,7 @@ public record ZombiesBarrierData(
         public <T> com.mojang.serialization.DataResult<T> encode(
                 ZombiesBarrierData input, com.mojang.serialization.DynamicOps<T> ops, T prefix) {
             return LEGACY_CODEC.encode(input, ops, prefix)
-                    .map(value -> ops.remove(ops.remove(ops.remove(value, "cost"), "requiredItem"), "spawnGroupChanges"));
+                    .map(value -> ops.remove(ops.remove(ops.remove(ops.remove(value, "cost"), "requiredItem"), "spawnGroupChanges"), "playerSpawnGroupChanges"));
         }
     };
 

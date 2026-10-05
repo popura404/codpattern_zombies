@@ -43,6 +43,7 @@ public class ZombiesDeployToolScreen extends Screen {
     private boolean splitGroupRowsPending;
     private boolean sodaEffectsExpanded;
     private static final String GROUP_SUMMARY = "@spawn_group_summary";
+    private static final String PLAYER_GROUP_SUMMARY = "@player_spawn_group_summary";
     private static final String GROUP_SCOPE = "@spawn_group_scope";
     private int bodyTop, bodyBottom, typeWidth, objectX, objectWidth, fieldX, fieldWidth, issueTop;
     private int totalFieldRows, totalRegistrationRows;
@@ -390,7 +391,9 @@ public class ZombiesDeployToolScreen extends Screen {
                 String label = key.equals("group") && snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.BARRIER)
                         ? tr("spawn_groups.barrier_group")
                         : key.equals("group") && snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.ZOMBIE_SPAWN)
-                        ? tr("spawn_groups.spawn_group") : translated(field.labelKey());
+                        ? tr("spawn_groups.spawn_group")
+                        : key.equals("group") && snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.INITIAL)
+                        ? tr("spawn_groups.player_group") : translated(field.labelKey());
                 result.add(new FieldRow(label, List.of(key), -1));
                 if (isSodaEffect(key) && sodaEffectsExpanded) {
                     for (ZombiesBuffType type : ZombiesBuffType.values()) {
@@ -401,7 +404,10 @@ public class ZombiesDeployToolScreen extends Screen {
         }
         if (snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.BARRIER)) {
             result.add(new FieldRow(GROUP_SUMMARY, List.of(), -1));
+            result.add(new FieldRow(PLAYER_GROUP_SUMMARY, List.of(), -1));
             result.add(new FieldRow(GROUP_SCOPE, List.of(), -1));
+        } else if (snapshot().selectedObjectType().equals(ZombiesDeployFieldSchema.INITIAL)) {
+            result.add(new FieldRow(tr("spawn_groups.player_hint"), List.of(), -1));
         }
         return result;
     }
@@ -718,7 +724,7 @@ public class ZombiesDeployToolScreen extends Screen {
 
     private String labelText(Label label) {
         if (GROUP_SCOPE.equals(label.text())) return tr("barrier_rules.source", barrierRuleMetadata("path"));
-        if (!GROUP_SUMMARY.equals(label.text())) return label.text();
+        if (!GROUP_SUMMARY.equals(label.text()) && !PLAYER_GROUP_SUMMARY.equals(label.text())) return label.text();
         String error = barrierRuleMetadata("error");
         if (!error.isBlank()) return tr("barrier_rules.invalid", error);
         String group = session.fields.getOrDefault("group", "").trim();
@@ -726,6 +732,13 @@ public class ZombiesDeployToolScreen extends Screen {
         String binding = group + "." + entryId;
         String cost = barrierRuleMetadata("cost." + binding);
         if (cost.isBlank()) return tr("barrier_rules.missing_entry", group, entryId);
+        if (PLAYER_GROUP_SUMMARY.equals(label.text())) {
+            String enablePlayer = barrierRuleMetadata("enablePlayer." + group);
+            String disablePlayer = barrierRuleMetadata("disablePlayer." + group);
+            return tr("barrier_rules.player_summary",
+                    enablePlayer.isBlank() ? tr("spawn_groups.none") : enablePlayer,
+                    disablePlayer.isBlank() ? tr("spawn_groups.none") : disablePlayer);
+        }
         String required = barrierRuleMetadata("requiredItem." + binding);
         String itemName = required.isBlank() ? tr("spawn_groups.none")
                 : com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem.displayName(required).getString();

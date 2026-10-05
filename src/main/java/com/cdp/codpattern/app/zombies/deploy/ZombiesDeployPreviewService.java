@@ -368,7 +368,7 @@ public final class ZombiesDeployPreviewService {
                 for (int i = 0; i < resolved.initialSpawns().size(); i++) {
                     ZombiesInitialSpawnData data = resolved.initialSpawns().get(i);
                     String key = getHeldPreviewObjectKey(player, type, i);
-                    String label = "INITIAL #" + (i + 1);
+                    String label = "INITIAL #" + (i + 1) + " / group " + data.group();
                     sendPoint(
                             player,
                             key,
@@ -776,7 +776,7 @@ public final class ZombiesDeployPreviewService {
             case ZombiesDeployFieldSchema.INITIAL -> {
                 for (int i = 0; i < resolved.initialSpawns().size(); i++) {
                     ZombiesInitialSpawnData data = resolved.initialSpawns().get(i);
-                    best = nearest(best, playerPos, data.pos(), label(type, "INITIAL#" + (i + 1), i));
+                    best = nearest(best, playerPos, data.pos(), label(type, "INITIAL#" + (i + 1), i) + " / group " + data.group());
                 }
             }
             case ZombiesDeployFieldSchema.ZOMBIE_SPAWN -> {

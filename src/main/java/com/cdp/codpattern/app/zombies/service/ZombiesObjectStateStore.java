@@ -449,6 +449,7 @@ public final class ZombiesObjectStateStore {
         payload.putBoolean("barrierGroupConfigured", barrier.cost() >= 0);
         payload.putString(ZombiesObjectStateKeys.PAYLOAD_REQUIRED_ITEM, barrier.requiredItem());
         payload.put("spawnGroupChanges", barrier.spawnGroupChanges().toTag());
+        payload.put("playerSpawnGroupChanges", barrier.playerSpawnGroupChanges().toTag());
         payload.putBoolean(PAYLOAD_CLEARED, state.cleared());
         payload.putBoolean(ZombiesObjectStateKeys.PAYLOAD_ENABLED, !state.cleared() && barrier.cost() >= 0);
         putBarrierAreaPayload(payload, barrier);

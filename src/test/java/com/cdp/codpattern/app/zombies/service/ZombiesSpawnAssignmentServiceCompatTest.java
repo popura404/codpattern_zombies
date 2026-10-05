@@ -25,6 +25,7 @@ public final class ZombiesSpawnAssignmentServiceCompatTest {
         memberIdsAreDeduplicatedInEncounterOrder();
         assignmentsRotateAcrossInitialSpawnCount();
         assignFromSnapshotCountsOnlyInitialPlayerSpawns();
+        startupSnapshotExcludesLockedPlayerGroups();
         emptyTeleportPlanSucceeds();
     }
 
@@ -118,6 +119,16 @@ public final class ZombiesSpawnAssignmentServiceCompatTest {
         ZombiesSpawnTeleportSummary summary = requireValue(result);
         require(summary.attemptCount() == 0, "empty teleport summary should have zero attempts");
         require(summary.allSucceeded(), "empty teleport summary should be all succeeded");
+    }
+
+    private static void startupSnapshotExcludesLockedPlayerGroups() {
+        var service = new ZombiesSpawnAssignmentService();
+        var locked = new ZombiesMapSnapshot.SpawnSnapshot("locked", "spawn", "INITIAL", 7, 1.0D, false);
+        var plan = requireValue(service.assignFromSnapshot(snapshot(locked, initialPlayerSpawn("start")), List.of(PLAYER_ONE, PLAYER_TWO)));
+        require(plan.initialSpawnCount() == 1 && plan.assignments().get(1).spawnIndex() == 0,
+                "locked player groups must not participate in startup assignments");
+        require(!service.assignFromSnapshot(snapshot(locked), List.of(PLAYER_ONE)).success(),
+                "missing group zero must fail rather than start in a locked area");
     }
 
     private static ZombiesMapSnapshot snapshot(ZombiesMapSnapshot.SpawnSnapshot... spawns) {

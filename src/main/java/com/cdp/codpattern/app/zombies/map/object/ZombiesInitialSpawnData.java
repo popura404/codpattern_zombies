@@ -12,14 +12,20 @@ public record ZombiesInitialSpawnData(
         ResourceKey<Level> dimension,
         BlockPos pos,
         float yaw,
-        float pitch
+        float pitch,
+        int group
 ) {
     public static final Codec<ZombiesInitialSpawnData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             ZombiesObjectCodecs.DIMENSION_CODEC.fieldOf("dimension").forGetter(ZombiesInitialSpawnData::dimension),
             BlockPos.CODEC.optionalFieldOf("pos", BlockPos.ZERO).forGetter(ZombiesInitialSpawnData::pos),
             Codec.FLOAT.optionalFieldOf("yaw", 0.0F).forGetter(ZombiesInitialSpawnData::yaw),
-            Codec.FLOAT.optionalFieldOf("pitch", 0.0F).forGetter(ZombiesInitialSpawnData::pitch)
+            Codec.FLOAT.optionalFieldOf("pitch", 0.0F).forGetter(ZombiesInitialSpawnData::pitch),
+            Codec.INT.optionalFieldOf("group", 0).forGetter(ZombiesInitialSpawnData::group)
     ).apply(instance, ZombiesInitialSpawnData::new));
+
+    public ZombiesInitialSpawnData(ResourceKey<Level> dimension, BlockPos pos, float yaw, float pitch) {
+        this(dimension, pos, yaw, pitch, 0);
+    }
 
     public static ZombiesInitialSpawnData fromSpawnPointData(SpawnPointData data) {
         SpawnPointData resolved = data == null

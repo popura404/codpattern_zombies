@@ -1,6 +1,7 @@
 package com.cdp.codpattern.config.zombies;
 
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesInitialSpawnData;
 import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesSpawnGroupChanges;
@@ -40,7 +41,7 @@ public final class ZombiesBarrierGroupsConfig {
         GroupRule parent = rule(group).orElse(null);
         EntryRule entry = parent == null ? null : parent.entries().get(entryId);
         return entry == null ? Optional.empty() : Optional.of(new ResolvedRule(
-                group, entryId, entry.cost(), entry.requiredItem(), parent.spawnGroupChanges()));
+                group, entryId, entry.cost(), entry.requiredItem(), parent.spawnGroupChanges(), parent.playerSpawnGroupChanges()));
     }
     public List<String> errors() { return errors; }
     public boolean templateCreated() { return templateCreated; }
@@ -81,12 +82,9 @@ public final class ZombiesBarrierGroupsConfig {
                 int group = positiveKey(definition.getKey(), "barrier group");
                 String groupPath = "groups." + group;
                 JsonObject parent = object(definition.getValue(), groupPath);
-                knownFields(parent, Set.of("spawnGroupChanges", "entries"), groupPath);
-                JsonObject changes = parent.has("spawnGroupChanges")
-                        ? object(parent.get("spawnGroupChanges"), groupPath + ".spawnGroupChanges") : new JsonObject();
-                knownFields(changes, Set.of("enable", "disable"), groupPath + ".spawnGroupChanges");
-                var actions = new ZombiesSpawnGroupChanges(groupSet(changes, "enable"), groupSet(changes, "disable"));
-                if (!actions.valid()) throw new IllegalArgumentException("Conflicting spawn groups in barrier group " + group + ": " + actions.conflicts());
+                knownFields(parent, Set.of("spawnGroupChanges", "playerSpawnGroupChanges", "entries"), groupPath);
+                ZombiesSpawnGroupChanges actions = spawnGroupChanges(parent, "spawnGroupChanges", groupPath);
+                ZombiesSpawnGroupChanges playerActions = spawnGroupChanges(parent, "playerSpawnGroupChanges", groupPath);
                 JsonObject entryDefinitions = object(parent.get("entries"), groupPath + ".entries");
                 Map<Integer, EntryRule> entries = new TreeMap<>();
                 for (var definitionEntry : entryDefinitions.entrySet()) {
@@ -105,7 +103,7 @@ public final class ZombiesBarrierGroupsConfig {
                     }
                     entries.put(entryId, new EntryRule(cost, requiredItem));
                 }
-                groups.put(group, new GroupRule(actions, entries));
+                groups.put(group, new GroupRule(actions, entries, playerActions));
             }
             return new ZombiesBarrierGroupsConfig(path, groups, List.of(), false);
         } catch (IOException | RuntimeException exception) {
@@ -138,11 +136,19 @@ public final class ZombiesBarrierGroupsConfig {
         try { return Integer.parseInt(value.getAsString()); }
         catch (NumberFormatException ex) { throw new IllegalArgumentException(name + " exceeds the supported integer range", ex); }
     }
-    private static Set<Integer> groupSet(JsonObject changes, String key) {
+    private static ZombiesSpawnGroupChanges spawnGroupChanges(JsonObject parent, String field, String groupPath) {
+        String where = groupPath + "." + field;
+        JsonObject changes = parent.has(field) ? object(parent.get(field), where) : new JsonObject();
+        knownFields(changes, Set.of("enable", "disable"), where);
+        var actions = new ZombiesSpawnGroupChanges(groupSet(changes, "enable", where), groupSet(changes, "disable", where));
+        if (!actions.valid()) throw new IllegalArgumentException("Conflicting spawn groups in " + where + ": " + actions.conflicts());
+        return actions;
+    }
+    private static Set<Integer> groupSet(JsonObject changes, String key, String where) {
         if (!changes.has(key)) return Set.of();
-        if (!changes.get(key).isJsonArray()) throw new IllegalArgumentException("spawnGroupChanges." + key + " must be an array");
+        if (!changes.get(key).isJsonArray()) throw new IllegalArgumentException(where + "." + key + " must be an array");
         Set<Integer> result = new TreeSet<>();
-        for (JsonElement value : changes.getAsJsonArray(key)) result.add(integer(value, "spawnGroupChanges." + key));
+        for (JsonElement value : changes.getAsJsonArray(key)) result.add(integer(value, where + "." + key));
         return result;
     }
     // JsonParser alone silently replaces duplicate object keys. Reject them before binding rules.
@@ -176,6 +182,10 @@ public final class ZombiesBarrierGroupsConfig {
     }
     /** Called only during map/server preflight, after the item registry is ready. */
     public List<ZombiesValidationIssue> bindingIssues(Collection<ZombiesBarrierData> barriers, Collection<ZombiesZombieSpawnData> spawns) {
+        return bindingIssues(barriers, spawns, List.of());
+    }
+    public List<ZombiesValidationIssue> bindingIssues(Collection<ZombiesBarrierData> barriers,
+            Collection<ZombiesZombieSpawnData> spawns, Collection<ZombiesInitialSpawnData> playerSpawns) {
         if (!errors.isEmpty()) return List.of();
         List<ZombiesValidationIssue> issues = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -191,10 +201,15 @@ public final class ZombiesBarrierGroupsConfig {
             }
         }
         Set<Integer> available = spawns.stream().map(ZombiesZombieSpawnData::group).collect(Collectors.toSet());
+        Set<Integer> availablePlayerGroups = playerSpawns.stream().map(ZombiesInitialSpawnData::group).collect(Collectors.toSet());
         for (var group : groups.entrySet()) {
             for (int target : group.getValue().spawnGroupChanges().referencedGroups()) {
                 if (!available.contains(target)) issues.add(issue("map.unknown_spawn_group", "barrier.group_" + group.getKey(),
                         sourcePath() + ": barrier group " + group.getKey() + " references unknown zombie spawn group " + target));
+            }
+            for (int target : group.getValue().playerSpawnGroupChanges().referencedGroups()) {
+                if (!availablePlayerGroups.contains(target)) issues.add(issue("map.unknown_player_spawn_group", "barrier.group_" + group.getKey(),
+                        sourcePath() + ": barrier group " + group.getKey() + " references unknown player spawn group " + target));
             }
             for (var entry : group.getValue().entries().entrySet()) {
                 var item = ZombiesRequiredItem.parse(entry.getValue().requiredItem());
@@ -214,7 +229,8 @@ public final class ZombiesBarrierGroupsConfig {
         return new ZombiesBarrierData(barrier.objectId(), barrier.name(), barrier.group(), resolved == null ? -1 : resolved.cost(),
                 barrier.blocksPlayersOnly(), barrier.dimension(), barrier.areaFrom(), barrier.areaTo(), barrier.interactionPos(),
                 resolved == null ? "" : resolved.requiredItem(),
-                parent == null ? ZombiesSpawnGroupChanges.NONE : parent.spawnGroupChanges(), barrier.entryId());
+                parent == null ? ZombiesSpawnGroupChanges.NONE : parent.spawnGroupChanges(), barrier.entryId(),
+                parent == null ? ZombiesSpawnGroupChanges.NONE : parent.playerSpawnGroupChanges());
     }
     public com.cdp.codpattern.app.zombies.map.ZombiesMapObjects resolveObjects(
             com.cdp.codpattern.app.zombies.map.ZombiesMapObjects objects) {
@@ -225,9 +241,14 @@ public final class ZombiesBarrierGroupsConfig {
                 source.sodaMachines(), source.ultimateMachines(), source.mysteryBoxes(), source.windows());
     }
 
-    public record GroupRule(ZombiesSpawnGroupChanges spawnGroupChanges, Map<Integer, EntryRule> entries) {
+    public record GroupRule(ZombiesSpawnGroupChanges spawnGroupChanges, Map<Integer, EntryRule> entries,
+            ZombiesSpawnGroupChanges playerSpawnGroupChanges) {
+        public GroupRule(ZombiesSpawnGroupChanges spawnGroupChanges, Map<Integer, EntryRule> entries) {
+            this(spawnGroupChanges, entries, ZombiesSpawnGroupChanges.NONE);
+        }
         public GroupRule {
-            if (spawnGroupChanges == null || !spawnGroupChanges.valid() || entries == null) throw new IllegalArgumentException("Invalid barrier group rule");
+            if (spawnGroupChanges == null || !spawnGroupChanges.valid() || entries == null
+                    || playerSpawnGroupChanges == null || !playerSpawnGroupChanges.valid()) throw new IllegalArgumentException("Invalid barrier group rule");
             for (var entry : entries.entrySet()) {
                 if (entry.getKey() == null || entry.getKey() < 1 || entry.getValue() == null) throw new IllegalArgumentException("Invalid barrier entry definition");
             }
@@ -240,6 +261,11 @@ public final class ZombiesBarrierGroupsConfig {
             requiredItem = Objects.requireNonNullElse(requiredItem, "").trim();
         }
     }
-    public record ResolvedRule(int group, int entryId, int cost, String requiredItem, ZombiesSpawnGroupChanges spawnGroupChanges) {}
+    public record ResolvedRule(int group, int entryId, int cost, String requiredItem, ZombiesSpawnGroupChanges spawnGroupChanges,
+            ZombiesSpawnGroupChanges playerSpawnGroupChanges) {
+        public ResolvedRule(int group, int entryId, int cost, String requiredItem, ZombiesSpawnGroupChanges spawnGroupChanges) {
+            this(group, entryId, cost, requiredItem, spawnGroupChanges, ZombiesSpawnGroupChanges.NONE);
+        }
+    }
 
 }

@@ -10,6 +10,14 @@
           0
         ]
       },
+      "playerSpawnGroupChanges": {
+        "enable": [
+          2
+        ],
+        "disable": [
+          0
+        ]
+      },
       "entries": {
         "1": {
           "cost": 1000,

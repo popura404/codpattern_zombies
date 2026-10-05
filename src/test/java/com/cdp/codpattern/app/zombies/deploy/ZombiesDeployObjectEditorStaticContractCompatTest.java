@@ -33,12 +33,12 @@ public final class ZombiesDeployObjectEditorStaticContractCompatTest {
         requireContains(editor,
                 "return EditResult.failure(failure.code, failure.getMessage(), objects, selectedIndex, resolvedFields);",
                 "editor failures should keep original objects and selected index");
-        requireContains(editor,
-                "static final int MAX_INITIAL_PLAYER_SPAWNS = 4;",
-                "INITIAL player spawn deployment should cap at four points");
-        requireContains(editor,
-                "throw failure(\n                    \"object.max_initial_spawns\",\n                    \"INITIAL player spawn limit is \" + MAX_INITIAL_PLAYER_SPAWNS);",
-                "INITIAL add/duplicate should report a clear max-count failure");
+        requireAbsent(editor,
+                "MAX_INITIAL_PLAYER_SPAWNS",
+                "player spawn points across multiple areas must not share a four-point cap");
+        requireAbsent(editor,
+                "requireInitialSpawnCapacity",
+                "player spawn add and duplicate must not enforce the old total cap");
         requireContains(editor,
                 "case ZombiesDeployFieldSchema.POWER_SWITCH -> {\n                if (objects.powerSwitch().isPresent()) {\n                    throw failure(\"object.single_exists\", \"power_switch already exists; update or delete it first\");\n                }",
                 "only power switch add path should enforce a single existing object");

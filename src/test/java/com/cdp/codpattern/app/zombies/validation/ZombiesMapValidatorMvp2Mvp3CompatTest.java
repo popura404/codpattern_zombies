@@ -1,11 +1,22 @@
 package com.cdp.codpattern.app.zombies.validation;
 
 import com.cdp.codpattern.app.match.model.RoomId;
+import com.cdp.codpattern.app.match.editor.ModeObjectData;
+import com.cdp.codpattern.app.match.persistence.CommonModeMapData;
+import com.cdp.codpattern.app.zombies.map.ZombiesMapObjects;
 import com.cdp.codpattern.app.zombies.map.ZombiesMapSnapshot;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesInitialSpawnData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesSpawnGroupChanges;
+import com.phasetranscrystal.fpsmatch.core.data.AreaData;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.level.Level;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
     private static final RoomId ROOM_ID = RoomId.of("zombies", "validator_mvp2_mvp3_compat");
@@ -29,7 +40,16 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         mvp3MissingUltimateMachinePasses();
         mvp3InvalidSodaBuffFails();
         mvp3InvalidPowerSwitchIdentifierFails();
-        playerInitialSpawnsMoreThanFourFails();
+        playerInitialSpawnsMoreThanFourPass();
+        playerSpawnGroupsRequireGroupZero();
+        negativePlayerSpawnGroupFails();
+        playerAndZombieSpawnGroupsAreIndependent();
+        playerSpawnGroupActionsRejectConflictsAndUnknownTargets();
+        playerSpawnGroupActionsMustMatchWithinBarrierGroup();
+        playerSpawnGroupValidationDoesNotAssumeDoorPurchaseOrder();
+        snapshotsRetainPlayerSpawnGroupsAndActions();
+        contributorSnapshotsReadPlayerSpawnGroupsAndActions();
+        legacyBarrierSnapshotHasNoPlayerSpawnChanges();
         mvp3UltimateMapLevelFieldsAreIgnored();
         mvp3SpawnMissingLocationFails();
         mvp3RequiredObjectMissingLocationFails();
@@ -39,7 +59,7 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         mvp3BarrierAreaOutOfBoundsFails();
         mvp3DiagonalBarrierAreaFails();
         mvp3BarrierLengthHeightAndCellLimitsFail();
-        mvp3BarrierGroupCostMismatchFails();
+        mvp3LinkedBarrierEntriesAllowDifferentCosts();
         mvp3BarrierOverlappingCellsFail();
         mvp3BarrierBlocksPlayersOnlyFalseFails();
         invalidBarrierRequiredItemFailsMapValidation();
@@ -113,8 +133,9 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
                 snapshot(
                         List.of(initialSpawn(), zombieSpawn()),
                         List.of(new ZombiesMapSnapshot.BarrierSnapshot(
-                                "barrier-9", "barrier", 9, 0, MAP_DIMENSION,
-                                new BlockPos(6, 1, 6), new BlockPos(6, 1, 6), new BlockPos(6, 2, 6))),
+                                "barrier-9", "barrier", 9, 0, true, MAP_DIMENSION,
+                                new BlockPos(6, 1, 6), new BlockPos(6, 1, 6), new BlockPos(6, 2, 6),
+                                "", ZombiesSpawnGroupChanges.NONE, 1)),
                         List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
         require(report.valid(), "orphan barrier groups should remain non-blocking: " + issueCodes(report));
     }
@@ -179,7 +200,7 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         requireIssue(report, "map.invalid_power_switch");
     }
 
-    private static void playerInitialSpawnsMoreThanFourFails() {
+    private static void playerInitialSpawnsMoreThanFourPass() {
         ZombiesMapValidationReport report = validate(
                 ZombiesMapValidationProfile.MVP3_FULL_INITIAL,
                 snapshot(
@@ -195,8 +216,137 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
                         List.of(validSoda()),
                         List.of(validUltimate())));
 
-        require(report.hasErrors(), "more than four INITIAL player spawns should fail");
-        requireIssue(report, "map.too_many_initial_player_spawns");
+        require(report.valid(), "more than four INITIAL player spawns should pass: " + issueCodes(report));
+        requireNoIssue(report, "map.too_many_initial_player_spawns");
+    }
+
+    private static void playerSpawnGroupsRequireGroupZero() {
+        ZombiesMapValidationReport report = validatePlayerGroups(
+                List.of(playerSpawn(2), zombieSpawn()), List.of());
+        requireIssue(report, "map.missing_initial_spawn");
+    }
+
+    private static void negativePlayerSpawnGroupFails() {
+        ZombiesMapValidationReport report = validatePlayerGroups(
+                List.of(playerSpawn(0), playerSpawn(-1), zombieSpawn()), List.of());
+        requireIssue(report, "map.invalid_player_spawn");
+    }
+
+    private static void playerAndZombieSpawnGroupsAreIndependent() {
+        var zombieChanges = new ZombiesSpawnGroupChanges(Set.of(5), Set.of(0));
+        var playerChanges = new ZombiesSpawnGroupChanges(Set.of(2), Set.of(0));
+        List<ZombiesMapSnapshot.SpawnSnapshot> spawns = List.of(playerSpawn(0), playerSpawn(2),
+                zombieSpawn(), zombieSpawn("zombie-5", new BlockPos(2, 1, 5), 5));
+        ZombiesMapValidationReport valid = validatePlayerGroups(spawns,
+                List.of(groupBarrier("gate", 7, zombieChanges, playerChanges)));
+        require(valid.valid(), "independent player/zombie groups should pass: " + issueCodes(valid));
+
+        ZombiesMapValidationReport playerTarget = validatePlayerGroups(spawns,
+                List.of(groupBarrier("gate", 7, ZombiesSpawnGroupChanges.NONE,
+                        new ZombiesSpawnGroupChanges(Set.of(5), Set.of()))));
+        requireIssue(playerTarget, "map.unknown_player_spawn_group");
+        requireNoIssue(playerTarget, "map.unknown_spawn_group");
+
+        ZombiesMapValidationReport zombieTarget = validatePlayerGroups(spawns,
+                List.of(groupBarrier("gate", 7, new ZombiesSpawnGroupChanges(Set.of(2), Set.of()),
+                        ZombiesSpawnGroupChanges.NONE)));
+        requireIssue(zombieTarget, "map.unknown_spawn_group");
+        requireNoIssue(zombieTarget, "map.unknown_player_spawn_group");
+    }
+
+    private static void playerSpawnGroupActionsRejectConflictsAndUnknownTargets() {
+        List<ZombiesMapSnapshot.SpawnSnapshot> spawns = List.of(playerSpawn(0), playerSpawn(2), zombieSpawn());
+        ZombiesMapValidationReport conflict = validatePlayerGroups(spawns,
+                List.of(groupBarrier("gate", 1, ZombiesSpawnGroupChanges.NONE,
+                        new ZombiesSpawnGroupChanges(Set.of(2), Set.of(2)))));
+        requireIssue(conflict, "map.invalid_player_spawn_group_changes");
+        ZombiesMapValidationReport negative = validatePlayerGroups(spawns,
+                List.of(groupBarrier("gate", 1, ZombiesSpawnGroupChanges.NONE,
+                        new ZombiesSpawnGroupChanges(Set.of(-1), Set.of()))));
+        requireIssue(negative, "map.invalid_player_spawn_group_changes");
+        ZombiesMapValidationReport unknown = validatePlayerGroups(spawns,
+                List.of(groupBarrier("gate", 1, ZombiesSpawnGroupChanges.NONE,
+                        new ZombiesSpawnGroupChanges(Set.of(), Set.of(99)))));
+        requireIssue(unknown, "map.unknown_player_spawn_group");
+    }
+
+    private static void playerSpawnGroupActionsMustMatchWithinBarrierGroup() {
+        var changes = new ZombiesSpawnGroupChanges(Set.of(2), Set.of(0));
+        List<ZombiesMapSnapshot.SpawnSnapshot> spawns = List.of(playerSpawn(0), playerSpawn(2), zombieSpawn());
+        var first = groupBarrier("gate-a", 7, ZombiesSpawnGroupChanges.NONE, changes);
+        ZombiesMapValidationReport mismatch = validatePlayerGroups(spawns,
+                List.of(first, groupBarrier("gate-b", 7, ZombiesSpawnGroupChanges.NONE, ZombiesSpawnGroupChanges.NONE)));
+        requireIssue(mismatch, "map.invalid_player_spawn_group_changes");
+        ZombiesMapValidationReport matching = validatePlayerGroups(spawns,
+                List.of(first, groupBarrier("gate-b", 7, ZombiesSpawnGroupChanges.NONE, changes)));
+        require(matching.valid(), "matching linked barriers should pass: " + issueCodes(matching));
+    }
+
+    private static void playerSpawnGroupValidationDoesNotAssumeDoorPurchaseOrder() {
+        var first = groupBarrier("gate-a", 1, ZombiesSpawnGroupChanges.NONE,
+                new ZombiesSpawnGroupChanges(Set.of(1), Set.of(0)));
+        var second = groupBarrier("gate-b", 2, ZombiesSpawnGroupChanges.NONE,
+                new ZombiesSpawnGroupChanges(Set.of(2), Set.of(1)));
+        ZombiesMapValidationReport report = validatePlayerGroups(
+                List.of(playerSpawn(0), playerSpawn(1), playerSpawn(2), zombieSpawn()), List.of(second, first));
+        require(report.valid(), "barrier list order must not determine valid player spawn transitions: " + issueCodes(report));
+    }
+
+    private static void snapshotsRetainPlayerSpawnGroupsAndActions() {
+        var changes = new ZombiesSpawnGroupChanges(Set.of(2), Set.of(0));
+        var initial = new ZombiesInitialSpawnData(Level.OVERWORLD, new BlockPos(1, 1, 1), 0, 0, 2);
+        var barrier = new ZombiesBarrierData("gate", "", 7, 0, true, Level.OVERWORLD,
+                new BlockPos(6, 1, 6), new BlockPos(6, 2, 6), new BlockPos(6, 1, 6),
+                "", ZombiesSpawnGroupChanges.NONE, 3, changes);
+        ZombiesMapObjects objects = new ZombiesMapObjects(List.of(initial), List.of(), List.of(barrier),
+                List.of(), List.of(), List.of(), Optional.empty(), List.of(), List.of(), List.of(), List.of());
+        ZombiesMapSnapshot snapshot = ZombiesMapSnapshot.fromMapObjects(ROOM_ID, ROOM_ID.mapName(), true, objects);
+        require(snapshot.spawns().get(0).group() == 2, "map-object snapshot must retain player group");
+        require(snapshot.barriers().get(0).playerSpawnGroupChanges().equals(changes), "snapshot must retain player actions");
+        require(snapshot.barriers().get(0).spawnGroupChanges().equals(ZombiesSpawnGroupChanges.NONE), "player actions must not become zombie actions");
+        require(snapshot.barriers().get(0).entryId() == 3, "snapshot must retain barrier rule entry");
+    }
+
+    private static void contributorSnapshotsReadPlayerSpawnGroupsAndActions() {
+        var changes = new ZombiesSpawnGroupChanges(Set.of(2), Set.of(0));
+        CompoundTag spawnPayload = new CompoundTag();
+        spawnPayload.putInt("group", 2);
+        CompoundTag barrierPayload = new CompoundTag();
+        barrierPayload.putInt("group", 7);
+        barrierPayload.putInt("entryId", 3);
+        barrierPayload.put("playerSpawnGroupChanges", changes.toTag());
+        CommonModeMapData common = new CommonModeMapData(1, "zombies", ROOM_ID.mapName(), MAP_DIMENSION,
+                new AreaData(BlockPos.ZERO, new BlockPos(20, 20, 20)), Optional.empty());
+        var context = new ZombiesMapValidationContributor.ZombiesMapValidationContext(ROOM_ID, common,
+                List.of(new ModeObjectData("initialSpawn", Level.OVERWORLD, new BlockPos(1, 1, 1), 0, 0, spawnPayload),
+                        new ModeObjectData("barrier", Level.OVERWORLD, new BlockPos(6, 1, 6), 0, 0, barrierPayload)), "");
+        ZombiesMapSnapshot snapshot = ZombiesMapSnapshot.fromContributorContext(context);
+        require(snapshot.spawns().get(0).group() == 2, "payload snapshot must retain player group");
+        require(snapshot.barriers().get(0).playerSpawnGroupChanges().equals(changes), "payload snapshot must read player actions");
+        require(snapshot.barriers().get(0).entryId() == 3, "payload snapshot must read barrier rule entry");
+    }
+
+    private static void legacyBarrierSnapshotHasNoPlayerSpawnChanges() {
+        var legacy = new ZombiesMapSnapshot.BarrierSnapshot("legacy", "barrier", 1, 0);
+        require(legacy.entryId() == 0, "legacy snapshot must keep unselected rule entry");
+        require(legacy.playerSpawnGroupChanges().equals(ZombiesSpawnGroupChanges.NONE), "legacy snapshot must leave player groups unchanged");
+    }
+
+    private static ZombiesMapValidationReport validatePlayerGroups(List<ZombiesMapSnapshot.SpawnSnapshot> spawns,
+            List<ZombiesMapSnapshot.BarrierSnapshot> barriers) {
+        return validate(ZombiesMapValidationProfile.MVP1_MINIMAL,
+                ZombiesMapSnapshot.of(ROOM_ID, ROOM_ID.mapName(), true, spawns, barriers));
+    }
+
+    private static ZombiesMapSnapshot.SpawnSnapshot playerSpawn(int group) {
+        return new ZombiesMapSnapshot.SpawnSnapshot("player-" + group, "initialSpawn", "INITIAL",
+                group, 0, false, MAP_DIMENSION, new BlockPos(1, 1, 1));
+    }
+
+    private static ZombiesMapSnapshot.BarrierSnapshot groupBarrier(String id, int group,
+            ZombiesSpawnGroupChanges zombieChanges, ZombiesSpawnGroupChanges playerChanges) {
+        return new ZombiesMapSnapshot.BarrierSnapshot(id, "barrier", group, 0, true, MAP_DIMENSION,
+                new BlockPos(6, 1, 6), new BlockPos(6, 1, 6), new BlockPos(6, 2, 6), "", zombieChanges, 1, playerChanges);
     }
 
     private static void mvp3UltimateMapLevelFieldsAreIgnored() {
@@ -398,32 +548,36 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
         requireIssue(report, "map.invalid_barrier");
     }
 
-    private static void mvp3BarrierGroupCostMismatchFails() {
+    private static void mvp3LinkedBarrierEntriesAllowDifferentCosts() {
         ZombiesMapSnapshot.BarrierSnapshot first = new ZombiesMapSnapshot.BarrierSnapshot(
                 "barrier-2-a",
                 "barrier",
                 2,
                 750,
+                true,
                 MAP_DIMENSION,
                 new BlockPos(6, 1, 6),
                 new BlockPos(6, 1, 6),
-                new BlockPos(6, 2, 6));
+                new BlockPos(6, 2, 6),
+                "", ZombiesSpawnGroupChanges.NONE, 1);
         ZombiesMapSnapshot.BarrierSnapshot second = new ZombiesMapSnapshot.BarrierSnapshot(
                 "barrier-2-b",
                 "barrier",
                 2,
                 1000,
+                true,
                 MAP_DIMENSION,
                 new BlockPos(7, 1, 7),
                 new BlockPos(7, 1, 7),
-                new BlockPos(7, 2, 7));
+                new BlockPos(7, 2, 7),
+                "", ZombiesSpawnGroupChanges.NONE, 2);
 
         ZombiesMapValidationReport report = validate(
                 ZombiesMapValidationProfile.MVP3_FULL_INITIAL,
                 snapshotWithBarriers(List.of(first, second)));
 
-        require(report.hasErrors(), "MVP3 same-group barriers with different costs should fail");
-        requireIssue(report, "map.invalid_barrier");
+        require(report.valid(), "different rule entries within one linked barrier group may have different costs: " + issueCodes(report));
+        requireNoIssue(report, "map.invalid_barrier");
     }
 
     private static void mvp3BarrierOverlappingCellsFail() {
@@ -625,10 +779,12 @@ public final class ZombiesMapValidatorMvp2Mvp3CompatTest {
                 "barrier",
                 1,
                 0,
+                true,
                 MAP_DIMENSION,
                 new BlockPos(6, 1, 6),
                 new BlockPos(6, 1, 6),
-                new BlockPos(6, 2, 6));
+                new BlockPos(6, 2, 6),
+                "", ZombiesSpawnGroupChanges.NONE, 1);
     }
 
     private static ZombiesMapSnapshot.WeaponWallSnapshot validWeaponWall() {

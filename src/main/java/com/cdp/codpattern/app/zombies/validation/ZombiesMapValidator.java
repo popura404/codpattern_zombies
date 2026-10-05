@@ -22,8 +22,6 @@ public final class ZombiesMapValidator {
             ZombiesErrorCode.of("map.missing_group_0_zombie_spawn");
     private static final ZombiesErrorCode MAP_DYNAMIC_PLAYER_SPAWN_UNSUPPORTED =
             ZombiesErrorCode.of("map.dynamic_player_spawn_unsupported");
-    private static final ZombiesErrorCode MAP_TOO_MANY_INITIAL_PLAYER_SPAWNS =
-            ZombiesErrorCode.of("map.too_many_initial_player_spawns");
     private static final ZombiesErrorCode MAP_DUPLICATE_OBJECT_ID =
             ZombiesErrorCode.of("map.duplicate_object_id");
     private static final ZombiesErrorCode MAP_OBJECT_MISSING_LOCATION =
@@ -75,7 +73,6 @@ public final class ZombiesMapValidator {
             "headshot_damage");
     private static final int MIN_GENERATION_COORDINATE = -30_000_000;
     private static final int MAX_GENERATION_COORDINATE = 30_000_000;
-    private static final int MAX_INITIAL_PLAYER_SPAWNS = 4;
 
     private final ZombiesMapValidationProfile profile;
 
@@ -130,13 +127,7 @@ public final class ZombiesMapValidator {
             issues.add(ZombiesValidationIssue.error(
                     ZombiesErrorCode.MAP_MISSING_INITIAL_SPAWN,
                     "spawn.INITIAL",
-                    "Zombies map requires at least one INITIAL player spawn."));
-        }
-        if (initialPlayerSpawnCount > MAX_INITIAL_PLAYER_SPAWNS) {
-            issues.add(ZombiesValidationIssue.error(
-                    MAP_TOO_MANY_INITIAL_PLAYER_SPAWNS,
-                    "spawn.INITIAL",
-                    "Zombies map supports at most " + MAX_INITIAL_PLAYER_SPAWNS + " INITIAL player spawns."));
+                    "Zombies map requires at least one group=0 INITIAL player spawn."));
         }
         if (profile.requireInitialZombieSpawn()
                 && snapshot.spawns().stream().noneMatch(ZombiesMapValidator::validInitialZombieSpawn)) {
@@ -193,7 +184,7 @@ public final class ZombiesMapValidator {
     private static int initialPlayerSpawnCount(ZombiesMapSnapshot snapshot) {
         int count = 0;
         for (ZombiesMapSnapshot.SpawnSnapshot spawn : snapshot.spawns()) {
-            if (spawn.initialPlayerSpawn()) {
+            if (spawn.initialPlayerSpawn() && spawn.group() == 0) {
                 count++;
             }
         }
@@ -291,6 +282,49 @@ public final class ZombiesMapValidator {
         }
 
         addSpawnGroupIssues(snapshot, issues);
+        addPlayerSpawnGroupIssues(snapshot, issues);
+    }
+
+    private static void addPlayerSpawnGroupIssues(ZombiesMapSnapshot snapshot, List<ZombiesValidationIssue> issues) {
+        Set<Integer> groups = new java.util.TreeSet<>();
+        Set<Integer> enabledByBarriers = new HashSet<>();
+        Map<Integer, ZombiesSpawnGroupChanges> changesByBarrierGroup = new LinkedHashMap<>();
+        for (var spawn : snapshot.spawns()) {
+            if (spawn.zombieSpawn()) { continue; }
+            if (spawn.group() < 0) {
+                issues.add(ZombiesValidationIssue.error(ZombiesErrorCode.of("map.invalid_player_spawn"),
+                        subject("spawn", spawn.objectId(), spawn.featureKey()),
+                        "Player spawn group must be non-negative."));
+            }
+            if (spawn.initialPlayerSpawn() && spawn.group() >= 0) { groups.add(spawn.group()); }
+        }
+        for (var barrier : snapshot.barriers()) {
+            String target = subject("barrier", barrier.objectId(), barrier.featureKey());
+            var changes = barrier.playerSpawnGroupChanges();
+            var previous = changesByBarrierGroup.putIfAbsent(barrier.group(), changes);
+            if (!changes.valid()) {
+                issues.add(ZombiesValidationIssue.error(ZombiesErrorCode.of("map.invalid_player_spawn_group_changes"), target,
+                        "Player spawn targets must be non-negative and cannot be both enabled and disabled. Targets: "
+                                + changes.referencedGroups() + "; conflicts: " + changes.conflicts()));
+            }
+            if (previous != null && !previous.equals(changes)) {
+                issues.add(ZombiesValidationIssue.error(ZombiesErrorCode.of("map.invalid_player_spawn_group_changes"), target,
+                        "Player spawn group actions differ within barrier link group " + barrier.group() + "."));
+            }
+            enabledByBarriers.addAll(changes.enable());
+            for (int group : changes.referencedGroups()) {
+                if (!groups.contains(group)) {
+                    issues.add(ZombiesValidationIssue.error(ZombiesErrorCode.of("map.unknown_player_spawn_group"), target,
+                            "Referenced player spawn group does not exist: " + group));
+                }
+            }
+        }
+        for (int group : groups) {
+            if (group > 0 && !enabledByBarriers.contains(group)) {
+                issues.add(ZombiesValidationIssue.warning(ZombiesErrorCode.of("map.player_spawn_group_never_enabled"),
+                        "spawn.INITIAL.group_" + group, "No barrier enables player spawn group " + group + "."));
+            }
+        }
     }
 
     private static void addSpawnGroupIssues(ZombiesMapSnapshot snapshot, List<ZombiesValidationIssue> issues) {

@@ -1389,6 +1389,14 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         }
 
         ZombiesErrorCode code = result == null ? ZombiesErrorCode.OBJECT_NOT_FOUND : result.code();
+        if ("barrier.invalid_player_spawn_groups".equals(code.key())) {
+            sendMessage(player, MESSAGE_PREFIX + "failure.barrier_invalid_player_spawn_groups");
+            return;
+        }
+        if ("barrier.no_active_player_spawns".equals(code.key())) {
+            sendMessage(player, MESSAGE_PREFIX + "failure.barrier_no_active_player_spawns");
+            return;
+        }
         if (ZombiesErrorCode.PLAYER_DEAD.equals(code)) {
             sendMessage(player, FAILURE_DEAD, target.objectId());
             return;

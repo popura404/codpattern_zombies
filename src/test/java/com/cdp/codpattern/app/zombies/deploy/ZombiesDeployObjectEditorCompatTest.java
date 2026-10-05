@@ -34,7 +34,7 @@ public final class ZombiesDeployObjectEditorCompatTest {
     }
 
     public static void runAll() {
-        initialSpawnsAllowFourAndRejectFifth();
+        initialSpawnsSupportGroupsAndPersistence();
         barrierAreaFieldsParseUpdateAndDuplicate();
         ammoBoxPricesByWeaponLevelParseAndUpdateFromListField();
         armorStationFieldsParseAndUpdate();
@@ -127,47 +127,75 @@ public final class ZombiesDeployObjectEditorCompatTest {
         };
     }
 
-    private static void initialSpawnsAllowFourAndRejectFifth() {
+    public static void initialSpawnsSupportGroupsAndPersistence() {
         ZombiesMapObjects objects = ZombiesMapObjects.EMPTY;
-        for (int i = 0; i < ZombiesDeployObjectEditor.MAX_INITIAL_PLAYER_SPAWNS; i++) {
+        for (int i = 0; i < 12; i++) {
             ZombiesDeployObjectEditor.EditResult add = edit(
                     objects,
                     ZombiesDeployObjectEditor.Operation.ADD,
                     ZombiesDeployFieldSchema.INITIAL,
                     -1,
                     fields(ZombiesDeployFieldSchema.INITIAL,
+                            "group", Integer.toString(i / 4),
                             "posX", Integer.toString(i + 1),
                             "posY", "64",
                             "posZ", "1"));
             requireSuccess(add, "INITIAL add " + (i + 1) + " should succeed");
             require(add.objects().initialSpawns().size() == i + 1,
-                    "INITIAL add should append through the fourth spawn");
+                    "INITIAL add should support points throughout multiple areas");
             require(add.selectedIndex() == i, "INITIAL add should select the inserted point");
             ZombiesInitialSpawnData added = add.objects().initialSpawns().get(i);
             require(added.pos().equals(new BlockPos(i + 1, 64, 1)), "INITIAL position should parse");
+            require(added.group() == i / 4, "INITIAL must preserve the selected player spawn group");
+            require(Integer.toString(i / 4).equals(add.fields().get("group")), "INITIAL fields must round-trip group");
             objects = add.objects();
         }
 
-        ZombiesDeployObjectEditor.EditResult fifth = edit(
-                objects,
-                ZombiesDeployObjectEditor.Operation.ADD,
-                ZombiesDeployFieldSchema.INITIAL,
-                -1,
-                fields(ZombiesDeployFieldSchema.INITIAL,
-                        "posX", "5",
-                        "posY", "64",
-                        "posZ", "1"));
-        requireFailure(fifth, "object.max_initial_spawns", "fifth INITIAL add should fail");
-        require(fifth.objects() == objects, "fifth INITIAL add should keep original objects");
-
-        ZombiesDeployObjectEditor.EditResult duplicateAtLimit = edit(
+        ZombiesDeployObjectEditor.EditResult duplicate = edit(
                 objects,
                 ZombiesDeployObjectEditor.Operation.DUPLICATE,
                 ZombiesDeployFieldSchema.INITIAL,
-                0,
+                8,
                 Map.of());
-        requireFailure(duplicateAtLimit, "object.max_initial_spawns", "INITIAL duplicate at limit should fail");
-        require(duplicateAtLimit.objects() == objects, "INITIAL duplicate failure should keep original objects");
+        requireSuccess(duplicate, "INITIAL duplicate above four total points should succeed");
+        require(duplicate.objects().initialSpawns().size() == 13, "INITIAL duplicate should append a point");
+        require(duplicate.objects().initialSpawns().get(12).group() == 2, "INITIAL duplication must retain group");
+        require("2".equals(ZombiesDeployObjectEditor.fieldsForSnapshotSelection(
+                duplicate.objects(), ZombiesDeployFieldSchema.INITIAL, 12).get("group")),
+                "selection snapshots must retain the player spawn group");
+
+        Map<String, String> changed = new LinkedHashMap<>(duplicate.fields());
+        changed.put("group", "7");
+        var updated = edit(duplicate.objects(), ZombiesDeployObjectEditor.Operation.UPDATE,
+                ZombiesDeployFieldSchema.INITIAL, 12, changed);
+        requireSuccess(updated, "INITIAL group must be editable");
+        require(updated.objects().initialSpawns().get(12).group() == 7, "INITIAL update must change group");
+        var codec = ZombiesMapObjects.CODEC.codec();
+        var encoded = codec.encodeStart(JsonOps.INSTANCE, updated.objects()).result().orElseThrow();
+        require(codec.parse(JsonOps.INSTANCE, encoded).result().orElseThrow().equals(updated.objects()),
+                "player groups must survive map JSON persistence");
+        var legacy = ZombiesInitialSpawnData.CODEC.encodeStart(JsonOps.INSTANCE,
+                updated.objects().initialSpawns().get(12)).result().orElseThrow().getAsJsonObject();
+        legacy.remove("group");
+        var oldPoint = ZombiesInitialSpawnData.CODEC.parse(JsonOps.INSTANCE, legacy).result().orElseThrow();
+        require(oldPoint.group() == 0, "legacy player spawn JSON must default to group zero");
+        require(new ZombiesInitialSpawnData(oldPoint.dimension(), oldPoint.pos(), oldPoint.yaw(), oldPoint.pitch()).group() == 0,
+                "legacy constructor must default to group zero");
+
+        for (String invalid : List.of("-1", "1.5", "invalid", "")) {
+            changed.put("group", invalid);
+            var rejected = edit(updated.objects(), ZombiesDeployObjectEditor.Operation.UPDATE,
+                    ZombiesDeployFieldSchema.INITIAL, 12, changed);
+            requireFailure(rejected, "field.invalid_integer", "INITIAL must reject invalid player group: " + invalid);
+            require(rejected.objects() == updated.objects(), "invalid group must preserve the original points");
+        }
+        for (String ruleField : List.of("playerSpawnGroupChanges", "enablePlayerSpawnGroups", "disablePlayerSpawnGroups")) {
+            var barrierFields = fields(ZombiesDeployFieldSchema.BARRIER, ruleField, "2");
+            var rejected = edit(updated.objects(), ZombiesDeployObjectEditor.Operation.ADD,
+                    ZombiesDeployFieldSchema.BARRIER, -1, barrierFields);
+            requireFailure(rejected, "field.barrier_rules_file_only", "player spawn actions must remain file-only");
+            require(rejected.objects() == updated.objects(), "rejected barrier rule fields must preserve objects");
+        }
     }
 
     private static boolean bootstrapMinecraft() {

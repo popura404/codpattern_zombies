@@ -29,6 +29,22 @@ public final class ZombiesBarrierGroupRulesGameTests {
         ZombiesBarrierGroupRulesEditorCompatTest.main(new String[0]);
         passed("editor"); helper.succeed();
     }
+    @GameTest(template="empty", batch="barrier_group_rules", timeoutTicks=200, required=true)
+    public static void playerSpawnValidation(GameTestHelper helper) throws Exception {
+        com.cdp.codpattern.app.zombies.validation.ZombiesMapValidatorMvp2Mvp3CompatTest.main(new String[0]);
+        com.cdp.codpattern.app.zombies.service.ZombiesSpawnAssignmentServiceCompatTest.main(new String[0]);
+        passed("player_spawn_validation"); helper.succeed();
+    }
+    @GameTest(template="empty", batch="barrier_group_rules", timeoutTicks=200, required=true)
+    public static void playerSpawnEditing(GameTestHelper helper) throws Exception {
+        ZombiesDeployObjectEditorCompatTest.initialSpawnsSupportGroupsAndPersistence();
+        passed("player_spawn_editing"); helper.succeed();
+    }
+    @GameTest(template="empty", batch="barrier_group_rules", timeoutTicks=200, required=true)
+    public static void playerSpawnRuntime(GameTestHelper helper) throws Exception {
+        ZombiesPlayerSpawnRuntimeGameTestSupport.run(helper.getLevel());
+        passed("player_spawn_runtime"); helper.succeed();
+    }
     private static void passed(String name) throws Exception {
         Path result=Path.of(System.getProperty("codpattern.test.workspace", "."))
                 .resolve(System.getProperty("codpattern.test.results", "build/verification/barrier-group-rules/forge-results.txt"));

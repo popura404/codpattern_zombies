@@ -4,12 +4,15 @@ import com.cdp.codpattern.app.match.model.ModePlayerValue;
 import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesInitialSpawnData;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesSpawnGroupChanges;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
 import com.cdp.codpattern.app.zombies.model.ZombiesGamePhase;
 import com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,6 +34,8 @@ public final class ZombiesBarrierService {
     private final ZombiesEconomyService economyService;
     private final ZombiesObjectStateStore objectStateStore;
     private final ZombiesActiveSpawnGroupService activeSpawnGroupService;
+    private final ZombiesActiveSpawnGroupService activePlayerSpawnGroupService;
+    private final Supplier<Collection<ZombiesInitialSpawnData>> playerSpawnsSupplier;
     private final Predicate<UUID> roomMemberPredicate;
     private final Supplier<ZombiesGamePhase> phaseSupplier;
     private final Consumer<BarrierPurchaseResult> purchaseSuccessListener;
@@ -97,6 +102,27 @@ public final class ZombiesBarrierService {
             Supplier<Collection<ZombiesZombieSpawnData>> spawnsSupplier,
             Supplier<ZombiesBarrierGroupsConfig> groupRulesSupplier
     ) {
+        this(roomId, barriersSupplier, economyService, objectStateStore, activeSpawnGroupService,
+                roomMemberPredicate, phaseSupplier, purchaseSuccessListener, spawnsSupplier, groupRulesSupplier,
+                new ZombiesActiveSpawnGroupService(), List::of);
+    }
+
+    public ZombiesBarrierService(
+            RoomId roomId,
+            Supplier<Collection<ZombiesBarrierData>> barriersSupplier,
+            ZombiesEconomyService economyService,
+            ZombiesObjectStateStore objectStateStore,
+            ZombiesActiveSpawnGroupService activeSpawnGroupService,
+            Predicate<UUID> roomMemberPredicate,
+            Supplier<ZombiesGamePhase> phaseSupplier,
+            Consumer<BarrierPurchaseResult> purchaseSuccessListener,
+            Supplier<Collection<ZombiesZombieSpawnData>> spawnsSupplier,
+            Supplier<ZombiesBarrierGroupsConfig> groupRulesSupplier,
+            ZombiesActiveSpawnGroupService activePlayerSpawnGroupService,
+            Supplier<Collection<ZombiesInitialSpawnData>> playerSpawnsSupplier
+    ) {
+        this.activePlayerSpawnGroupService = Objects.requireNonNull(activePlayerSpawnGroupService, "activePlayerSpawnGroupService");
+        this.playerSpawnsSupplier = Objects.requireNonNull(playerSpawnsSupplier, "playerSpawnsSupplier");
         this.groupRulesSupplier = Objects.requireNonNull(groupRulesSupplier, "groupRulesSupplier");
         this.spawnsSupplier = Objects.requireNonNull(spawnsSupplier, "spawnsSupplier");
         this.roomId = Objects.requireNonNull(roomId, "roomId");
@@ -140,6 +166,10 @@ public final class ZombiesBarrierService {
         if (!rule.spawnGroupChanges().valid() || !spawnGroups.containsAll(rule.spawnGroupChanges().referencedGroups())) {
             return ZombiesServiceResult.failure(ZombiesErrorCode.of("barrier.invalid_spawn_groups"));
         }
+        Set<Integer> playerSpawnGroups = playerSpawnsSupplier.get().stream()
+                .map(ZombiesInitialSpawnData::group).collect(Collectors.toSet());
+        ZombiesServiceResult<Void> playerGroupsEligibility = validatePlayerSpawnChanges(rule.playerSpawnGroupChanges(), playerSpawnGroups);
+        if (!playerGroupsEligibility.success()) return ZombiesServiceResult.failure(playerGroupsEligibility.code());
         ZombiesServiceResult<Void> eligibility = requiredItemEligibility(player, rule.requiredItem());
         if (!eligibility.success()) return ZombiesServiceResult.failure(eligibility.code(), eligibility.params(), eligibility.logMessage());
 
@@ -152,11 +182,14 @@ public final class ZombiesBarrierService {
             if (!lockedEligibility.success()) {
                 return ZombiesServiceResult.failure(lockedEligibility.code(), lockedEligibility.params(), lockedEligibility.logMessage());
             }
+            ZombiesServiceResult<Void> lockedPlayerGroups = validatePlayerSpawnChanges(rule.playerSpawnGroupChanges(), playerSpawnGroups);
+            if (!lockedPlayerGroups.success()) return ZombiesServiceResult.failure(lockedPlayerGroups.code());
             ZombiesServiceResult<ZombiesObjectStateStore.BarrierGroupUpdate> clearResult =
                     objectStateStore.clearBarrierGroup(barrier.group(), barriers);
             if (!clearResult.success()) return ZombiesServiceResult.failure(clearResult.code(), clearResult.params(), clearResult.logMessage());
             ZombiesObjectStateStore.BarrierGroupUpdate update = clearResult.value().orElseThrow();
             activeSpawnGroupService.apply(rule.spawnGroupChanges());
+            activePlayerSpawnGroupService.apply(rule.playerSpawnGroupChanges());
             economyService.recordBarrierOpened(playerId);
             return ZombiesServiceResult.success(new BarrierPurchaseResult(
                     roomId, update.group(), update.objectIds(), update.revision(), rule.cost(), rule.entryId()));
@@ -169,6 +202,20 @@ public final class ZombiesBarrierService {
             }
         }
         return result;
+    }
+
+    private ZombiesServiceResult<Void> validatePlayerSpawnChanges(ZombiesSpawnGroupChanges changes, Set<Integer> availableGroups) {
+        if (!changes.valid() || !availableGroups.containsAll(changes.referencedGroups())) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.of("barrier.invalid_player_spawn_groups"));
+        }
+        if (changes.referencedGroups().isEmpty()) return ZombiesServiceResult.ok();
+        Set<Integer> next = new HashSet<>(activePlayerSpawnGroupService.snapshot());
+        next.removeAll(changes.disable());
+        next.addAll(changes.enable());
+        if (next.stream().noneMatch(availableGroups::contains)) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.of("barrier.no_active_player_spawns"));
+        }
+        return ZombiesServiceResult.ok();
     }
 
     private static ZombiesServiceResult<Void> requiredItemEligibility(ServerPlayer player, String specification) {

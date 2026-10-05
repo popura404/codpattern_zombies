@@ -4,6 +4,7 @@ import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.zombies.map.ZombiesMapObjects;
 import com.cdp.codpattern.app.zombies.map.ZombiesMapSnapshot;
 import com.cdp.codpattern.app.zombies.map.object.*;
+import com.cdp.codpattern.app.zombies.service.ZombiesObjectStateStore;
 import com.cdp.codpattern.config.storage.MapStoragePaths;
 import com.google.gson.*;
 import com.mojang.serialization.JsonOps;
@@ -95,6 +96,52 @@ public final class ZombiesBarrierGroupsConfigCompatTest {
         Files.writeString(migrated,v1);try{ZombiesStorageMigration.validate(migration);throw new AssertionError("v1 accepted");}catch(IllegalStateException expected){}
         check(Files.readString(migrated).equals(v1),"preserve v1 migration input");
         for(String sample:List.of("barrier_groups.empty.json","barrier_groups.example.json")){Path file=WORKSPACE.resolve("doc/examples").resolve(sample);check(ZombiesBarrierGroupsConfig.parse(Files.readString(file),file).errors().isEmpty(),"example parses");}
-        System.out.println("PASS V2_CONFIG: nested rules, manual migration, item preflight, immutable snapshots, isolation and codec compatibility");
+        playerSpawnGroupRules(path,a,spawns);
+        System.out.println("PASS V2_CONFIG: nested rules, player spawn policies, manual migration, item preflight, immutable snapshots, isolation and codec compatibility");
+    }
+
+    private static void playerSpawnGroupRules(Path path,ZombiesBarrierData barrier,List<ZombiesZombieSpawnData> zombieSpawns){
+        var legacy=ZombiesBarrierGroupsConfig.parse(tree(1000).toString(),path);
+        check(legacy.rule(10).orElseThrow().playerSpawnGroupChanges().equals(ZombiesSpawnGroupChanges.NONE)
+                && legacy.rule(10,1).orElseThrow().playerSpawnGroupChanges().equals(ZombiesSpawnGroupChanges.NONE),"legacy v2 player actions default to none");
+        check(barrier.playerSpawnGroupChanges().equals(ZombiesSpawnGroupChanges.NONE),"legacy barrier constructors default player actions");
+        check(new ZombiesBarrierGroupsConfig.GroupRule(ZombiesSpawnGroupChanges.NONE,Map.of()).playerSpawnGroupChanges().equals(ZombiesSpawnGroupChanges.NONE)
+                && new ZombiesBarrierGroupsConfig.ResolvedRule(10,1,0,"",ZombiesSpawnGroupChanges.NONE).playerSpawnGroupChanges().equals(ZombiesSpawnGroupChanges.NONE),"legacy rule constructors remain compatible");
+
+        var json=tree(1000);
+        group(json,"10").add("playerSpawnGroupChanges",JsonParser.parseString("{\"enable\":[7],\"disable\":[0]}"));
+        var rules=ZombiesBarrierGroupsConfig.parse(json.toString(),path);
+        var playerActions=new ZombiesSpawnGroupChanges(Set.of(7),Set.of(0));
+        check(rules.errors().isEmpty() && rules.rule(10,1).orElseThrow().playerSpawnGroupChanges().equals(playerActions),"player actions parse independently");
+        check(rules.rule(10,2).orElseThrow().playerSpawnGroupChanges().equals(playerActions),"same-group entries share player actions");
+        check(rules.rule(10,1).orElseThrow().spawnGroupChanges().enable().equals(Set.of(2)),"zombie actions retain their meaning");
+        var playerSpawns=List.of(new ZombiesInitialSpawnData(Level.OVERWORLD,BlockPos.ZERO,0,0,0),
+                new ZombiesInitialSpawnData(Level.OVERWORLD,new BlockPos(7,0,0),0,0,7));
+        check(rules.bindingIssues(List.of(barrier),zombieSpawns,playerSpawns).isEmpty(),"player groups use player point namespace");
+        check(rules.bindingIssues(List.of(barrier),zombieSpawns,List.of(playerSpawns.get(0))).stream()
+                .anyMatch(issue->issue.code().key().equals("map.unknown_player_spawn_group")),"unknown player groups rejected");
+        check(rules.bindingIssues(List.of(barrier),List.of(zombieSpawns.get(0)),playerSpawns).stream()
+                .anyMatch(issue->issue.code().key().equals("map.unknown_spawn_group")),"player groups do not satisfy zombie group references");
+        var resolved=rules.resolve(barrier.withPlayerSpawnGroupChanges(new ZombiesSpawnGroupChanges(Set.of(99),Set.of())));
+        check(resolved.playerSpawnGroupChanges().equals(playerActions),"file overrides per-object player policy");
+        check(resolved.withEntryId(2).withSpawnGroupChanges(ZombiesSpawnGroupChanges.NONE).playerSpawnGroupChanges().equals(playerActions),"barrier copies preserve player actions");
+        var objects=new ZombiesMapObjects(playerSpawns,zombieSpawns,List.of(barrier),List.of(),List.of(),List.of(),Optional.empty(),List.of(),List.of(),List.of(),List.of());
+        check(rules.resolveObjects(objects).barriers().get(0).playerSpawnGroupChanges().equals(playerActions),"frozen objects retain player actions");
+        try{rules.rule(10).orElseThrow().playerSpawnGroupChanges().enable().add(99);throw new AssertionError("mutable player actions");}catch(UnsupportedOperationException expected){}
+
+        var store=new ZombiesObjectStateStore();
+        var payload=store.barrierStates(List.of(resolved)).get(0).payload();
+        check(ZombiesSpawnGroupChanges.fromTag(payload.getCompound("playerSpawnGroupChanges")).equals(playerActions),"barrier state carries player actions");
+        var encoded=ZombiesBarrierData.CODEC.encodeStart(JsonOps.INSTANCE,resolved).result().orElseThrow().getAsJsonObject();
+        check(!encoded.has("playerSpawnGroupChanges") && !encoded.has("spawnGroupChanges") && !encoded.has("cost") && !encoded.has("requiredItem"),"geometry excludes both policies");
+        encoded.add("playerSpawnGroupChanges",JsonParser.parseString("{\"enable\":[7],\"disable\":[0]}"));
+        check(ZombiesBarrierData.CODEC.parse(JsonOps.INSTANCE,encoded).result().orElseThrow().playerSpawnGroupChanges().equals(playerActions),"legacy geometry policy remains readable");
+
+        for(String invalid:List.of("null","[]","{\"enable\":[-1]}","{\"enable\":[7],\"disable\":[7]}","{\"enable\":7}","{\"unexpected\":[]}")){
+            var bad=tree(1000);group(bad,"10").add("playerSpawnGroupChanges",JsonParser.parseString(invalid));
+            check(!ZombiesBarrierGroupsConfig.parse(bad.toString(),path).errors().isEmpty(),"invalid player actions accepted: "+invalid);
+        }
+        var misplaced=tree(1000);entry(misplaced,"10","1").add("playerSpawnGroupChanges",new JsonObject());
+        check(!ZombiesBarrierGroupsConfig.parse(misplaced.toString(),path).errors().isEmpty(),"player actions belong to group, not entry");
     }
 }

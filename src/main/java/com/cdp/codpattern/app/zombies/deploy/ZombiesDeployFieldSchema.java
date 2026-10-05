@@ -29,6 +29,7 @@ public final class ZombiesDeployFieldSchema {
 
     private static final List<ObjectTypeSchema> OBJECT_TYPES = List.of(
             new ObjectTypeSchema(INITIAL, "gui.codpattern.zombies.deploy.type.initial", false, false, List.of(
+                    field("group", FieldType.INTEGER, "0"),
                     field("dimension", FieldType.TEXT, "minecraft:overworld"),
                     field("posX", FieldType.INTEGER, "0"),
                     field("posY", FieldType.INTEGER, "64"),

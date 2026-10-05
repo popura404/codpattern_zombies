@@ -31,7 +31,6 @@ import java.util.Optional;
 
 final class ZombiesDeployObjectEditor {
     private static final ObjectRef NO_EXCLUSION = new ObjectRef("", -1);
-    static final int MAX_INITIAL_PLAYER_SPAWNS = 4;
 
     private ZombiesDeployObjectEditor() {
     }
@@ -59,6 +58,7 @@ final class ZombiesDeployObjectEditor {
             if (ZombiesDeployFieldSchema.BARRIER.equals(type)
                     && (resolvedOperation == Operation.ADD || resolvedOperation == Operation.UPDATE)
                     && fields != null && (fields.containsKey("cost") || fields.containsKey("requiredItem") || fields.containsKey("spawnGroupChanges")
+                    || fields.containsKey("playerSpawnGroupChanges") || fields.containsKey("enablePlayerSpawnGroups") || fields.containsKey("disablePlayerSpawnGroups")
                     || fields.containsKey(ZombiesSpawnGroupFields.ENABLE) || fields.containsKey(ZombiesSpawnGroupFields.DISABLE))) {
                 throw failure("field.barrier_rules_file_only", "Edit barrier_groups.json for entry costs/items and group spawn actions.");
             }
@@ -77,7 +77,6 @@ final class ZombiesDeployObjectEditor {
     private static EditResult add(ZombiesMapObjects objects, String type, Map<String, String> fields) {
         return switch (type) {
             case ZombiesDeployFieldSchema.INITIAL -> {
-                requireInitialSpawnCapacity(objects.initialSpawns().size(), 1);
                 ZombiesInitialSpawnData data = parseInitial(fields);
                 List<ZombiesInitialSpawnData> next = mutable(objects.initialSpawns());
                 next.add(data);
@@ -229,7 +228,6 @@ final class ZombiesDeployObjectEditor {
         return switch (type) {
             case ZombiesDeployFieldSchema.INITIAL -> {
                 requireIndex(type, selectedIndex, objects.initialSpawns().size());
-                requireInitialSpawnCapacity(objects.initialSpawns().size(), 1);
                 ZombiesInitialSpawnData data = objects.initialSpawns().get(selectedIndex);
                 List<ZombiesInitialSpawnData> next = mutable(objects.initialSpawns());
                 next.add(data);
@@ -509,11 +507,16 @@ final class ZombiesDeployObjectEditor {
     }
 
     private static ZombiesInitialSpawnData parseInitial(Map<String, String> fields) {
+        int group = intField(fields, "group");
+        if (group < 0) {
+            throw failure("field.invalid_integer", "field group must be a non-negative integer: " + group);
+        }
         return new ZombiesInitialSpawnData(
                 dimension(fields),
                 blockPos(fields, "pos"),
                 floatField(fields, "yaw"),
-                floatField(fields, "pitch"));
+                floatField(fields, "pitch"),
+                group);
     }
 
     private static ZombiesZombieSpawnData parseZombieSpawn(
@@ -691,14 +694,6 @@ final class ZombiesDeployObjectEditor {
         return newSize <= 0 ? -1 : Math.min(deletedIndex, newSize - 1);
     }
 
-    private static void requireInitialSpawnCapacity(int currentSize, int addedCount) {
-        if (currentSize + addedCount > MAX_INITIAL_PLAYER_SPAWNS) {
-            throw failure(
-                    "object.max_initial_spawns",
-                    "INITIAL player spawn limit is " + MAX_INITIAL_PLAYER_SPAWNS);
-        }
-    }
-
     private static Map<String, String> mergedFields(String objectType, Map<String, String> fields) {
         Map<String, String> merged = new LinkedHashMap<>(ZombiesDeployFieldSchema.defaultFields(objectType));
         if (fields != null) {
@@ -758,6 +753,7 @@ final class ZombiesDeployObjectEditor {
 
     private static Map<String, String> fieldsFrom(ZombiesInitialSpawnData data) {
         Map<String, String> fields = basePositionFields(ZombiesDeployFieldSchema.INITIAL, data.dimension(), data.pos());
+        fields.put("group", Integer.toString(data.group()));
         fields.put("yaw", Float.toString(data.yaw()));
         fields.put("pitch", Float.toString(data.pitch()));
         return fields;

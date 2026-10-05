@@ -2,6 +2,7 @@ package com.cdp.codpattern.app.zombies.service;
 
 import com.cdp.codpattern.app.match.model.ModePlayerValue;
 import com.cdp.codpattern.app.zombies.map.ZombiesMapSnapshot;
+import com.cdp.codpattern.app.zombies.map.object.ZombiesInitialSpawnData;
 import com.phasetranscrystal.fpsmatch.core.data.SpawnPointData;
 import com.phasetranscrystal.fpsmatch.core.map.BaseMap;
 import net.minecraft.server.level.ServerLevel;
@@ -16,12 +17,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * MVP1 fixed INITIAL spawn assignment and teleport service.
  */
 public final class ZombiesSpawnAssignmentService {
+    /** Filter in configured order before conversion discards the map-owned group metadata. */
+    public static List<SpawnPointData> activePlayerSpawnPoints(
+            Collection<ZombiesInitialSpawnData> playerSpawns, Set<Integer> activeGroups
+    ) {
+        if (playerSpawns == null || activeGroups == null || activeGroups.isEmpty()) return List.of();
+        return playerSpawns.stream()
+                .filter(Objects::nonNull)
+                .filter(spawn -> activeGroups.contains(spawn.group()))
+                .map(ZombiesInitialSpawnData::toSpawnPointData)
+                .toList();
+    }
+
     public ZombiesServiceResult<ZombiesSpawnAssignmentPlan> assign(
             ZombiesMapSnapshot snapshot,
             List<UUID> memberIds
@@ -221,7 +235,7 @@ public final class ZombiesSpawnAssignmentService {
     private static int initialSpawnCount(ZombiesMapSnapshot snapshot) {
         int count = 0;
         for (ZombiesMapSnapshot.SpawnSnapshot spawn : snapshot.spawns()) {
-            if (spawn != null && spawn.initialPlayerSpawn()) {
+            if (spawn != null && spawn.initialPlayerSpawn() && spawn.group() == ZombiesActiveSpawnGroupService.INITIAL_SPAWN_GROUP) {
                 count++;
             }
         }

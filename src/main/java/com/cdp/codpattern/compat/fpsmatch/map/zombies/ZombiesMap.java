@@ -133,6 +133,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
     private final ZombiesPostGameTeleportService postGameTeleportService;
     private final ZombiesPlayerRuntimeMarkerService runtimeMarkerService;
     private final ZombiesActiveSpawnGroupService activeSpawnGroupService;
+    private final ZombiesActiveSpawnGroupService activePlayerSpawnGroupService;
     private final ZombiesPowerService powerService;
     private final ZombiesBuffService buffService;
     private final ZombiesBuffRuntimeEffectService buffRuntimeEffectService;
@@ -187,6 +188,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         this.postGameTeleportService = ZombiesPostGameTeleportService.instance();
         this.runtimeMarkerService = ZombiesPlayerRuntimeMarkerService.instance();
         this.activeSpawnGroupService = new ZombiesActiveSpawnGroupService();
+        this.activePlayerSpawnGroupService = new ZombiesActiveSpawnGroupService();
         ZombiesPowerSwitchBlockStateService powerSwitchBlockStateService =
                 new ZombiesPowerSwitchBlockStateService(this::levelForDimension);
         this.powerService = new ZombiesPowerService(
@@ -220,12 +222,14 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 activeSpawnGroupService,
                 this::hasSurvivor,
                 runtimeState::phase,
-                purchase -> barrierBlockRuntimeService.clearGroup(
-                        roomId,
-                        purchase.group(),
-                        this::levelForDimension),
+                purchase -> {
+                    syncConfiguredInitialSpawnsToTeam();
+                    barrierBlockRuntimeService.clearGroup(roomId, purchase.group(), this::levelForDimension);
+                },
                 () -> runtimeObjects().zombieSpawns(),
-                this::runtimeBarrierGroupRules);
+                this::runtimeBarrierGroupRules,
+                activePlayerSpawnGroupService,
+                () -> runtimeObjects().initialSpawns());
         ZombiesWeaponInstanceService weaponInstanceService = new ZombiesWeaponInstanceService(economyService);
         ZombiesAmmoBoxService ammoBoxService = new ZombiesAmmoBoxService(economyService);
         ZombiesArmorService armorService = new ZombiesArmorService(economyService);
@@ -746,9 +750,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
     private void syncConfiguredInitialSpawnsToTeam() {
         getMapTeams().getTeamByName(ZombiesTeamNames.SURVIVORS).ifPresent(team -> {
             team.resetSpawnPointData(SpawnPointKind.INITIAL);
-            this.objects.initialSpawns().stream()
-                    .map(ZombiesInitialSpawnData::toSpawnPointData)
-                    .forEach(team::addSpawnPointData);
+            runtimeInitialSpawnPoints().forEach(team::addSpawnPointData);
             team.clearPlayerSpawnPointAssignments();
             if (isStart) {
                 team.assignNextSpawnPoints(SpawnPointKind.INITIAL);
@@ -931,7 +933,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
     private List<ZombiesValidationIssue> rulesValidationIssues() {
         List<ZombiesValidationIssue> issues = new java.util.ArrayList<>(
                 rulesValidationIssues == null ? List.of() : rulesValidationIssues);
-        issues.addAll(serverConfig().getBarrierGroups().bindingIssues(objects.barriers(), objects.zombieSpawns()));
+        issues.addAll(serverConfig().getBarrierGroups().bindingIssues(objects.barriers(), objects.zombieSpawns(), objects.initialSpawns()));
         return List.copyOf(issues);
     }
 
@@ -956,15 +958,13 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
     }
 
     private List<SpawnPointData> initialSpawnPoints() {
-        return initialSpawns().stream()
-                .map(ZombiesInitialSpawnData::toSpawnPointData)
-                .toList();
+        return ZombiesSpawnAssignmentService.activePlayerSpawnPoints(initialSpawns(),
+                Set.of(ZombiesActiveSpawnGroupService.INITIAL_SPAWN_GROUP));
     }
 
     private List<SpawnPointData> runtimeInitialSpawnPoints() {
-        return runtimeObjects().initialSpawns().stream()
-                .map(ZombiesInitialSpawnData::toSpawnPointData)
-                .toList();
+        return ZombiesSpawnAssignmentService.activePlayerSpawnPoints(runtimeObjects().initialSpawns(),
+                activePlayerSpawnGroupService.snapshot());
     }
 
     private com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig runtimeBarrierGroupRules() {
@@ -1103,6 +1103,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
 
     private void resetObjectRuntime(int currentWave, int maxWave) {
         activeSpawnGroupService.resetToInitial();
+        activePlayerSpawnGroupService.resetToInitial();
         powerService.reset();
         objectInteractionService.resetMysteryBoxRuntime();
         objectStateStore.resetObjects(
@@ -1142,6 +1143,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         frozenObjects = frozenBarrierGroupRules.resolveObjects(objects);
         objectsFrozen = true;
         resetObjectRuntime(1, maxWave);
+        syncConfiguredInitialSpawnsToTeam();
     }
 
     private void clearFrozenObjectsAndResetRuntime() {

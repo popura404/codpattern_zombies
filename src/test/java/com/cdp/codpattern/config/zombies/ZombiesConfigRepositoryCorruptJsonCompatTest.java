@@ -6,8 +6,8 @@ import java.nio.file.Path;
 public final class ZombiesConfigRepositoryCorruptJsonCompatTest {
     public static void main(String[] args) throws Exception {
         malformedRulesConfigFallsBackToGeneratedDefault();
-        rulesConfigMissingStarterWeaponBackfillsGeneratedDefault();
-        malformedWeaponFilterConfigFallsBackToGeneratedDefault();
+        rulesConfigMissingStarterWeaponDoesNotBackfill();
+        malformedRetiredFiltersAreIgnoredAndPreserved();
     }
 
     private static void malformedRulesConfigFallsBackToGeneratedDefault() throws Exception {
@@ -19,17 +19,15 @@ public final class ZombiesConfigRepositoryCorruptJsonCompatTest {
         require(config.getDefaults() != null, "corrupt rules config should fall back to defaults");
         require(config.getArmor() != null, "corrupt rules config should include armor defaults");
         require(
-                ZombiesRulesConfig.DEFAULT_STARTER_GUN_ITEM.equals(config.getStarterWeapon().getItem()),
-                "corrupt rules config should fall back to default starter weapon");
-        require(
                 Files.readString(path).contains("\"armor\""),
                 "corrupt rules config should be replaced with generated JSON");
         require(
-                Files.readString(path).contains("\"starterWeapon\""),
-                "corrupt rules config should include generated starter weapon JSON");
+                !Files.readString(path).contains("\"starterWeapon\"")
+                        && !Files.readString(path).contains("\"weaponRules\""),
+                "legacy config generation must not include retired starting equipment or ammo rules");
     }
 
-    private static void rulesConfigMissingStarterWeaponBackfillsGeneratedDefault() throws Exception {
+    private static void rulesConfigMissingStarterWeaponDoesNotBackfill() throws Exception {
         Path path = tempFile("zombies-rules-missing-starter-", "config.json");
         Files.writeString(path, """
                 {
@@ -39,28 +37,25 @@ public final class ZombiesConfigRepositoryCorruptJsonCompatTest {
                 }
                 """);
 
+        String before = Files.readString(path);
         ZombiesRulesConfig config = ZombiesRulesRepository.loadOrCreate(path);
-
-        require(
-                ZombiesRulesConfig.DEFAULT_STARTER_GUN_ITEM.equals(config.getStarterWeapon().getItem()),
-                "rules config missing starter weapon should use generated default starter weapon");
-        require(
-                Files.readString(path).contains("\"starterWeapon\""),
-                "rules config missing starter weapon should be backfilled to config.json");
+        require(config.getRoom().getIntermissionSeconds() == 5, "active legacy rules should remain readable");
+        require(before.equals(Files.readString(path)), "legacy rules must not backfill starterWeapon");
     }
 
-    private static void malformedWeaponFilterConfigFallsBackToGeneratedDefault() throws Exception {
-        Path path = tempFile("zombies-corrupt-filter-", "zombies_weapon_filter.json");
-        Files.writeString(path, "{\"weaponTabs\": \"bad-shape\"}");
-
-        ZombiesWeaponFilterConfig config = ZombiesWeaponFilterRepository.loadOrCreate(path);
-
-        require(
-                Math.abs(config.getAmmunitionPerMagazineMultiple() - 10.0D) < 0.0001D,
-                "corrupt weapon filter config should fall back to scaled ammo default");
-        require(
-                Files.readString(path).contains("\"weaponTabs\""),
-                "corrupt weapon filter config should be replaced with generated JSON");
+    private static void malformedRetiredFiltersAreIgnoredAndPreserved() throws Exception {
+        Path root = Files.createTempDirectory("zombies-corrupt-retired-filters-");
+        String corrupt = "{not valid JSON";
+        for (String name : new String[]{"weapon_filter.json", "zombies_weapon_filter.json"}) {
+            Files.writeString(root.resolve(name), corrupt);
+        }
+        ZombiesConfigRepository.LoadResult result = ZombiesConfigRepository.loadResult(root);
+        require(result.config().getBackpack().errors().isEmpty(), "retired filters must not affect new backpack rules");
+        for (String name : new String[]{"weapon_filter.json", "zombies_weapon_filter.json"}) {
+            require(corrupt.equals(Files.readString(root.resolve(name))), "retired filters must remain untouched");
+            require(result.files().stream().noneMatch(file -> file.fileName().equals(name)),
+                    "retired filters must not be loaded or reported as rebuilt");
+        }
     }
 
     private static Path tempFile(String prefix, String fileName) throws Exception {

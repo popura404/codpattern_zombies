@@ -6,9 +6,9 @@ import java.util.Map;
 public final class ZombiesWeaponDefaultsCompatTest {
     public static void main(String[] args) {
         starterWeaponDefaultsToTaczGlock();
-        blankStarterWeaponNormalizesToTaczGlock();
+        starterWeaponLabelsRemainUnchanged();
         weaponPoolDefaultsUseTaczGunIds();
-        weaponRulesDefaultAmmoUsesScaledReserve();
+        backpackDefaultAmmoUsesFixedLimits();
         armorDefaultsUseRequestedDamageReductions();
         armorValidatorRejectsOutOfRangeReduction();
         ultimateMachineDefaultsUseServerconfigLevelDamage();
@@ -16,32 +16,22 @@ public final class ZombiesWeaponDefaultsCompatTest {
     }
 
     private static void starterWeaponDefaultsToTaczGlock() {
-        ZombiesRulesConfig.StarterWeapon weapon = new ZombiesRulesConfig().getStarterWeapon();
+        ZombiesBackpackConfig.StarterWeapon weapon = ZombiesBackpackConfig.defaults().getStarterWeapon();
 
         require(
-                ZombiesRulesConfig.DEFAULT_STARTER_GUN_ITEM.equals(weapon.getItem()),
+                ZombiesBackpackConfig.DEFAULT_STARTER_GUN_ITEM.equals(weapon.getItem()),
                 "starter item should be the TaCZ gun item");
         require(
                 weapon.getNbt().contains("GunId:\"tacz:glock_17\""),
                 "starter nbt should use tacz:glock_17");
     }
 
-    private static void blankStarterWeaponNormalizesToTaczGlock() {
-        ZombiesRulesConfig.StarterWeapon weapon = new ZombiesRulesConfig.StarterWeapon();
-        weapon.setItem("");
-        weapon.setCount(0);
-        weapon.setNbt("");
-        ZombiesRulesConfig config = new ZombiesRulesConfig();
-        config.setStarterWeapon(weapon);
-        config.normalize();
-        ZombiesRulesConfig.StarterWeapon normalizedWeapon = config.getStarterWeapon();
-
-        require(
-                ZombiesRulesConfig.DEFAULT_STARTER_GUN_ITEM.equals(normalizedWeapon.getItem()),
-                "blank starter item should normalize to the TaCZ gun item");
-        require(
-                normalizedWeapon.getNbt().contains("GunId:\"tacz:glock_17\""),
-                "blank starter nbt should normalize to tacz:glock_17");
+    private static void starterWeaponLabelsRemainUnchanged() {
+        ZombiesBackpackConfig.StarterWeapon weapon =
+                new ZombiesBackpackConfig.StarterWeapon(" Not an Item ID ", 1, "not NBT", " not a preset ");
+        require(" Not an Item ID ".equals(weapon.getItem()), "configuration must preserve the item label");
+        require("not NBT".equals(weapon.getNbt()), "configuration must not parse or correct NBT");
+        require(" not a preset ".equals(weapon.getAttachmentPreset()), "configuration must preserve preset text");
     }
 
     private static void weaponPoolDefaultsUseTaczGunIds() {
@@ -58,26 +48,13 @@ public final class ZombiesWeaponDefaultsCompatTest {
                 "default weapon pool should be exactly three TaCZ gun ids: " + gunIds);
     }
 
-    private static void weaponRulesDefaultAmmoUsesScaledReserve() {
-        ZombiesRulesConfig config = new ZombiesRulesConfig();
-
-        require(
-                config.getWeaponRules().getStarterWeaponAmmunitionPerMagazineMultiple() == 10,
-                "starter weapon reserve ammo multiple should default to floor(7 * 3 / 2)");
-        require(
-                config.getWeaponRules().getWeaponPoolAmmunitionPerMagazineMultiple() == 10,
-                "weapon pool reserve ammo multiple should default to floor(7 * 3 / 2)");
-
-        config.getWeaponRules().setStarterWeaponAmmunitionPerMagazineMultiple(-1);
-        config.getWeaponRules().setWeaponPoolAmmunitionPerMagazineMultiple(-1);
-        config.normalize();
-
-        require(
-                config.getWeaponRules().getStarterWeaponAmmunitionPerMagazineMultiple() == 10,
-                "invalid starter weapon reserve ammo multiple should normalize to scaled default");
-        require(
-                config.getWeaponRules().getWeaponPoolAmmunitionPerMagazineMultiple() == 10,
-                "invalid weapon pool reserve ammo multiple should normalize to scaled default");
+    private static void backpackDefaultAmmoUsesFixedLimits() {
+        ZombiesBackpackConfig.Ammunition ammo = ZombiesBackpackConfig.defaults().getAmmunition();
+        require(ammo.getDefaultMaxReserveAmmo() == 120, "unknown types should have a fixed 120-round reserve");
+        require(ammo.getMaxReserveAmmoByType().equals(Map.of(
+                "pistol", 180, "rifle", 360, "smg", 420, "mg", 560,
+                "shotgun", 180, "sniper", 120, "rpg", 36)), "default fixed limits should match the configured table");
+        require(ammo.getMaxReserveAmmoByGunId().isEmpty(), "new defaults should not override individual guns");
     }
 
     private static void armorDefaultsUseRequestedDamageReductions() {

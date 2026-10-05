@@ -11,26 +11,26 @@ public final class ZombiesServerConfig {
     private final ZombiesWeaponRulesConfig weaponRules;
     private final ZombiesWeaponWallConfig weaponWall;
     private final ZombiesMysteryBoxConfig mysteryBox;
-    private final ZombiesWeaponFilterConfig weaponFilter;
+    private final ZombiesBackpackConfig backpack;
     private final ZombiesBarrierGroupsConfig barrierGroups;
     private final List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> validationIssues;
 
     public ZombiesServerConfig(String mapName, ZombiesRoomConfig room, ZombiesWeaponRulesConfig weaponRules,
                                ZombiesWeaponWallConfig weaponWall, ZombiesMysteryBoxConfig mysteryBox,
-                               ZombiesWeaponFilterConfig weaponFilter,
+                               ZombiesBackpackConfig backpack,
                                List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> validationIssues) {
-        this(mapName, room, weaponRules, weaponWall, mysteryBox, weaponFilter, ZombiesBarrierGroupsConfig.empty(), validationIssues);
+        this(mapName, room, weaponRules, weaponWall, mysteryBox, backpack, ZombiesBarrierGroupsConfig.empty(), validationIssues);
     }
     public ZombiesServerConfig(String mapName, ZombiesRoomConfig room, ZombiesWeaponRulesConfig weaponRules,
                                ZombiesWeaponWallConfig weaponWall, ZombiesMysteryBoxConfig mysteryBox,
-                               ZombiesWeaponFilterConfig weaponFilter, ZombiesBarrierGroupsConfig barrierGroups,
+                               ZombiesBackpackConfig backpack, ZombiesBarrierGroupsConfig barrierGroups,
                                List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> validationIssues) {
         this.barrierGroups = barrierGroups == null ? ZombiesBarrierGroupsConfig.empty() : barrierGroups;
         this.mapName = Objects.requireNonNullElse(mapName, "default"); this.room = room == null ? ZombiesRoomConfig.defaults() : room;
         this.weaponRules = weaponRules == null ? ZombiesWeaponRulesConfig.defaults() : weaponRules;
         this.weaponWall = weaponWall == null ? ZombiesWeaponWallConfig.defaults() : weaponWall;
         this.mysteryBox = mysteryBox == null ? ZombiesMysteryBoxConfig.defaults() : mysteryBox;
-        this.weaponFilter = weaponFilter == null ? ZombiesWeaponFilterConfig.defaults() : weaponFilter;
+        this.backpack = backpack == null ? ZombiesBackpackConfig.defaults() : backpack;
         this.validationIssues = validationIssues == null ? List.of() : List.copyOf(validationIssues);
     }
     public static ZombiesServerConfig defaults(String mapName) { return new ZombiesServerConfig(mapName, null, null, null, null, null, List.of()); }
@@ -44,8 +44,8 @@ public final class ZombiesServerConfig {
     public ZombiesWeaponWallConfig weaponWall() { return weaponWall; }
     public ZombiesMysteryBoxConfig getMysteryBox() { return mysteryBox; }
     public ZombiesMysteryBoxConfig mysteryBox() { return mysteryBox; }
-    public ZombiesWeaponFilterConfig getWeaponFilter() { return weaponFilter; }
-    public ZombiesWeaponFilterConfig weaponFilter() { return weaponFilter; }
+    public ZombiesBackpackConfig getBackpack() { return backpack; }
+    public ZombiesBackpackConfig backpack() { return backpack; }
     public List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> getValidationIssues() { return validationIssues; }
     public List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> validationIssues() { return validationIssues; }
 
@@ -53,10 +53,6 @@ public final class ZombiesServerConfig {
     public ZombiesRulesConfig legacyRulesConfig() {
         ZombiesRulesConfig value = new ZombiesRulesConfig();
         value.setRoom(room.getRoom()); value.setDefaults(room.getMobDefaults()); value.setArmor(room.getArmor()); value.setSpawnPointWeighting(room.getSpawnPointWeighting());
-        value.setStarterWeapon(weaponRules.getStarterWeapon());
-        ZombiesRulesConfig.WeaponRules ammo = new ZombiesRulesConfig.WeaponRules();
-        ammo.setStarterWeaponAmmunitionPerMagazineMultiple(weaponRules.getAmmunition().getStarterWeaponMagazineMultiplier());
-        ammo.setWeaponPoolAmmunitionPerMagazineMultiple(weaponRules.getAmmunition().getWeaponPoolMagazineMultiplier()); value.setWeaponRules(ammo);
         ZombiesRulesConfig.WeaponWall wall = new ZombiesRulesConfig.WeaponWall(); wall.setRefreshIntervalWaves(weaponWall.getRefreshIntervalWaves());
         java.util.List<ZombiesRulesConfig.Rarity> rarities = new java.util.ArrayList<>();
         for (ZombiesWeaponWallConfig.RarityPool pool : weaponWall.getRarityPools()) { ZombiesRulesConfig.Rarity r = new ZombiesRulesConfig.Rarity(); r.setId(pool.getRarityId()); r.setInitialWeight(pool.getInitialWeight()); r.setWeightDeltaPerRefresh(pool.getWeightDeltaPerRefresh()); r.setMinWeight(pool.getMinWeight()); r.setMaxWeight(pool.getMaxWeight()); r.setPrice(pool.getPrice()); r.setGuns(pool.getGuns().stream().map(g -> new ZombiesRulesConfig.GunWeight(g.getGunId(), g.getWeight())).toList()); rarities.add(r); }

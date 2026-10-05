@@ -17,6 +17,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 def mainProject = project(':codpattern-main')
 def barrierGroupRulesGameTests = project.hasProperty('barrierGroupRulesGameTests')
+def backpackGameTests = project.hasProperty('backpackGameTests')
 def navigationLoadSize = findProperty('navigationLoad')?.toString()
 if (navigationLoadSize && !(navigationLoadSize in ['8', '32', '64'])) {
     throw new GradleException('navigationLoad must be 8, 32, or 64')
@@ -68,7 +69,7 @@ minecraft {
             workingDirectory gameTestRunDirectory
             property 'codpattern.test.workspace', project.projectDir.absolutePath
             property 'codpattern.test.results', (findProperty('barrierGroupRulesResultsPath') ?: 'build/verification/barrier-group-rules/forge-results.txt').toString()
-            property 'forge.enabledGameTestNamespaces', barrierGroupRulesGameTests ? 'codpattern_barrier_rules' : navigationLoadSize ? "codpattern_navigation_load${navigationLoadSize}"
+            property 'forge.enabledGameTestNamespaces', backpackGameTests ? 'codpattern_backpack' : barrierGroupRulesGameTests ? 'codpattern_barrier_rules' : navigationLoadSize ? "codpattern_navigation_load${navigationLoadSize}"
                     : (project.hasProperty('navigationGameTests') ? 'codpattern_navigation'
                     : (findProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'))
             property 'codpattern.zombies.navigationDebug', project.hasProperty('navigationDebug') ? 'true' : 'false'
@@ -122,7 +123,16 @@ tasks.register('compileBarrierGroupRulesGameTests', JavaCompile) {
 tasks.register('syncZombiesDeployGameTestClasses', Sync) {
     group = 'verification'
     description = 'Stage addon-owned deploy tests without the test packages shared with the main mod.'
-    if (barrierGroupRulesGameTests) {
+    if (backpackGameTests) {
+        dependsOn tasks.named('testClasses')
+        from(sourceSets.test.output.classesDirs) {
+            include 'com/cdp/codpattern/app/zombies/deploy/ZombiesBackpackGameTests*'
+            include 'com/cdp/codpattern/app/zombies/deploy/ZombiesDeployGameTestBootstrap*'
+            include 'com/cdp/codpattern/app/zombies/service/ZombiesBackpackRuntimeTestSupport*'
+            include 'com/cdp/codpattern/config/zombies/ZombiesBackpackCompatSuite*'
+        }
+        from('src/test/resources') { include 'data/codpattern_backpack/**' }
+    } else if (barrierGroupRulesGameTests) {
         dependsOn tasks.named('compileBarrierGroupRulesGameTests')
         from layout.buildDirectory.dir('verification/barrier-group-rules/forge-test-classes')
         from('src/test/resources') { include 'data/codpattern_barrier_rules/**' }
@@ -369,4 +379,14 @@ tasks.register('runZombiesStorageMigrationCompat', JavaExec) {
     mainClass = 'com.cdp.codpattern.config.zombies.ZombiesStorageMigrationCompatTest'
     dependsOn tasks.named('testClasses')
     dependsOn mainProject.tasks.named('testClasses')
+}
+
+
+tasks.register('runZombiesBackpackCompatSuite', JavaExec) {
+    group = 'verification'
+    description = 'Run fixed-reserve backpack numeric validation, opaque labels, file preservation, and matching regressions; no skipped tests.'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.config.zombies.ZombiesBackpackCompatSuite'
+    dependsOn tasks.named('testClasses')
 }

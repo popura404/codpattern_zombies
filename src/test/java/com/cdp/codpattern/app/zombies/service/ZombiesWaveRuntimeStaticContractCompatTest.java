@@ -266,11 +266,11 @@ public final class ZombiesWaveRuntimeStaticContractCompatTest {
                 "waveState.targetWave()",
                 "intermission HUD should receive the upcoming target wave number");
         requireContains(zombiesMap,
-                "SoundEvents.BELL_BLOCK",
-                "wave intermission start should play the Minecraft bell sound");
+                "ZombiesSoundRegister.forWave(definition)",
+                "wave intermission start should select the configured wave intro sound");
         requireContains(zombiesMap,
-                "playIntermissionBell();",
-                "bell sound must be triggered from the intermission enter hook");
+                "playWaveIntro();",
+                "wave intro sound must be triggered from the intermission enter hook");
         requireContains(zombiesMap,
                 "this::aliveSurvivorPlayers",
                 "zombies map should provide room-scoped alive survivor targets to spawned mobs");

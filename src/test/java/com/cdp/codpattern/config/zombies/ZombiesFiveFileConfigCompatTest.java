@@ -3,7 +3,7 @@ package com.cdp.codpattern.config.zombies;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** Executable compatibility checks for the v1 five-file map configuration. */
+/** Executable compatibility checks for the map configuration, including the replacement backpack file. */
 public final class ZombiesFiveFileConfigCompatTest {
     public static void main(String[] args) throws Exception {
         generatesFiveVersionedFiles();
@@ -15,14 +15,20 @@ public final class ZombiesFiveFileConfigCompatTest {
         Path root = Files.createTempDirectory("zombies-v1-five-");
         ZombiesServerConfig config = ZombiesConfigRepository.loadOrCreate(root, "alpha");
         require(config.getRoom().getSchemaVersion() == 1, "room schema");
-        for (String name : new String[]{"room.json", "weapon_rules.json", "weapon_wall.json", "mystery_box.json", "weapon_filter.json"}) {
+        for (String name : new String[]{"room.json", "weapon_rules.json", "weapon_wall.json", "mystery_box.json", "backpack.json"}) {
             require(Files.readString(root.resolve(name)).contains("\"schemaVersion\": 1"), name + " schemaVersion");
         }
         require(!Files.exists(root.resolve("config.json")), "legacy config.json must not be generated");
         require(!Files.exists(root.resolve("zombies_weapon_filter.json")), "legacy filter must not be generated");
+        require(!Files.exists(root.resolve("weapon_filter.json")), "retired filter must not be generated");
         require(!Files.readString(root.resolve("weapon_wall.json")).contains("damageMultiplier"), "wall damage must be shared");
         require(!Files.readString(root.resolve("mystery_box.json")).contains("damageMultiplier"), "box damage must be shared");
-        require(!Files.readString(root.resolve("weapon_filter.json")).contains("ammunitionPerMagazineMultiple"), "filter must not own ammunition");
+        String weaponRules = Files.readString(root.resolve("weapon_rules.json"));
+        require(!weaponRules.contains("starterWeapon") && !weaponRules.contains("ammunition"),
+                "weapon_rules must not regenerate retired equipment fields");
+        String backpack = Files.readString(root.resolve("backpack.json"));
+        require(!backpack.contains("Magazine") && !backpack.contains("blocked") && !backpack.contains("weaponTabs"),
+                "backpack template must only describe starting equipment and absolute reserve limits");
     }
 
     private static void rebuildsOnlyTheBrokenFile() throws Exception {
@@ -43,6 +49,7 @@ public final class ZombiesFiveFileConfigCompatTest {
         require(b.getWeaponRules().damageMultiplier("common").orElseThrow() == 1.0, "map B must remain default");
         require(a.getWeaponWall() != b.getWeaponWall(), "wall pools must be per-map objects");
         require(a.getMysteryBox() != b.getMysteryBox(), "box pools must be per-map objects");
+        require(a.getBackpack() != b.getBackpack(), "backpack rules must be per-map objects");
     }
 
     private static void require(boolean condition, String message) { if (!condition) throw new AssertionError(message); }

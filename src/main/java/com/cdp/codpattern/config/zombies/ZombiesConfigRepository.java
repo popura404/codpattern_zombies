@@ -3,7 +3,6 @@ package com.cdp.codpattern.config.zombies;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
@@ -15,7 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Loads the five v1 files independently. A bad file never invalidates its siblings. */
+/** Loads map-owned rules independently; invalid backpack/barrier rules are preserved and block startup. */
 public final class ZombiesConfigRepository {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -46,14 +45,17 @@ public final class ZombiesConfigRepository {
         ZombiesWeaponRulesConfig weaponRules = read(resolved.resolve("weapon_rules.json"), ZombiesWeaponRulesConfig.class, ZombiesWeaponRulesConfig::defaults, statuses);
         ZombiesWeaponWallConfig weaponWall = read(resolved.resolve("weapon_wall.json"), ZombiesWeaponWallConfig.class, ZombiesWeaponWallConfig::defaults, statuses);
         ZombiesMysteryBoxConfig mysteryBox = read(resolved.resolve("mystery_box.json"), ZombiesMysteryBoxConfig.class, ZombiesMysteryBoxConfig::defaults, statuses);
-        ZombiesWeaponFilterConfig weaponFilter = read(resolved.resolve("weapon_filter.json"), ZombiesWeaponFilterConfig.class, ZombiesWeaponFilterConfig::defaults, statuses);
+        ZombiesBackpackConfig backpack = ZombiesBackpackConfig.load(resolved.resolve(ZombiesBackpackConfig.FILE_NAME));
         List<com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue> issues = new ArrayList<>(new ZombiesRulesValidator().validate(
-                new ZombiesServerConfig(mapName, room, weaponRules, weaponWall, mysteryBox, weaponFilter, List.of()).legacyRulesConfig()));
+                new ZombiesServerConfig(mapName, room, weaponRules, weaponWall, mysteryBox, backpack, List.of()).legacyRulesConfig()));
+        issues.addAll(backpack.fileValidationIssues());
+        statuses.add(new FileStatus(ZombiesBackpackConfig.FILE_NAME, backpack.templateCreated(),
+                !backpack.errors().isEmpty() ? "invalid_preserved" : backpack.templateCreated() ? "default_template_created" : "loaded"));
         ZombiesBarrierGroupsConfig barrierGroups = ZombiesBarrierGroupsConfig.load(resolved.resolve("barrier_groups.json"));
         issues.addAll(barrierGroups.fileValidationIssues());
         statuses.add(new FileStatus(ZombiesBarrierGroupsConfig.FILE_NAME, barrierGroups.templateCreated(),
                 !barrierGroups.errors().isEmpty() ? "invalid_preserved" : barrierGroups.templateCreated() ? "empty_template_created" : "loaded"));
-        ZombiesServerConfig resultConfig = new ZombiesServerConfig(mapName, room, weaponRules, weaponWall, mysteryBox, weaponFilter, barrierGroups, issues);
+        ZombiesServerConfig resultConfig = new ZombiesServerConfig(mapName, room, weaponRules, weaponWall, mysteryBox, backpack, barrierGroups, issues);
         lastResult = new LoadResult(resultConfig, List.copyOf(statuses)); current = resultConfig; return lastResult;
     }
 
@@ -78,7 +80,7 @@ public final class ZombiesConfigRepository {
         if (rebuild) { value = factory.create(); try { Files.createDirectories(path.getParent()); Files.writeString(path, GSON.toJson(value)); } catch (IOException ex) { LOGGER.error("Failed to write Zombies config {}", path, ex); } }
         normalize(value); statuses.add(new FileStatus(path.getFileName().toString(), rebuild, reason)); return value;
     }
-    private static void normalize(Object value) { if (value instanceof ZombiesRoomConfig v) v.normalize(); else if (value instanceof ZombiesWeaponRulesConfig v) v.normalize(); else if (value instanceof ZombiesWeaponWallConfig v) v.normalize(); else if (value instanceof ZombiesMysteryBoxConfig v) v.normalize(); else if (value instanceof ZombiesWeaponFilterConfig v) v.normalize(); }
+    private static void normalize(Object value) { if (value instanceof ZombiesRoomConfig v) v.normalize(); else if (value instanceof ZombiesWeaponRulesConfig v) v.normalize(); else if (value instanceof ZombiesWeaponWallConfig v) v.normalize(); else if (value instanceof ZombiesMysteryBoxConfig v) v.normalize(); }
 
     public record FileStatus(String fileName, boolean rebuilt, String reason) {}
     public record LoadResult(ZombiesServerConfig config, List<FileStatus> files) {

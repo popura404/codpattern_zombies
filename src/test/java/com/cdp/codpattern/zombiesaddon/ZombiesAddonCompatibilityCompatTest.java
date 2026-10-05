@@ -7,7 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class ZombiesAddonCompatibilityCompatTest {
-    private static final String ADDON_VERSION = "0.2.0b";
+    private static final String ADDON_VERSION = "0.2.1b";
 
     private ZombiesAddonCompatibilityCompatTest() {
     }

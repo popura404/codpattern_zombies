@@ -14,8 +14,6 @@ import java.util.Set;
 public final class ZombiesRulesValidator {
     public static final ZombiesErrorCode RULES_INVALID_WEAPON_WALL =
             ZombiesErrorCode.of("rules.invalid_weapon_wall");
-    public static final ZombiesErrorCode RULES_INVALID_WEAPON_RULES =
-            ZombiesErrorCode.of("rules.invalid_weapon_rules");
     public static final ZombiesErrorCode RULES_INVALID_ULTIMATE_MACHINE =
             ZombiesErrorCode.of("rules.invalid_ultimate_machine");
     public static final ZombiesErrorCode RULES_INVALID_SPAWN_POINT_WEIGHTING =
@@ -33,7 +31,6 @@ public final class ZombiesRulesValidator {
         ZombiesRulesConfig resolved = config == null ? new ZombiesRulesConfig() : config;
         List<ZombiesValidationIssue> issues = new ArrayList<>();
         validateArmor(resolved.getArmor(), issues);
-        validateWeaponRules(resolved.getWeaponRules(), issues);
         validateWeaponWall(resolved.getWeaponWall(), issues);
         validateUltimateMachine(resolved.getUltimateMachine(), issues);
         validateSpawnPointWeighting(resolved.getSpawnPointWeighting(), issues);
@@ -151,33 +148,6 @@ public final class ZombiesRulesValidator {
                     RULES_INVALID_SPAWN_POINT_WEIGHTING,
                     "spawnPointWeighting.multiplierBounds",
                     "minMultiplier must be <= maxMultiplier."));
-        }
-    }
-
-    private static void validateWeaponRules(
-            ZombiesRulesConfig.WeaponRules weaponRules,
-            List<ZombiesValidationIssue> issues
-    ) {
-        if (weaponRules == null) {
-            issues.add(ZombiesValidationIssue.error(
-                    RULES_INVALID_WEAPON_RULES,
-                    "weaponRules",
-                    "Zombies weaponRules config is missing."));
-            return;
-        }
-        if (weaponRules.getStarterWeaponAmmunitionPerMagazineMultiple() == null
-                || weaponRules.getStarterWeaponAmmunitionPerMagazineMultiple() < 0) {
-            issues.add(ZombiesValidationIssue.error(
-                    RULES_INVALID_WEAPON_RULES,
-                    "weaponRules.starterWeaponAmmunitionPerMagazineMultiple",
-                    "Starter weapon ammunition magazine multiple must be a non-negative integer."));
-        }
-        if (weaponRules.getWeaponPoolAmmunitionPerMagazineMultiple() == null
-                || weaponRules.getWeaponPoolAmmunitionPerMagazineMultiple() < 0) {
-            issues.add(ZombiesValidationIssue.error(
-                    RULES_INVALID_WEAPON_RULES,
-                    "weaponRules.weaponPoolAmmunitionPerMagazineMultiple",
-                    "Weapon wall pool ammunition magazine multiple must be a non-negative integer."));
         }
     }
 

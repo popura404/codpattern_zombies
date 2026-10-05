@@ -124,7 +124,7 @@
     ├── weapon_rules.json
     ├── weapon_wall.json
     ├── mystery_box.json
-    ├── weapon_filter.json
+    ├── backpack.json
     ├── barrier_groups.json
     ├── waves/
     │   ├── wave_001.json
@@ -142,15 +142,17 @@
 |---|---:|---|
 | `map.json` | 1 | 地图身份、维度、范围、结束传送、部署对象；优先由工具维护 |
 | `room.json` | 1 | 房间时序、怪物默认参数、护甲减伤、出生距离权重 |
-| `weapon_rules.json` | 1 | 初始武器、弹药倍数、稀有度伤害、强化等级/价格/倍率 |
+| `weapon_rules.json` | 1 | 稀有度伤害、强化等级/价格/倍率 |
 | `weapon_wall.json` | 1 | 墙枪刷新间隔、稀有度池、枪械权重、价格 |
 | `mystery_box.json` | 1 | 神秘箱价格、刷新间隔、枪池 |
-| `weapon_filter.json` | 1 | 可选武器类别及物品、武器、配件黑名单 |
+| `backpack.json` | 1 | 初始武器及配件预设、按枪械类别和单枪设置的固定备弹上限 |
 | `barrier_groups.json` | **2** | 屏障组共享切组动作及各入口价格/钥匙 |
 | `waves/wave_NNN.json` | 不使用上述版本字段 | 一份文件定义一波战斗 |
 | `wave_text/wave_NNN.json` | 不使用上述版本字段 | 一份文件定义一波聊天提示 |
 
-普通五份 v1 规则缺失、JSON 损坏或格式版本错误时，读取器会把该文件重建成默认值。修改前保留副本，修改后检查文件与日志，不能只凭“服务器没报崩溃”判断设置有效。
+`room.json`、`weapon_rules.json`、`weapon_wall.json`、`mystery_box.json` 缺失、JSON 损坏或格式版本错误时，读取器会把该文件重建成默认值。修改前保留副本，修改后检查文件与日志，不能只凭“服务器没报崩溃”判断设置有效。
+
+`backpack.json` 缺失时生成默认 Glock 和固定备弹表；已有文件的 JSON 格式、版本、字段类型或数值无效时保留原文并阻止开局，不覆盖为默认值。枪械、物品、配件及类别标签按字符串读取，不在配置层检查资源存在性或标签格式，NBT 与配件 SNBT 也只在实际发枪时解析。
 
 `barrier_groups.json` 的策略不同：不存在时创建空 v2 模板；已存在但无效时保留原文件、报告错误，不会悄悄改成免费屏障。只要地图配置了屏障，就必须补全它所绑定的组和入口。
 
@@ -489,20 +491,11 @@ minecraft:vex             minecraft:warden
 
 ### 9.2 `weapon_rules.json`
 
-初始物品的 `item` 是物品注册 ID，而枪池里的 `gunId` 是 TACZ 枪械定义 ID，两者不能互换。以下示例使用默认手枪及两级强化：
+本文件仅管理稀有度与强化。初始物品与弹药使用第 9.5 节的 `backpack.json`，此处示例为默认稀有度及两级强化：
 
 ```json
 {
   "schemaVersion": 1,
-  "starterWeapon": {
-    "item": "tacz:modern_kinetic_gun",
-    "count": 1,
-    "nbt": "{GunId:\"tacz:glock_17\",GunCurrentAmmoCount:17,GunFireMode:\"SEMI\",HasBulletInBarrel:1}"
-  },
-  "ammunition": {
-    "starterWeaponAmmunitionPerMagazineMultiple": 10,
-    "weaponPoolAmmunitionPerMagazineMultiple": 10
-  },
   "rarities": [
     { "id": "common", "damageMultiplier": 1.0 },
     { "id": "rare", "damageMultiplier": 1.25 },
@@ -585,19 +578,54 @@ minecraft:vex             minecraft:warden
 
 池中稀有度 ID 应在 `weapon_rules.json` 中有对应定义。不要把枪械物品 ID `tacz:modern_kinetic_gun` 填进 `gunId`。
 
-### 9.5 `weapon_filter.json`
+### 9.5 `backpack.json`
 
-保留生成模板，根据实际枪包调整以下字段：
+本文件是本地图初始武器与备弹的唯一配置入口。默认模板如下：
 
-| 字段 | 用途 |
-|---|---|
-| `weaponTabs` | 初始武器选择允许的类别 |
-| `blockedItemNamespaces` | 禁止的物品命名空间 |
-| `blockedWeaponIds` | 禁止的具体武器 ID |
-| `blockedAttachmentNamespaces` | 禁止的配件命名空间 |
-| `blockedAttachmentIds` | 禁止的具体配件 ID |
+```json
+{
+  "schemaVersion": 1,
+  "starterWeapon": {
+    "item": "tacz:modern_kinetic_gun",
+    "count": 1,
+    "nbt": "{GunId:\"tacz:glock_17\",GunCurrentAmmoCount:17,GunFireMode:\"SEMI\",HasBulletInBarrel:1}",
+    "attachmentPreset": ""
+  },
+  "ammunition": {
+    "defaultMaxReserveAmmo": 120,
+    "maxReserveAmmoByType": {
+      "pistol": 180,
+      "rifle": 360,
+      "smg": 420,
+      "mg": 560,
+      "shotgun": 180,
+      "sniper": 120,
+      "rpg": 36
+    },
+    "maxReserveAmmoByGunId": {}
+  }
+}
+```
 
-本文件格式版本为 1。旧 `ammunitionPerMagazineMultiple` 已不负责当前弹药配置，请修改 `weapon_rules.json` 的 `ammunition`。
+初始物品的 `item` 是物品注册 ID，NBT 中的 `GunId` 及单枪覆盖表的键是 TaCZ 枪械定义 ID。`attachmentPreset` 可省略，默认空字符串。
+
+开局枪、墙枪和神秘箱统一按 **单枪 ID → 枪械类别 → 默认值** 确定备弹上限。单枪标签精确匹配；类别比较时去除首尾空格并转小写，归一化后重名时后项覆盖前项。`rpg` 对应发射器。两个覆盖表可以省略或使用 `{}`，不会自动补回默认类别。例如添加 `"tacz:ak47": 480` 后，AK 的备弹上限为 480，其他步枪仍用类别值 360。
+
+上限按每把武器分别保存，不包含弹匣和膛内子弹。发枪时填满备弹，扩容配件只影响弹匣容量；稀有度和强化不改变备弹上限。补弹补到该武器保存的上限，复活与掉线恢复保留已有状态。
+
+**校验只涉及基本结构与公开数值字段。** `schemaVersion` 为整数 `1`；`count` 为 `1` 至 `2147483647` 的整数；所有备弹值为 `0` 至 `2147483647` 的整数。`0` 表示没有备弹。负数、小数字面值、数字字符串、显式 `null`、越界数值及错误字段类型均无效，加载时报明字段并保留原文件。
+
+物品、枪械、配件、类别标签及 NBT/SNBT 字符串不会在加载或迁移预检时检查格式与资源存在性。未知类别使用默认备弹；未命中的单枪条目不报错。字符串按原文保留，配置层不会替换成 Glock。标签实际无法创建物品时，使用原有发枪失败和回滚流程；“配置能加载”不代表相关枪包一定可用。
+
+配置在地图初始化和每次开局时加载；磁盘修改从下一局生效，当前对局已有武器不热更新。
+
+### 9.6 从旧备弹配置升级
+
+已有地图没有 `backpack.json` 时会生成上面的完整默认模板。**旧初始枪不会自动迁移**，管理员需在新文件重新设置。旧 `weapon_rules.json` 中的初始武器及弹匣倍数字段彻底失效，不参与校验、计算或回退，稀有度和强化仍照常读取。
+
+`weapon_filter.json` 和历史 `zombies_weapon_filter.json` 已停用，不读取、不生成、不修复、不自动删除；旧黑名单和 `weaponTabs` 不再有效。即使旧过滤文件损坏，也不会阻止正常加载或迁移。新文件无效时需修复新文件，不会转而读取旧配置。
+
+存储迁移预检只读：允许源地图缺少新文件；已有新文件按同样的结构和数值规则检查，不检查标签及 SNBT，也不在预检时生成模板。
 
 ## 10. 结束传送点与管理命令
 

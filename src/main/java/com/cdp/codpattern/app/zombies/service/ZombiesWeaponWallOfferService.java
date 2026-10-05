@@ -3,6 +3,7 @@ package com.cdp.codpattern.app.zombies.service;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
 import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
+import com.cdp.codpattern.config.zombies.ZombiesBackpackConfig;
 import com.cdp.codpattern.config.zombies.ZombiesRulesRepository;
 import com.cdp.codpattern.config.zombies.ZombiesRulesValidator;
 import com.cdp.codpattern.config.zombies.ZombiesWeaponWallConfig;
@@ -19,9 +20,8 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 public class ZombiesWeaponWallOfferService {
-    private static final int INTERNAL_COMPAT_WEAPON_LEVEL = 1;
-
     private final Supplier<ZombiesRulesConfig> rulesSupplier;
+    private final Supplier<ZombiesBackpackConfig> backpackSupplier;
     private final RandomGenerator random;
     private final Function<String, ItemStack> weaponStackFactory;
     private Supplier<ZombiesWeaponWallConfig> splitWallSupplier;
@@ -36,6 +36,16 @@ public class ZombiesWeaponWallOfferService {
             RandomGenerator random,
             Function<String, ItemStack> weaponStackFactory
     ) {
+        this(rulesSupplier, random, weaponStackFactory, ZombiesBackpackConfig::defaults);
+    }
+
+    public ZombiesWeaponWallOfferService(
+            Supplier<ZombiesRulesConfig> rulesSupplier,
+            RandomGenerator random,
+            Function<String, ItemStack> weaponStackFactory,
+            Supplier<ZombiesBackpackConfig> backpackSupplier
+    ) {
+        this.backpackSupplier = backpackSupplier == null ? ZombiesBackpackConfig::defaults : backpackSupplier;
         this.rulesSupplier = rulesSupplier == null ? ZombiesRulesRepository::getConfig : rulesSupplier;
         this.random = random == null ? new Random() : random;
         this.weaponStackFactory = weaponStackFactory == null
@@ -50,7 +60,17 @@ public class ZombiesWeaponWallOfferService {
             RandomGenerator random,
             Function<String, ItemStack> weaponStackFactory
     ) {
-        this(ZombiesRulesRepository::getConfig, random, weaponStackFactory);
+        this(wallSupplier, weaponRulesSupplier, ZombiesBackpackConfig::defaults, random, weaponStackFactory);
+    }
+
+    public ZombiesWeaponWallOfferService(
+            Supplier<ZombiesWeaponWallConfig> wallSupplier,
+            Supplier<ZombiesWeaponRulesConfig> weaponRulesSupplier,
+            Supplier<ZombiesBackpackConfig> backpackSupplier,
+            RandomGenerator random,
+            Function<String, ItemStack> weaponStackFactory
+    ) {
+        this(ZombiesRulesRepository::getConfig, random, weaponStackFactory, backpackSupplier);
         this.splitWallSupplier = wallSupplier == null ? ZombiesWeaponWallConfig::defaults : wallSupplier;
         this.splitRulesSupplier = weaponRulesSupplier == null ? ZombiesWeaponRulesConfig::defaults : weaponRulesSupplier;
     }
@@ -59,7 +79,8 @@ public class ZombiesWeaponWallOfferService {
             ZombiesWeaponWallData weaponWall,
             int currentWave
     ) {
-        if (weaponWall == null) {
+        ZombiesBackpackConfig backpack = backpackSupplier.get();
+        if (weaponWall == null || (backpack != null && !backpack.errors().isEmpty())) {
             return ZombiesObjectStateStore.WeaponWallOffer.empty();
         }
         if (splitWallSupplier != null) {
@@ -70,7 +91,6 @@ public class ZombiesWeaponWallOfferService {
             rules = new ZombiesRulesConfig();
         }
         ZombiesRulesConfig.WeaponWall weaponWallRules = rules.getWeaponWall();
-        ZombiesRulesConfig.WeaponRules weaponRules = rules.getWeaponRules();
         int refreshCount = refreshCount(currentWave, weaponWallRules.getRefreshIntervalWaves());
         List<WeightedRarity> rarities = weightedRarities(weaponWallRules, refreshCount);
         WeightedRarity rarity = pickWeightedRarity(rarities, random);
@@ -81,7 +101,7 @@ public class ZombiesWeaponWallOfferService {
         if (gun == null || gun.getGunId() == null || gun.getGunId().trim().isBlank()) {
             return ZombiesObjectStateStore.WeaponWallOffer.empty();
         }
-        int maxReserveAmmo = maxReserveAmmo(gun.getGunId(), weaponRules.getWeaponPoolAmmunitionPerMagazineMultiple());
+        int maxReserveAmmo = maxReserveAmmo(gun.getGunId());
         return new ZombiesObjectStateStore.WeaponWallOffer(
                 weaponWall.objectId(),
                 rarity.id(),
@@ -102,7 +122,7 @@ public class ZombiesWeaponWallOfferService {
         if (chosen == null) return ZombiesObjectStateStore.WeaponWallOffer.empty();
         ZombiesWeaponWallConfig.GunWeight gun = chosen.getGuns().get(0); double gunTotal = chosen.getGuns().stream().mapToDouble(ZombiesWeaponWallConfig.GunWeight::getWeight).filter(v -> v > 0 && Double.isFinite(v)).sum(); cursor = random.nextDouble(Math.max(gunTotal, 1)); for (ZombiesWeaponWallConfig.GunWeight candidate : chosen.getGuns()) { if (candidate == null || candidate.getWeight() <= 0) continue; cursor -= candidate.getWeight(); if (cursor < 0) { gun = candidate; break; } }
         double damage = rules.damageMultiplier(chosen.getRarityId()).orElse(1.0);
-        int ammo = maxReserveAmmo(gun.getGunId(), rules.getAmmunition().getWeaponPoolMagazineMultiplier());
+        int ammo = maxReserveAmmo(gun.getGunId());
         return new ZombiesObjectStateStore.WeaponWallOffer(objectId, chosen.getRarityId(), gun.getGunId(), chosen.getPrice(), ammo, damage);
     }
 
@@ -128,17 +148,15 @@ public class ZombiesWeaponWallOfferService {
         return (targetWave - 1) % refreshIntervalWaves() == 0;
     }
 
-    private int maxReserveAmmo(String gunId, int magazineMultiple) {
+    private int maxReserveAmmo(String gunId) {
         ItemStack stack = weaponStackFactory.apply(gunId);
-        if (stack == null || stack.isEmpty() || !TaczGatewayProvider.gateway().isGun(stack)) {
-            return 0;
-        }
-        int magazineAmmo = TaczGatewayProvider.gateway().resolveMagazineAmmo(stack);
-        if (magazineAmmo <= 0) {
-            TaczGatewayProvider.gateway().configureGunAmmo(stack, 0);
-            magazineAmmo = TaczGatewayProvider.gateway().resolveMagazineAmmo(stack);
-        }
-        return Math.max(0, magazineAmmo * Math.max(0, magazineMultiple));
+        String gunType = stack == null || stack.isEmpty() ? null
+                : TaczGatewayProvider.gateway().resolveGunType(stack).orElse(null);
+        String actualGunId = stack == null || stack.isEmpty() ? gunId
+                : TaczGatewayProvider.gateway().resolveGunId(stack).orElse(gunId);
+        ZombiesBackpackConfig backpack = backpackSupplier.get();
+        return ZombiesBackpackAmmoResolver.resolve(actualGunId, gunType,
+                (backpack == null ? ZombiesBackpackConfig.defaults() : backpack).getAmmunition());
     }
 
     private static int refreshCount(int currentWave, int refreshIntervalWaves) {

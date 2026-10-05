@@ -12,7 +12,6 @@ public final class ZombiesStorageMigration {
             "room.json", ZombiesRoomConfig.class,
             "weapon_rules.json", ZombiesWeaponRulesConfig.class,
             "weapon_wall.json", ZombiesWeaponWallConfig.class,
-            "weapon_filter.json", ZombiesWeaponFilterConfig.class,
             "mystery_box.json", ZombiesMysteryBoxConfig.class);
     private ZombiesStorageMigration() {}
     public static void validate(Path root) {
@@ -28,6 +27,13 @@ public final class ZombiesStorageMigration {
                 // Reject malformed field types before the runtime loader could replace them with defaults.
                 new com.google.gson.Gson().fromJson(object, RULE_TYPES.get(name));
             }
+            // Older map directories have no backpack rules. Existing files are checked without generating defaults.
+            Path backpack = root.resolve(ZombiesBackpackConfig.FILE_NAME);
+            StorageFiles.checkPath(backpack);
+            if (Files.exists(backpack)) {
+                var parsed = ZombiesBackpackConfig.parse(Files.readString(backpack), backpack);
+                if (!parsed.errors().isEmpty()) throw new IllegalStateException("Invalid backpack rules " + backpack + ": " + parsed.errors());
+            }
             // Missing new rules are configured manually after relocation; never infer legacy object values.
             Path barrierGroups = root.resolve(ZombiesBarrierGroupsConfig.FILE_NAME);
             StorageFiles.checkPath(barrierGroups);
@@ -35,10 +41,13 @@ public final class ZombiesStorageMigration {
                 var parsed = ZombiesBarrierGroupsConfig.parse(Files.readString(barrierGroups), barrierGroups);
                 if (!parsed.errors().isEmpty()) throw new IllegalStateException("Invalid barrier group rules " + barrierGroups + ": " + parsed.errors());
             }
-            // Parse all candidate JSON without invoking repositories (which create defaults on load).
+            // Retired filters are never read, including when they contain broken JSON.
+            // Keep path checks even for these ignored files.
             try (var paths = Files.walk(root)) {
                 for (Path file : paths.toList()) {
                     StorageFiles.checkPath(file);
+                    if (file.equals(root.resolve("weapon_filter.json"))
+                            || file.equals(root.resolve("zombies_weapon_filter.json"))) continue;
                     if (Files.isRegularFile(file) && file.getFileName().toString().endsWith(".json")) {
                         if (!JsonParser.parseString(Files.readString(file)).isJsonObject()) {
                             throw new IllegalStateException("Invalid Zombies JSON object: " + file);

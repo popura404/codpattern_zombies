@@ -16,19 +16,12 @@ public class ZombiesRulesConfig {
     public static final String DEFAULT_POOL_GLOCK_17 = "tacz:glock_17";
     public static final String DEFAULT_POOL_AK47 = "tacz:ak47";
     public static final String DEFAULT_POOL_M4A1 = "tacz:m4a1";
-    public static final String DEFAULT_STARTER_GUN_ITEM = "tacz:modern_kinetic_gun";
-    public static final String DEFAULT_STARTER_GUN_ID = "tacz:glock_17";
-    public static final String DEFAULT_STARTER_WEAPON_NBT =
-            "{GunId:\"" + DEFAULT_STARTER_GUN_ID
-                    + "\",GunCurrentAmmoCount:17,GunFireMode:\"SEMI\",HasBulletInBarrel:1}";
 
     private Room room = new Room();
     private Defaults defaults = new Defaults();
     private Armor armor = new Armor();
-    private StarterWeapon starterWeapon = StarterWeapon.defaults();
     private WeaponWall weaponWall = WeaponWall.defaults();
     private UltimateMachine ultimateMachine = UltimateMachine.defaults();
-    private WeaponRules weaponRules = new WeaponRules();
     private SpawnPointWeighting spawnPointWeighting = new SpawnPointWeighting();
 
     public Room getRoom() {
@@ -64,17 +57,6 @@ public class ZombiesRulesConfig {
         this.armor = armor == null ? new Armor() : armor;
     }
 
-    public StarterWeapon getStarterWeapon() {
-        if (starterWeapon == null) {
-            starterWeapon = StarterWeapon.defaults();
-        }
-        return starterWeapon;
-    }
-
-    public void setStarterWeapon(StarterWeapon starterWeapon) {
-        this.starterWeapon = starterWeapon == null ? StarterWeapon.defaults() : starterWeapon;
-    }
-
     public WeaponWall getWeaponWall() {
         if (weaponWall == null) {
             weaponWall = WeaponWall.defaults();
@@ -97,17 +79,6 @@ public class ZombiesRulesConfig {
         this.ultimateMachine = ultimateMachine == null ? UltimateMachine.defaults() : ultimateMachine;
     }
 
-    public WeaponRules getWeaponRules() {
-        if (weaponRules == null) {
-            weaponRules = new WeaponRules();
-        }
-        return weaponRules;
-    }
-
-    public void setWeaponRules(WeaponRules weaponRules) {
-        this.weaponRules = weaponRules == null ? new WeaponRules() : weaponRules;
-    }
-
     public SpawnPointWeighting getSpawnPointWeighting() {
         if (spawnPointWeighting == null) {
             spawnPointWeighting = new SpawnPointWeighting();
@@ -123,18 +94,14 @@ public class ZombiesRulesConfig {
         setRoom(room);
         setDefaults(defaults);
         setArmor(armor);
-        setStarterWeapon(starterWeapon);
         setWeaponWall(weaponWall);
         setUltimateMachine(ultimateMachine);
-        setWeaponRules(weaponRules);
         setSpawnPointWeighting(spawnPointWeighting);
         room.normalize();
         defaults.normalize();
         armor.normalize();
-        starterWeapon.normalize();
         weaponWall.normalize();
         ultimateMachine.normalize();
-        weaponRules.normalize();
         spawnPointWeighting.normalize();
     }
 
@@ -351,78 +318,6 @@ public class ZombiesRulesConfig {
             level1DamageReduction = validDamageReductionOrDefault(level1DamageReduction, 0.25D);
             level2DamageReduction = validDamageReductionOrDefault(level2DamageReduction, 0.50D);
             level3DamageReduction = validDamageReductionOrDefault(level3DamageReduction, 0.75D);
-        }
-    }
-
-    public static class StarterWeapon {
-        private String item = DEFAULT_STARTER_GUN_ITEM;
-        private Integer count = 1;
-        private String nbt = DEFAULT_STARTER_WEAPON_NBT;
-        private String attachmentPreset;
-
-        public StarterWeapon() {
-        }
-
-        public StarterWeapon(String item, Integer count, String nbt, String attachmentPreset) {
-            this.item = item;
-            this.count = count;
-            this.nbt = nbt;
-            this.attachmentPreset = attachmentPreset;
-        }
-
-        public static StarterWeapon defaults() {
-            StarterWeapon starterWeapon = new StarterWeapon();
-            starterWeapon.normalize();
-            return starterWeapon;
-        }
-
-        public String getItem() {
-            return item;
-        }
-
-        public void setItem(String item) {
-            this.item = item;
-        }
-
-        public Integer getCount() {
-            return count;
-        }
-
-        public void setCount(Integer count) {
-            this.count = count;
-        }
-
-        public String getNbt() {
-            return nbt;
-        }
-
-        public void setNbt(String nbt) {
-            this.nbt = nbt;
-        }
-
-        public String getAttachmentPreset() {
-            return attachmentPreset;
-        }
-
-        public void setAttachmentPreset(String attachmentPreset) {
-            this.attachmentPreset = attachmentPreset;
-        }
-
-        private void normalize() {
-            if (item == null || item.trim().isEmpty()) {
-                item = DEFAULT_STARTER_GUN_ITEM;
-            } else {
-                item = item.trim();
-            }
-            count = positiveOrDefault(count, 1);
-            if (nbt == null || nbt.trim().isEmpty()) {
-                nbt = DEFAULT_STARTER_GUN_ITEM.equals(item) ? DEFAULT_STARTER_WEAPON_NBT : "";
-            }
-        }
-
-        /** Public compatibility hook used by the split weapon_rules model. */
-        public void normalizeCompat() {
-            normalize();
         }
     }
 
@@ -745,40 +640,6 @@ public class ZombiesRulesConfig {
         private void normalize() {
             cost = nonNegativeOrDefault(cost, 0);
             damageMultiplier = positiveFiniteOrDefault(damageMultiplier, 1.0D);
-        }
-    }
-
-    public static class WeaponRules {
-        private static final int LEGACY_DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE = 7;
-        public static final int DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE =
-                LEGACY_DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE * 3 / 2;
-
-        private Integer starterWeaponAmmunitionPerMagazineMultiple = DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE;
-        private Integer weaponPoolAmmunitionPerMagazineMultiple = DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE;
-
-        public Integer getStarterWeaponAmmunitionPerMagazineMultiple() {
-            return starterWeaponAmmunitionPerMagazineMultiple;
-        }
-
-        public void setStarterWeaponAmmunitionPerMagazineMultiple(Integer starterWeaponAmmunitionPerMagazineMultiple) {
-            this.starterWeaponAmmunitionPerMagazineMultiple = starterWeaponAmmunitionPerMagazineMultiple;
-        }
-
-        public Integer getWeaponPoolAmmunitionPerMagazineMultiple() {
-            return weaponPoolAmmunitionPerMagazineMultiple;
-        }
-
-        public void setWeaponPoolAmmunitionPerMagazineMultiple(Integer weaponPoolAmmunitionPerMagazineMultiple) {
-            this.weaponPoolAmmunitionPerMagazineMultiple = weaponPoolAmmunitionPerMagazineMultiple;
-        }
-
-        private void normalize() {
-            starterWeaponAmmunitionPerMagazineMultiple = nonNegativeOrDefault(
-                    starterWeaponAmmunitionPerMagazineMultiple,
-                    DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE);
-            weaponPoolAmmunitionPerMagazineMultiple = nonNegativeOrDefault(
-                    weaponPoolAmmunitionPerMagazineMultiple,
-                    DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE);
         }
     }
 

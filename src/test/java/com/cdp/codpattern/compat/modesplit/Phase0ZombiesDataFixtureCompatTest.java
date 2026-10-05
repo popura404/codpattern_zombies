@@ -5,8 +5,7 @@ import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.zombies.service.ZombiesServiceResult;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponItemStackService;
 import com.cdp.codpattern.compat.fpsmatch.data.zombies.ZombiesMapData;
-import com.cdp.codpattern.config.zombies.ZombiesWeaponFilterConfig;
-import com.cdp.codpattern.config.zombies.ZombiesWeaponFilterRepository;
+import com.cdp.codpattern.config.zombies.ZombiesConfigRepository;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.Codec;
@@ -130,28 +129,22 @@ public final class Phase0ZombiesDataFixtureCompatTest {
             String source = readFixture("config/zombies-weapon-filter-mixed-case.json");
             assertOrdered(source, "zombies filter source", "\"weaponTabs\"", "\"blockedItemNamespaces\"",
                     "\"UnknownLegacyOption\"");
-            Path target = copyFixture(tempRoot, "config/zombies-weapon-filter-mixed-case.json");
-
-            ZombiesWeaponFilterConfig config = ZombiesWeaponFilterRepository.loadOrCreate(target);
-
+            Path target = tempRoot.resolve("weapon_filter.json");
+            Files.writeString(target, source);
+            var config = ZombiesConfigRepository.loadOrCreate(tempRoot, "legacy-filter-fixture");
+            require(config.getBackpack().getAmmunition().getDefaultMaxReserveAmmo() == 120,
+                    "retired filter ammo must not affect the new backpack defaults");
+            require(config.getBackpack().getStarterWeapon().getNbt().contains("tacz:glock_17"),
+                    "retired filter must not affect the default starter weapon");
             require(source.equals(Files.readString(target)),
-                    "zombies filter's current load path must not rewrite a valid file before explicit save");
-            require(config.getWeaponTabs().equals(java.util.List.of("pistol", "rifle")),
-                    "zombies filter tabs currently trim/lowercase/deduplicate in memory");
-            require(config.getBlockedItemNamespaces().equals(java.util.List.of("legacypack")),
-                    "zombies filter blocked namespaces currently trim/lowercase/deduplicate");
-            require(Math.abs(config.getAmmunitionPerMagazineMultiple() - 12.5D) < 0.0001D,
-                    "zombies filter ammunition multiple must survive");
-
-            ZombiesWeaponFilterRepository.save(config);
-            String saved = Files.readString(target);
-            require(!saved.contains("UnknownLegacyOption"),
-                    "zombies filter's current explicit save path drops unknown fields");
-            ZombiesWeaponFilterConfig reloaded = ZombiesWeaponFilterRepository.loadOrCreate(target);
-            require(reloaded.getWeaponTabs().equals(java.util.List.of("pistol", "rifle")),
-                    "zombies filter canonical output must reload semantically");
-            require(saved.equals(Files.readString(target)),
-                    "zombies filter canonical output must remain stable on reload");
+                    "retired filter must remain byte-for-byte untouched");
+            Files.writeString(target, "{broken legacy filter");
+            var reloaded = ZombiesConfigRepository.loadOrCreate(tempRoot, "legacy-filter-fixture");
+            require(reloaded.getBackpack().errors().isEmpty()
+                            && reloaded.validationIssues().equals(config.validationIssues()),
+                    "malformed retired filter must not add configuration errors: " + reloaded.validationIssues());
+            require(Files.readString(target).equals("{broken legacy filter"),
+                    "retired filter must not be rebuilt by the current repository");
             require(source.equals(readFixture("config/zombies-weapon-filter-mixed-case.json")),
                     "zombies filter source fixture must remain untouched");
         } finally {

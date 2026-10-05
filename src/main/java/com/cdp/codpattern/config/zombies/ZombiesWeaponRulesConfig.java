@@ -13,17 +13,11 @@ import java.util.Objects;
 public final class ZombiesWeaponRulesConfig {
     public static final int SUPPORTED_SCHEMA_VERSION = 1;
     private int schemaVersion = SUPPORTED_SCHEMA_VERSION;
-    private ZombiesRulesConfig.StarterWeapon starterWeapon = ZombiesRulesConfig.StarterWeapon.defaults();
-    private Ammunition ammunition = new Ammunition();
     private List<Rarity> rarities = defaultRarities();
     private Upgrades upgrades = new Upgrades();
 
     public int getSchemaVersion() { return schemaVersion; }
     public void setSchemaVersion(int value) { schemaVersion = value; }
-    public ZombiesRulesConfig.StarterWeapon getStarterWeapon() { return starterWeapon == null ? (starterWeapon = ZombiesRulesConfig.StarterWeapon.defaults()) : starterWeapon; }
-    public void setStarterWeapon(ZombiesRulesConfig.StarterWeapon value) { starterWeapon = value == null ? ZombiesRulesConfig.StarterWeapon.defaults() : value; }
-    public Ammunition getAmmunition() { return ammunition == null ? (ammunition = new Ammunition()) : ammunition; }
-    public void setAmmunition(Ammunition value) { ammunition = value == null ? new Ammunition() : value; }
     public List<Rarity> getRarities() { return rarities == null ? (rarities = defaultRarities()) : rarities; }
     public void setRarities(List<Rarity> value) { rarities = value == null ? defaultRarities() : new ArrayList<>(value); }
     public Upgrades getUpgrades() { return upgrades == null ? (upgrades = new Upgrades()) : upgrades; }
@@ -32,7 +26,7 @@ public final class ZombiesWeaponRulesConfig {
     public double rarityDamageMultiplier(String id) { return damageMultiplier(id).orElse(1.0); }
 
     public void normalize() {
-        schemaVersion = SUPPORTED_SCHEMA_VERSION; getStarterWeapon().normalizeCompat(); getAmmunition().normalize(); getUpgrades().normalize();
+        schemaVersion = SUPPORTED_SCHEMA_VERSION; getUpgrades().normalize();
         List<Rarity> values = new ArrayList<>();
         for (Rarity rarity : getRarities()) { if (rarity == null) continue; rarity.normalize(); if (!rarity.getId().isBlank()) values.add(rarity); }
         rarities = values.isEmpty() ? defaultRarities() : values;
@@ -41,19 +35,6 @@ public final class ZombiesWeaponRulesConfig {
     private static List<Rarity> defaultRarities() { return List.of(new Rarity("common", 1.0), new Rarity("rare", 1.25), new Rarity("epic", 1.6), new Rarity("legendary", 2.0)); }
     private static String normalize(String value) { return Objects.requireNonNullElse(value, "").trim().toLowerCase(Locale.ROOT); }
 
-    public static final class Ammunition {
-        @SerializedName(value = "starterWeaponAmmunitionPerMagazineMultiple", alternate = {"starterWeaponMagazineMultiplier"})
-        private int starterWeaponMagazineMultiplier = ZombiesRulesConfig.WeaponRules.DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE;
-        @SerializedName(value = "weaponPoolAmmunitionPerMagazineMultiple", alternate = {"weaponPoolMagazineMultiplier"})
-        private int weaponPoolMagazineMultiplier = ZombiesRulesConfig.WeaponRules.DEFAULT_AMMUNITION_PER_MAGAZINE_MULTIPLE;
-        public int getStarterWeaponMagazineMultiplier() { return starterWeaponMagazineMultiplier; }
-        public void setStarterWeaponMagazineMultiplier(int value) { starterWeaponMagazineMultiplier = value; }
-        public int getWeaponPoolMagazineMultiplier() { return weaponPoolMagazineMultiplier; }
-        public void setWeaponPoolMagazineMultiplier(int value) { weaponPoolMagazineMultiplier = value; }
-        public int getStarterWeaponAmmunitionPerMagazineMultiple() { return starterWeaponMagazineMultiplier; }
-        public int getWeaponPoolAmmunitionPerMagazineMultiple() { return weaponPoolMagazineMultiplier; }
-        private void normalize() { if (starterWeaponMagazineMultiplier < 0) starterWeaponMagazineMultiplier = 10; if (weaponPoolMagazineMultiplier < 0) weaponPoolMagazineMultiplier = 10; }
-    }
     public static final class Rarity {
         private String id; private double damageMultiplier = 1.0;
         public Rarity() { this("common", 1.0); }

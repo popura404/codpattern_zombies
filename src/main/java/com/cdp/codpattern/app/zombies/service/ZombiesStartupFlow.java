@@ -4,7 +4,6 @@ import com.cdp.codpattern.app.match.model.ModePlayerValue;
 import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.match.runtime.transaction.RollbackStack;
 import com.cdp.codpattern.app.zombies.map.ZombiesMapSnapshot;
-import com.cdp.codpattern.config.zombies.ZombiesWeaponFilterConfig;
 import com.phasetranscrystal.fpsmatch.core.data.SpawnPointData;
 import com.phasetranscrystal.fpsmatch.core.map.BaseMap;
 import net.minecraft.server.level.ServerLevel;
@@ -68,8 +67,7 @@ public final class ZombiesStartupFlow {
         ZombiesServiceResult<ZombiesStarterKitDistributor.PreparedStarterKits> starterKitResult =
                 starterKitDistributor.prepareStarterWeapons(
                         request.roomId(),
-                        request.memberIds(),
-                        request.weaponFilterConfig());
+                        request.memberIds());
         if (!starterKitResult.success() || starterKitResult.value().isEmpty()) {
             return failureResult(work, starterKitResult.code(), starterKitResult.params(), starterKitResult.logMessage());
         }
@@ -293,7 +291,6 @@ public final class ZombiesStartupFlow {
             List<SpawnPointData> initialSpawnPoints,
             Optional<BaseMap> map,
             Optional<ServerLevel> serverLevel,
-            ZombiesWeaponFilterConfig weaponFilterConfig,
             List<ZombiesStartupParticipant> participants
     ) {
         public StartupRequest {
@@ -312,7 +309,6 @@ public final class ZombiesStartupFlow {
                 Collection<UUID> memberIds,
                 List<SpawnPointData> initialSpawnPoints,
                 BaseMap map,
-                ZombiesWeaponFilterConfig weaponFilterConfig,
                 List<ZombiesStartupParticipant> participants
         ) {
             ServerLevel level = map == null ? null : map.getServerLevel();
@@ -323,7 +319,6 @@ public final class ZombiesStartupFlow {
                     initialSpawnPoints,
                     Optional.ofNullable(map),
                     Optional.ofNullable(level),
-                    weaponFilterConfig,
                     participants);
         }
 
@@ -333,7 +328,6 @@ public final class ZombiesStartupFlow {
                 Collection<UUID> memberIds,
                 List<SpawnPointData> initialSpawnPoints,
                 ServerLevel serverLevel,
-                ZombiesWeaponFilterConfig weaponFilterConfig,
                 List<ZombiesStartupParticipant> participants
         ) {
             return new StartupRequest(
@@ -343,7 +337,6 @@ public final class ZombiesStartupFlow {
                     initialSpawnPoints,
                     Optional.empty(),
                     Optional.ofNullable(serverLevel),
-                    weaponFilterConfig,
                     participants);
         }
 

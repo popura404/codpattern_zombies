@@ -3,7 +3,11 @@ package com.cdp.codpattern.app.zombies.service;
 import com.cdp.codpattern.app.match.ModeModules;
 import com.cdp.codpattern.app.tdm.TdmModeModule;
 import com.cdp.codpattern.app.zombies.ZombiesModeModule;
+import net.minecraft.SharedConstants;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.Bootstrap;
 
+import java.lang.reflect.Field;
 import java.util.List;
 
 public final class ZombiesMvp123CompatTestSuite {
@@ -322,6 +326,7 @@ public final class ZombiesMvp123CompatTestSuite {
     }
 
     public static void main(String[] args) throws Throwable {
+        bootstrapRegistriesForPureJvmFixtures();
         ModeModules.contribute(TdmModeModule.INSTANCE);
         ModeModules.contribute(ZombiesModeModule.INSTANCE);
         ModeModules.freeze();
@@ -332,6 +337,17 @@ public final class ZombiesMvp123CompatTestSuite {
         }
         printPureJvmCoverage();
         printGameTestOnlyCoverage();
+    }
+
+    /** Same vanilla data-fixture setup as Phase0; live Forge behavior is verified separately by GameTest. */
+    private static void bootstrapRegistriesForPureJvmFixtures() throws ReflectiveOperationException {
+        SharedConstants.tryDetectVersion();
+        Field bootstrapFlag = Bootstrap.class.getDeclaredField("isBootstrapped");
+        bootstrapFlag.setAccessible(true);
+        bootstrapFlag.setBoolean(null, true);
+        if (BuiltInRegistries.REGISTRY.keySet().isEmpty()) {
+            throw new AssertionError("built-in registries must load for pure JVM fixtures");
+        }
     }
 
     private static void printPureJvmCoverage() {

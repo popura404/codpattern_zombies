@@ -72,10 +72,8 @@ import com.cdp.codpattern.app.zombies.validation.ZombiesValidationIssue;
 import com.cdp.codpattern.core.throwable.ThrowableInventoryService;
 import com.cdp.codpattern.config.zombies.ZombiesConfigPaths;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
-import com.cdp.codpattern.config.zombies.ZombiesRulesRepository;
 import com.cdp.codpattern.adapter.forge.network.ModNetworkChannel;
-import com.cdp.codpattern.config.zombies.ZombiesWeaponFilterConfig;
-import com.cdp.codpattern.config.zombies.ZombiesWeaponFilterRepository;
+import com.cdp.codpattern.config.zombies.ZombiesBackpackConfig;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxConfig;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxRepository;
 import com.cdp.codpattern.config.zombies.ZombiesServerConfig;
@@ -154,7 +152,6 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
     private ZombiesServerConfig serverConfig;
     private com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig frozenBarrierGroupRules =
             com.cdp.codpattern.config.zombies.ZombiesBarrierGroupsConfig.empty();
-    private ZombiesWeaponFilterConfig weaponFilterConfig;
     private ZombiesMysteryBoxConfig mysteryBoxConfig;
     private List<ZombiesValidationIssue> rulesValidationIssues = List.of();
     private final Map<UUID, Integer> combatRegenCooldowns = new LinkedHashMap<>();
@@ -203,14 +200,10 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 new ZombiesWeaponWallOfferService(
                         () -> serverConfig().getWeaponWall(),
                         () -> serverConfig().getWeaponRules(),
+                        this::backpackConfig,
                         null,
                         null),
                 this::rulesConfig);
-        // Legacy source contract (configuration is now supplied by serverConfig):
-        // new ZombiesObjectStateStore(
-        //                powerService::isPowerOn,
-        //                new ZombiesWeaponWallOfferService(this::rulesConfig, null, null),
-        //                this::rulesConfig)
         this.objectStateStore.configureMysteryBoxConfigSupplier(this::mysteryBoxConfig);
         this.barrierVisualService = ZombiesBarrierVisualService.instance();
         this.barrierBlockRuntimeService = ZombiesBarrierBlockRuntimeService.instance();
@@ -257,6 +250,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 () -> runtimeObjects().mysteryBoxes(),
                 this::mysteryBoxConfig,
                 () -> serverConfig().getWeaponRules(),
+                this::backpackConfig,
                 () -> runtimeState.waveState().targetWave());
         this.objectStateStore.configureMysteryBoxRuntimeSupplier(() -> this.objectInteractionService.mysteryBoxRuntime().states());
         this.cleanupService = new ZombiesCleanupService(
@@ -356,7 +350,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                         ZombiesConfigPaths.zombiesMapWaves(server, getMapName()),
                         this::rulesConfig,
                         this::rulesValidationIssues),
-                new ZombiesStarterKitDistributor(this::rulesConfig),
+                new ZombiesStarterKitDistributor(this::backpackConfig),
                 ZombiesMapOccupancyService.instance(),
                 new ZombiesSpawnAssignmentService());
         ZombiesServiceResult<ZombiesStartupFlow.StartupResult> startupResult = startupFlow.start(
@@ -366,7 +360,6 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                         members,
                         initialSpawnPoints(),
                         this,
-                        weaponFilterConfig(),
                         List.of(new ZombiesStartupMapParticipant())));
         if (!startupResult.success()) {
             notifyStartupFailure(startupResult);
@@ -857,25 +850,16 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
             serverConfig = ZombiesServerConfig.defaults(getMapName());
             rulesConfig = new ZombiesRulesConfig();
             rulesConfig.normalize();
-            weaponFilterConfig = new ZombiesWeaponFilterConfig();
-            weaponFilterConfig.normalize();
             mysteryBoxConfig = ZombiesMysteryBoxConfig.defaults();
             ZombiesMysteryBoxRepository.setConfig(mysteryBoxConfig);
             rulesValidationIssues = List.of();
             return;
         }
         String mapName = getMapName();
-        // Compatibility contract markers: the deprecated repositories remain
-        // available for third-party callers, but this map intentionally uses
-        // ZombiesConfigRepository so each v1 file is isolated.
-        // ZombiesRulesRepository.loadOrCreate(server, mapName)
-        // ZombiesWeaponFilterRepository.loadOrCreate(server, mapName)
-        // new ZombiesWeaponWallOfferService(this::rulesConfig, null, null)
         ZombiesConfigRepository.LoadResult loaded = ZombiesConfigRepository.loadResult(server, mapName);
         serverConfig = loaded.serverConfig();
         rulesConfig = serverConfig.legacyRulesConfig();
         rulesValidationIssues = List.copyOf(serverConfig.validationIssues());
-        weaponFilterConfig = serverConfig.getWeaponFilter();
         mysteryBoxConfig = serverConfig.getMysteryBox();
         new ZombiesWaveConfigRepository(
                 ZombiesConfigPaths.zombiesMapWaves(server, mapName),
@@ -917,12 +901,8 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         return serverConfig();
     }
 
-    private ZombiesWeaponFilterConfig weaponFilterConfig() {
-        if (weaponFilterConfig == null) {
-            weaponFilterConfig = new ZombiesWeaponFilterConfig();
-            weaponFilterConfig.normalize();
-        }
-        return weaponFilterConfig;
+    private ZombiesBackpackConfig backpackConfig() {
+        return serverConfig().getBackpack();
     }
 
     private ZombiesMysteryBoxConfig mysteryBoxConfig() {

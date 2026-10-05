@@ -23,6 +23,7 @@ import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
 import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
+import com.cdp.codpattern.config.zombies.ZombiesBackpackConfig;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxConfig;
 import com.cdp.codpattern.config.zombies.ZombiesMysteryBoxRepository;
 import com.cdp.codpattern.config.zombies.ZombiesWeaponRulesConfig;
@@ -106,6 +107,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
     private final ZombiesRoomAnnouncementService announcementService;
     private final Supplier<ZombiesRulesConfig> rulesSupplier;
     private Supplier<ZombiesMysteryBoxConfig> mysteryBoxConfigSupplier = ZombiesMysteryBoxRepository::getConfig;
+    private Supplier<ZombiesBackpackConfig> backpackSupplier = ZombiesBackpackConfig::defaults;
     private IntSupplier currentWaveSupplier = () -> 1;
     private ZombiesMysteryBoxOfferService mysteryBoxOfferService = new ZombiesMysteryBoxOfferService();
     private final BooleanSupplier purchasesAllowedSupplier;
@@ -532,6 +534,17 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         this.mysteryBoxOfferService = new ZombiesMysteryBoxOfferService(this.mysteryBoxConfigSupplier, weaponRulesSupplier, null);
     }
 
+    public void configureMysteryBoxRuntime(
+            Supplier<Collection<ZombiesMysteryBoxData>> mysteryBoxesSupplier,
+            Supplier<ZombiesMysteryBoxConfig> configSupplier,
+            Supplier<ZombiesWeaponRulesConfig> weaponRulesSupplier,
+            Supplier<ZombiesBackpackConfig> backpackSupplier,
+            IntSupplier currentWaveSupplier
+    ) {
+        configureMysteryBoxRuntime(mysteryBoxesSupplier, configSupplier, weaponRulesSupplier, currentWaveSupplier);
+        this.backpackSupplier = backpackSupplier == null ? ZombiesBackpackConfig::defaults : backpackSupplier;
+    }
+
     @Override
     public RoomId roomId() {
         return roomId;
@@ -732,7 +745,7 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
         if (active != null && active.phase() == ZombiesMysteryBoxRuntimeService.Phase.CLAIMABLE) {
             if (!player.isAlive()) { sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.PLAYER_DEAD)); return InteractionResult.FAIL; }
             ZombiesServiceResult<ZombiesMysteryBoxRuntimeService.RuntimeState> claimed = mysteryBoxRuntime.claim(objectId, player.getUUID(), now, state -> {
-                ZombiesServiceResult<ZombiesWeaponInventoryService.InventoryMutationResult> applied = weaponInventoryService.applyPreparedMysteryBoxWeapon(player, roomId, state.preparedWeapon(), ZombiesWeaponInstanceState.wallPrimary(state.offer().gunId(), state.offer().rarityId(), INTERNAL_COMPAT_WEAPON_LEVEL, state.offer().damageMultiplier(), mysteryBoxReserveAmmo(state.offer().gunId())));
+                ZombiesServiceResult<ZombiesWeaponInventoryService.InventoryMutationResult> applied = weaponInventoryService.applyPreparedMysteryBoxWeapon(player, roomId, state.preparedWeapon(), state.preparedWeapon().tagData().toWeaponState());
                 if (applied.success()) weaponInstanceService.setMysteryBoxWeapon(player.getUUID(), applied.value().map(ZombiesWeaponInventoryService.InventoryMutationResult::weaponState).orElse(null));
                 return applied;
             });
@@ -740,6 +753,11 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
             sendFailureMessage(player, target, claimed); return InteractionResult.FAIL;
         }
         if (active != null && active.phase() != ZombiesMysteryBoxRuntimeService.Phase.IDLE) { sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.OBJECT_BUSY)); return InteractionResult.FAIL; }
+        ZombiesBackpackConfig backpack = backpackSupplier.get();
+        if (backpack != null && !backpack.errors().isEmpty()) {
+            sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.STARTUP_PREFLIGHT_FAILED));
+            return InteractionResult.FAIL;
+        }
         ZombiesMysteryBoxOfferService.Offer offer = mysteryBoxOfferService.createOffer(Math.max(1, currentWaveSupplier.getAsInt()));
         if (offer == null || !offer.valid()) { sendFailureMessage(player, target, ZombiesServiceResult.failure(ZombiesErrorCode.MYSTERY_BOX_EMPTY_POOL)); return InteractionResult.FAIL; }
         ZombiesWeaponInstanceState reward = ZombiesWeaponInstanceState.wallPrimary(offer.gunId(), offer.rarityId(), INTERNAL_COMPAT_WEAPON_LEVEL, offer.damageMultiplier(), mysteryBoxReserveAmmo(offer.gunId()));
@@ -754,12 +772,13 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
 
     private int mysteryBoxReserveAmmo(String gunId) {
         ItemStack stack = ZombiesWeaponInventoryService.createDefaultTaczGunStackForRules(gunId);
-        if (stack == null || stack.isEmpty() || !TaczGatewayProvider.gateway().isGun(stack)) return 0;
-        int magazine = TaczGatewayProvider.gateway().resolveMagazineAmmo(stack);
-        ZombiesRulesConfig rules = rulesSupplier.get();
-        int multiple = rules == null || rules.getWeaponRules().getWeaponPoolAmmunitionPerMagazineMultiple() == null
-                ? 0 : rules.getWeaponRules().getWeaponPoolAmmunitionPerMagazineMultiple();
-        return Math.max(0, magazine * Math.max(0, multiple));
+        String gunType = stack == null || stack.isEmpty() ? null
+                : TaczGatewayProvider.gateway().resolveGunType(stack).orElse(null);
+        String actualGunId = stack == null || stack.isEmpty() ? gunId
+                : TaczGatewayProvider.gateway().resolveGunId(stack).orElse(gunId);
+        ZombiesBackpackConfig backpack = backpackSupplier.get();
+        return ZombiesBackpackAmmoResolver.resolve(actualGunId, gunType,
+                (backpack == null ? ZombiesBackpackConfig.defaults() : backpack).getAmmunition());
     }
 
     ZombiesServiceResult<ZombiesWeaponInstanceService.WallWeaponPurchaseResult> purchaseWeaponWall(

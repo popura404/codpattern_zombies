@@ -54,7 +54,7 @@ public final class ZombiesPlayerSpawnRuntimeGameTestSupport {
             var config = map.serverConfig();
             field(map, "serverConfig").set(map, new ZombiesServerConfig(mapName,
                     config.getRoom(), config.getWeaponRules(), config.getWeaponWall(), config.getMysteryBox(),
-                    config.getWeaponFilter(), rules, List.of()));
+                    config.getBackpack(), rules, List.of()));
             BlockPos initial = new BlockPos(1, 64, 1);
             BlockPos unlocked = new BlockPos(9, 64, 1);
             var initialSpawn = new ZombiesInitialSpawnData(level.dimension(), initial, 0, 0, 0);

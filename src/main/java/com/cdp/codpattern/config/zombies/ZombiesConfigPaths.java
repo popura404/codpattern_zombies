@@ -15,7 +15,6 @@ public final class ZombiesConfigPaths {
     // v1 loading.
     private static final String ZOMBIES_WAVE_TEXT_DIRECTORY = "wavetext";
     private static final String ZOMBIES_WAVE_TEXT_DIRECTORY_V1 = "wave_text";
-    private static final String ZOMBIES_WEAPON_FILTER_FILE = "weapon_filter.json";
     private static final String ZOMBIES_MYSTERY_BOX_FILE = "mystery_box.json";
 
     private ZombiesConfigPaths() {
@@ -57,8 +56,8 @@ public final class ZombiesConfigPaths {
         return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WAVE_TEXT_DIRECTORY_V1);
     }
 
-    public static Path zombiesMapWeaponFilter(MinecraftServer server, String mapName) {
-        return zombiesMapRulesRoot(server, mapName).resolve(ZOMBIES_WEAPON_FILTER_FILE);
+    public static Path zombiesMapBackpack(MinecraftServer server, String mapName) {
+        return zombiesMapRulesRoot(server, mapName).resolve(ZombiesBackpackConfig.FILE_NAME);
     }
 
     public static Path zombiesMapBarrierGroups(MinecraftServer server, String mapName) {

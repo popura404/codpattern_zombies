@@ -4,9 +4,7 @@ import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot;
 import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
 import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
-import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
-import com.cdp.codpattern.config.zombies.ZombiesRulesRepository;
-import com.cdp.codpattern.config.zombies.ZombiesWeaponFilterConfig;
+import com.cdp.codpattern.config.zombies.ZombiesBackpackConfig;
 import com.cdp.codpattern.core.refit.AttachmentPresetUtil;
 import com.cdp.codpattern.core.throwable.ThrowableInventoryService;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -24,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -34,49 +31,51 @@ import java.util.function.Supplier;
 public final class ZombiesStarterKitDistributor {
     private static final int STARTER_SLOT = 0;
     private final ZombiesWeaponItemStackService weaponItemStackService;
-    private final Supplier<ZombiesRulesConfig> rulesSupplier;
+    private final Supplier<ZombiesBackpackConfig> backpackSupplier;
 
     public ZombiesStarterKitDistributor() {
-        this(ZombiesRulesRepository::getConfig);
+        this(ZombiesBackpackConfig::defaults);
     }
 
-    public ZombiesStarterKitDistributor(Supplier<ZombiesRulesConfig> rulesSupplier) {
-        this(new ZombiesWeaponItemStackService(), rulesSupplier);
+    public ZombiesStarterKitDistributor(Supplier<ZombiesBackpackConfig> backpackSupplier) {
+        this(new ZombiesWeaponItemStackService(), backpackSupplier);
     }
 
     ZombiesStarterKitDistributor(
             ZombiesWeaponItemStackService weaponItemStackService,
-            Supplier<ZombiesRulesConfig> rulesSupplier
+            Supplier<ZombiesBackpackConfig> backpackSupplier
     ) {
         this.weaponItemStackService = weaponItemStackService == null
                 ? new ZombiesWeaponItemStackService()
                 : weaponItemStackService;
-        this.rulesSupplier = rulesSupplier == null ? ZombiesRulesRepository::getConfig : rulesSupplier;
+        this.backpackSupplier = backpackSupplier == null ? ZombiesBackpackConfig::defaults : backpackSupplier;
     }
 
     public ZombiesServiceResult<PreparedStarterKits> prepareStarterWeapons(
-            Collection<UUID> playerIds,
-            ZombiesWeaponFilterConfig filterConfig
+            Collection<UUID> playerIds
     ) {
-        return prepareStarterWeapons(null, playerIds, filterConfig);
+        return prepareStarterWeapons(null, playerIds);
     }
 
     public ZombiesServiceResult<PreparedStarterKits> prepareStarterWeapons(
             RoomId roomId,
-            Collection<UUID> playerIds,
-            ZombiesWeaponFilterConfig filterConfig
+            Collection<UUID> playerIds
     ) {
         List<UUID> members = normalizeMembers(playerIds);
         Map<UUID, ItemStack> weapons = new LinkedHashMap<>();
         Map<UUID, ZombiesWeaponInstanceState> starterWeaponStates = new LinkedHashMap<>();
-        ZombiesRulesConfig.StarterWeapon starterWeapon = rulesConfig().getStarterWeapon();
-        ZombiesWeaponFilterConfig resolvedFilterConfig = filterConfig == null ? new ZombiesWeaponFilterConfig() : filterConfig;
-        resolvedFilterConfig.normalize();
+        ZombiesBackpackConfig backpack = backpackConfig();
+        if (!backpack.errors().isEmpty()) {
+            return ZombiesServiceResult.failure(
+                    ZombiesErrorCode.STARTUP_PREFLIGHT_FAILED,
+                    Map.of("reason", com.cdp.codpattern.app.match.model.ModePlayerValue.ofString(
+                            String.join("; ", backpack.errors()))),
+                    backpack.sourcePath() + ": " + String.join("; ", backpack.errors()));
+        }
+        ZombiesBackpackConfig.StarterWeapon starterWeapon = backpackConfig().getStarterWeapon();
 
         for (UUID playerId : members) {
-            ZombiesServiceResult<ItemStack> weaponResult = createStarterWeapon(
-                    starterWeapon,
-                    resolvedFilterConfig);
+            ZombiesServiceResult<ItemStack> weaponResult = createStarterWeapon(starterWeapon);
             if (!weaponResult.success() || weaponResult.value().isEmpty() || weaponResult.value().get().isEmpty()) {
                 return ZombiesServiceResult.failure(
                         ZombiesErrorCode.STARTUP_STARTER_WEAPON_MISSING,
@@ -309,15 +308,14 @@ public final class ZombiesStarterKitDistributor {
     }
 
     public ZombiesServiceResult<ItemStack> createStarterWeapon(
-            ZombiesRulesConfig.StarterWeapon weaponData,
-            ZombiesWeaponFilterConfig filterConfig
+            ZombiesBackpackConfig.StarterWeapon weaponData
     ) {
-        ZombiesRulesConfig.StarterWeapon data = weaponData == null
-                ? ZombiesRulesConfig.StarterWeapon.defaults()
+        ZombiesBackpackConfig.StarterWeapon data = weaponData == null
+                ? ZombiesBackpackConfig.defaults().getStarterWeapon()
                 : weaponData;
         String configuredItem = data.getItem();
         if (configuredItem == null || configuredItem.trim().isEmpty()) {
-            configuredItem = ZombiesRulesConfig.DEFAULT_STARTER_GUN_ITEM;
+            configuredItem = ZombiesBackpackConfig.DEFAULT_STARTER_GUN_ITEM;
         } else {
             configuredItem = configuredItem.trim();
         }
@@ -335,8 +333,8 @@ public final class ZombiesStarterKitDistributor {
             ItemStack stack = new ItemStack(item, Math.max(1, count));
             String configuredNbt = data.getNbt();
             if ((configuredNbt == null || configuredNbt.isBlank())
-                    && ZombiesRulesConfig.DEFAULT_STARTER_GUN_ITEM.equals(configuredItem)) {
-                configuredNbt = ZombiesRulesConfig.DEFAULT_STARTER_WEAPON_NBT;
+                    && ZombiesBackpackConfig.DEFAULT_STARTER_GUN_ITEM.equals(configuredItem)) {
+                configuredNbt = ZombiesBackpackConfig.DEFAULT_STARTER_WEAPON_NBT;
             }
             if (configuredNbt != null && !configuredNbt.isBlank()) {
                 stack.setTag(TagParser.parseTag(configuredNbt));
@@ -352,18 +350,13 @@ public final class ZombiesStarterKitDistributor {
                 }
             }
 
-            ZombiesWeaponFilterConfig resolvedFilter = filterConfig == null ? new ZombiesWeaponFilterConfig() : filterConfig;
-            resolvedFilter.normalize();
-            if (isBlocked(resolvedFilter, stack, itemId)) {
-                return starterWeaponFailure("blocked_weapon");
-            }
             if (TaczGatewayProvider.gateway().isGun(stack)) {
-                int ammoMultiple = Math.max(
-                        0,
-                        rulesConfig()
-                                .getWeaponRules()
-                                .getStarterWeaponAmmunitionPerMagazineMultiple());
-                TaczGatewayProvider.gateway().configureGunAmmo(stack, ammoMultiple);
+                TaczGatewayProvider.gateway().configureGunAmmo(stack, 0);
+                int maxReserveAmmo = ZombiesBackpackAmmoResolver.resolve(
+                        TaczGatewayProvider.gateway().resolveGunId(stack).orElse(null),
+                        TaczGatewayProvider.gateway().resolveGunType(stack).orElse(null),
+                        backpackConfig().getAmmunition());
+                TaczGatewayProvider.gateway().setReserveAmmo(stack, maxReserveAmmo, maxReserveAmmo);
             }
             return ZombiesServiceResult.success(stack);
         } catch (Exception exception) {
@@ -371,9 +364,9 @@ public final class ZombiesStarterKitDistributor {
         }
     }
 
-    private ZombiesRulesConfig rulesConfig() {
-        ZombiesRulesConfig rules = rulesSupplier.get();
-        return rules == null ? new ZombiesRulesConfig() : rules;
+    private ZombiesBackpackConfig backpackConfig() {
+        ZombiesBackpackConfig backpack = backpackSupplier.get();
+        return backpack == null ? ZombiesBackpackConfig.defaults() : backpack;
     }
 
     private static ZombiesServiceResult<ItemStack> starterWeaponFailure(String reason) {
@@ -381,34 +374,6 @@ public final class ZombiesStarterKitDistributor {
                 ZombiesErrorCode.STARTUP_STARTER_WEAPON_MISSING,
                 Map.of("reason", com.cdp.codpattern.app.match.model.ModePlayerValue.ofString(reason)),
                 "Zombies starter weapon failed: " + reason);
-    }
-
-    private static boolean isBlocked(
-            ZombiesWeaponFilterConfig filterConfig,
-            ItemStack stack,
-            ResourceLocation fallbackItemId
-    ) {
-        Optional<ResourceLocation> weaponId = resolveWeaponId(stack, fallbackItemId);
-        if (weaponId.isEmpty()) {
-            return false;
-        }
-        ResourceLocation id = weaponId.get();
-        return stringListContains(filterConfig.getBlockedItemNamespaces(), id.getNamespace())
-                || stringListContains(filterConfig.getBlockedWeaponIds(), id.toString())
-                || hasBlockedInstalledAttachment(filterConfig, stack);
-    }
-
-    private static Optional<ResourceLocation> resolveWeaponId(ItemStack stack, ResourceLocation fallbackItemId) {
-        if (stack != null && !stack.isEmpty() && TaczGatewayProvider.gateway().isGun(stack)) {
-            Optional<String> gunId = TaczGatewayProvider.gateway().resolveGunId(stack);
-            if (gunId.isPresent()) {
-                ResourceLocation parsedGunId = ResourceLocation.tryParse(gunId.get());
-                if (parsedGunId != null) {
-                    return Optional.of(parsedGunId);
-                }
-            }
-        }
-        return Optional.ofNullable(fallbackItemId);
     }
 
     private static ZombiesWeaponInstanceState starterWeaponState(ItemStack stack) {
@@ -424,36 +389,6 @@ public final class ZombiesStarterKitDistributor {
                 1.0D,
                 reserveAmmo,
                 maxReserveAmmo);
-    }
-
-    private static boolean hasBlockedInstalledAttachment(ZombiesWeaponFilterConfig filterConfig, ItemStack stack) {
-        if (stack == null || stack.isEmpty() || !TaczGatewayProvider.gateway().isGun(stack)) {
-            return false;
-        }
-        for (String attachmentId : TaczGatewayProvider.gateway().resolveInstalledAttachmentIds(stack)) {
-            ResourceLocation parsed = ResourceLocation.tryParse(attachmentId);
-            if (parsed == null) {
-                continue;
-            }
-            if (stringListContains(filterConfig.getBlockedAttachmentNamespaces(), parsed.getNamespace())
-                    || stringListContains(filterConfig.getBlockedAttachmentIds(), parsed.toString())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean stringListContains(List<String> values, String expected) {
-        if (values == null || expected == null) {
-            return false;
-        }
-        String normalizedExpected = expected.trim().toLowerCase(Locale.ROOT);
-        for (String value : values) {
-            if (value != null && normalizedExpected.equals(value.trim().toLowerCase(Locale.ROOT))) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static List<UUID> normalizeMembers(Collection<UUID> playerIds) {

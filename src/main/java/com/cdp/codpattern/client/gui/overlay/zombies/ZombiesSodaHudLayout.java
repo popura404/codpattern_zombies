@@ -9,7 +9,7 @@ final class ZombiesSodaHudLayout {
     private static final int MAX_ICONS = 6;
     private static final int BOTTOM_MARGIN = 12;
     private static final int CLEARANCE = 6;
-    private static final int[] ICON_SIZES = {32, 24, 16};
+    private static final int[] ICON_SIZES = {16, 12, 8};
 
     private ZombiesSodaHudLayout() {
     }
@@ -21,7 +21,7 @@ final class ZombiesSodaHudLayout {
         }
         int minimumTop = screenHeight / 2 + screenHeight % 2;
         for (int iconSize : ICON_SIZES) {
-            int gap = iconSize == 32 ? 6 : 4;
+            int gap = iconSize == 16 ? 3 : 2;
             int width = iconCount * iconSize + (iconCount - 1) * gap;
             if (width > screenWidth) {
                 continue;

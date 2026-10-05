@@ -23,22 +23,23 @@ public final class ZombiesSodaHudLayoutCompatTest {
         require(ZombiesSodaHudLayout.create(800, 450, 0, List.of()).isEmpty(),
                 "zero effects must not reserve a row");
         int[] counts = {1, 2, 6};
-        int[] widths = {32, 70, 222};
-        int[] starts = {384, 365, 289};
+        int[] widths = {16, 35, 111};
+        int[] starts = {392, 382, 344};
         for (int i = 0; i < counts.length; i++) {
             Placement row = create(800, 450, counts[i], List.of());
             require(row.width() == widths[i] && row.left() == starts[i], "default row centering");
-            require(row.top() == 406 && row.iconSize() == 32 && row.gap() == 6,
+            require(row.top() == 422 && row.iconSize() == 16 && row.gap() == 3,
                     "default row dimensions and bottom margin");
             require(row.iconX(0) == row.left(), "first icon must start at the row edge");
             require(row.iconX(counts[i] - 1) + row.iconSize() == row.bounds().right(),
                     "last icon must end at the row edge");
             for (int index = 1; index < counts[i]; index++) {
-                require(row.iconX(index) - row.iconX(index - 1) == 38,
+                require(row.iconX(index) - row.iconX(index - 1) == 19,
                         "icons must have equal spacing without empty slots");
             }
             Placement oddWidth = create(801, 450, counts[i], List.of());
-            require(oddWidth.left() == row.left(), "odd-width viewport must round centering down");
+            require(oddWidth.left() == row.left() + widths[i] % 2,
+                    "odd-width viewport must round centering down for either row-width parity");
         }
         for (int count : new int[]{-1, 7, Integer.MAX_VALUE}) {
             require(ZombiesSodaHudLayout.create(800, 450, count, List.of()).isEmpty(),
@@ -49,42 +50,42 @@ public final class ZombiesSodaHudLayoutCompatTest {
     }
 
     private static void checkCompactFallbacks() {
-        Placement full = create(222, 200, 6, List.of());
-        require(full.iconSize() == 32 && full.width() == 222, "exact full-size fit");
-        Placement compact = create(164, 200, 6, List.of());
-        require(compact.iconSize() == 24 && compact.gap() == 4 && compact.width() == 164,
-                "24-pixel width fallback");
-        Placement smallest = create(116, 200, 6, List.of());
-        require(smallest.iconSize() == 16 && smallest.gap() == 4 && smallest.width() == 116,
-                "16-pixel width fallback");
-        require(ZombiesSodaHudLayout.create(115, 200, 6, List.of()).isEmpty(),
+        Placement full = create(111, 200, 6, List.of());
+        require(full.iconSize() == 16 && full.width() == 111, "exact full-size fit");
+        Placement compact = create(82, 200, 6, List.of());
+        require(compact.iconSize() == 12 && compact.gap() == 2 && compact.width() == 82,
+                "12-pixel width fallback");
+        Placement smallest = create(58, 200, 6, List.of());
+        require(smallest.iconSize() == 8 && smallest.gap() == 2 && smallest.width() == 58,
+                "8-pixel width fallback");
+        require(ZombiesSodaHudLayout.create(57, 200, 6, List.of()).isEmpty(),
                 "too-narrow viewport must hide the row");
-        require(create(800, 88, 1, List.of()).iconSize() == 32, "full-size lower-half exact fit");
-        require(create(800, 80, 1, List.of()).iconSize() == 24, "24-pixel height fallback");
-        require(create(800, 64, 1, List.of()).iconSize() == 16, "16-pixel height fallback");
-        require(create(800, 56, 1, List.of()).top() == 28, "lower-half boundary is inclusive");
-        require(ZombiesSodaHudLayout.create(800, 55, 1, List.of()).isEmpty(),
+        require(create(800, 56, 1, List.of()).iconSize() == 16, "full-size lower-half exact fit");
+        require(create(800, 52, 1, List.of()).iconSize() == 12, "12-pixel height fallback");
+        require(create(800, 44, 1, List.of()).iconSize() == 8, "8-pixel height fallback");
+        require(create(800, 40, 1, List.of()).top() == 20, "lower-half boundary is inclusive");
+        require(ZombiesSodaHudLayout.create(800, 39, 1, List.of()).isEmpty(),
                 "odd viewport height must not round the lower-half boundary down");
 
         // A large row can clear this edge panel by moving up. The smaller row could
         // stay lower, but keeping the artwork at its preferred size takes priority.
-        Placement preferredSize = create(222, 400, 6, List.of(new Bounds(0, 340, 20, 400)));
-        require(preferredSize.iconSize() == 32 && preferredSize.top() == 302,
+        Placement preferredSize = create(111, 400, 6, List.of(new Bounds(0, 340, 8, 400)));
+        require(preferredSize.iconSize() == 16 && preferredSize.top() == 318,
                 "prefer a fitting larger size over a lower compact row");
-        Placement sidePanelFallback = create(222, 160, 6, List.of(new Bounds(0, 100, 20, 160)));
-        require(sidePanelFallback.iconSize() == 24 && sidePanelFallback.top() == 124,
+        Placement sidePanelFallback = create(111, 160, 6, List.of(new Bounds(0, 100, 8, 160)));
+        require(sidePanelFallback.iconSize() == 12 && sidePanelFallback.top() == 136,
                 "try compact horizontal clearance when the larger row cannot move above a panel");
     }
 
     private static void checkObstacles() {
-        Placement exactSideGap = create(800, 450, 6, List.of(new Bounds(0, 360, 283, 438)));
-        require(exactSideGap.top() == 406, "exact six-pixel horizontal clearance must fit");
-        Placement shortSideGap = create(800, 450, 6, List.of(new Bounds(0, 360, 284, 438)));
-        require(shortSideGap.top() == 322, "five-pixel horizontal clearance must move the row");
-        Placement exactVerticalGap = create(800, 450, 6, List.of(new Bounds(289, 350, 511, 400)));
-        require(exactVerticalGap.top() == 406, "exact six-pixel vertical clearance must fit");
-        Placement shortVerticalGap = create(800, 450, 6, List.of(new Bounds(289, 350, 511, 401)));
-        require(shortVerticalGap.top() == 312, "five-pixel vertical clearance must move the row");
+        Placement exactSideGap = create(800, 450, 6, List.of(new Bounds(0, 360, 338, 438)));
+        require(exactSideGap.top() == 422, "exact six-pixel horizontal clearance must fit");
+        Placement shortSideGap = create(800, 450, 6, List.of(new Bounds(0, 360, 339, 438)));
+        require(shortSideGap.top() == 338, "five-pixel horizontal clearance must move the row");
+        Placement exactVerticalGap = create(800, 450, 6, List.of(new Bounds(344, 350, 455, 416)));
+        require(exactVerticalGap.top() == 422, "exact six-pixel vertical clearance must fit");
+        Placement shortVerticalGap = create(800, 450, 6, List.of(new Bounds(344, 350, 455, 417)));
+        require(shortVerticalGap.top() == 328, "five-pixel vertical clearance must move the row");
 
         List<Bounds> stacked = new ArrayList<>(List.of(
                 new Bounds(200, 390, 600, 440),
@@ -92,7 +93,7 @@ public final class ZombiesSodaHudLayoutCompatTest {
                 new Bounds(200, 286, 600, 330)));
         List<Bounds> original = List.copyOf(stacked);
         Placement aboveStack = create(800, 450, 6, stacked);
-        require(aboveStack.top() == 248 && aboveStack.iconSize() == 32,
+        require(aboveStack.top() == 264 && aboveStack.iconSize() == 16,
                 "moving above one obstacle must recheck obstacles higher up");
         require(stacked.equals(original), "layout must not mutate the occupied list");
         Collections.reverse(stacked);
@@ -104,7 +105,7 @@ public final class ZombiesSodaHudLayoutCompatTest {
         require(ZombiesSodaHudLayout.create(800, 450, 6,
                         List.of(new Bounds(0, 225, 800, 450))).isEmpty(),
                 "a fully occupied lower half must hide every candidate size");
-        require(create(800, 450, 6, List.of(new Bounds(400, 225, 400, 450))).top() == 406,
+        require(create(800, 450, 6, List.of(new Bounds(400, 225, 400, 450))).top() == 422,
                 "an empty rectangle must not consume HUD space");
     }
 
@@ -136,8 +137,8 @@ public final class ZombiesSodaHudLayoutCompatTest {
     // obstacle-jumping algorithm; this catches skipped spaces and premature fallback.
     private static Optional<Placement> enumerateValidPlacements(int width, int height, int count,
                                                                List<Bounds> obstacles) {
-        for (int size : new int[]{32, 24, 16}) {
-            int gap = size == 32 ? 6 : 4;
+        for (int size : new int[]{16, 12, 8}) {
+            int gap = size == 16 ? 3 : 2;
             int rowWidth = count * size + (count - 1) * gap;
             if (rowWidth > width) continue;
             int left = (width - rowWidth) / 2;

@@ -44,8 +44,10 @@ public final class ZombiesWaveIntroCompatTest {
             }
             Path registry = root.resolve("src/main/java/com/cdp/codpattern/common/sound/ZombiesSoundRegister.java");
             check(Files.exists(registry) && Files.readString(registry).contains("wave != null && wave.isBossIntro() ? BOSS_WAVE_INTRO : NORMAL_WAVE_INTRO"), "exactly one sound selected from bossIntro with normal fallback");
-            checkAsset(root, "beginorm.ogg", "6c6a0e7ed804e6b1c3e0eda624dd7d3b1a52badcd946100d5b48dd02364348e3");
-            checkAsset(root, "beginboss1.ogg", "3806a6ef74f0ec36acb93013f9e32a7489d2f73a893b987908b4afe8198d849c");
+            checkAsset(root, "beginormba.ogg", "633a792966b220cf7f4c086cd8ee7300d56bd583e246eec37eaffa0f8443fe0d");
+            checkAsset(root, "beginboss1ba.ogg", "90c604832cf5108ad688d1bb6ffb69bfd4df49fd14e84709d91cca44732f8cce");
+            checkBoostedAsset(root, "beginorm.ogg", "beginormba.ogg");
+            checkBoostedAsset(root, "beginboss1.ogg", "beginboss1ba.ogg");
         } finally {
             try (var paths = Files.walk(temp)) {
                 for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);
@@ -76,6 +78,17 @@ public final class ZombiesWaveIntroCompatTest {
         Path file = root.resolve("src/main/resources/assets/codpattern_zombies/sounds/zombies/" + name);
         String hash = Files.exists(file) ? HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file))) : "missing";
         check(expected.equals(hash), "supplied audio bytes unchanged: " + name);
+    }
+
+    private static void checkBoostedAsset(Path root, String name, String backupName) throws Exception {
+        Path dir = root.resolve("src/main/resources/assets/codpattern_zombies/sounds/zombies");
+        Path file = dir.resolve(name);
+        byte[] audio = Files.exists(file) ? Files.readAllBytes(file) : new byte[0];
+        check(audio.length > 4 && audio[0] == 'O' && audio[1] == 'g' && audio[2] == 'g' && audio[3] == 'S',
+                "active sound is an Ogg asset: " + name);
+        Path backup = dir.resolve(backupName);
+        check(Files.exists(file) && Files.exists(backup) && Files.mismatch(file, backup) != -1,
+                "active sound differs from original backup: " + name);
     }
 
     private static void check(boolean condition, String name) {

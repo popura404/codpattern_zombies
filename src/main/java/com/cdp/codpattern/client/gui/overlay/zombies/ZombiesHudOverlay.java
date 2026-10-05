@@ -75,30 +75,26 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             INTERMISSION_WAVE_FADE_IN_MS + INTERMISSION_WAVE_HOLD_MS + INTERMISSION_WAVE_FADE_OUT_MS;
     private static final int PLAYER_STATUS_LEFT = 14;
     private static final int PLAYER_STATUS_RIGHT_MARGIN = 8;
-    private static final int PLAYER_STATUS_BOTTOM_MARGIN = 28;
     private static final int PLAYER_STATUS_AVATAR_SIZE = 28;
+    private static final int PLAYER_STATUS_AVATAR_BORDER = 2;
     private static final int PLAYER_STATUS_AVATAR_GAP = 8;
-    // Preserve text anchors and soda-HUD clearance; shrink only the visible health bar.
-    private static final int PLAYER_STATUS_BAR_WIDTH = 210;
+    private static final int PLAYER_STATUS_CONTENT_LEFT =
+            PLAYER_STATUS_LEFT + PLAYER_STATUS_AVATAR_SIZE + PLAYER_STATUS_AVATAR_GAP;
     private static final int PLAYER_STATUS_HEALTH_BAR_WIDTH = 105;
     private static final int PLAYER_STATUS_BAR_MIN_WIDTH = 48;
     private static final int PLAYER_STATUS_BAR_HEIGHT = 4;
     private static final int PLAYER_STATUS_LINE_GAP = 1;
-    private static final int TEAMMATE_AVATAR_SIZE = 20;
-    private static final int TEAMMATE_AVATAR_GAP = 6;
-    private static final int TEAMMATE_BAR_WIDTH = 150;
-    private static final int TEAMMATE_HEALTH_BAR_WIDTH = 90;
+    private static final int TEAMMATE_AVATAR_SIZE = 18;
+    private static final int TEAMMATE_HEALTH_BAR_WIDTH = 86;
     private static final int TEAMMATE_BAR_HEIGHT = 2;
+    private static final int TEAMMATE_ID_GAP = 2;
     private static final int TEAMMATE_POINTS_GAP = 8;
-    private static final int TEAMMATE_ROW_GAP = 5;
-    private static final int TEAMMATE_STATUS_BOTTOM_GAP = 8;
-    // Compact visible rows without moving the original soda-HUD exclusion bounds.
-    private static final int TEAMMATE_COMPACT_ROW_GAP = 2;
-    private static final int TEAMMATE_COMPACT_STATUS_BOTTOM_GAP = 5;
+    private static final int TEAMMATE_ROW_GAP = 2;
+    private static final int TEAMMATE_STATUS_BOTTOM_GAP = 3;
     private static final int TEAMMATE_MIN_RIGHT_MARGIN = 8;
     private static final int LEADERBOARD_LEFT = 8;
-    private static final int LEADERBOARD_ROW_WIDTH = 156;
-    private static final int LEADERBOARD_ROW_HEIGHT = 18;
+    private static final int LEADERBOARD_ROW_WIDTH = 144;
+    private static final int LEADERBOARD_ROW_HEIGHT = 16;
     private static final int LEADERBOARD_ROW_GAP = 3;
     private static final int RESULT_PAGE_COUNT = 2;
     private static final long RESULT_PAGE_DURATION_MS = 5000L;
@@ -178,7 +174,7 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             return;
         }
         int x = LEADERBOARD_LEFT;
-        int y = screenHeight >= 500 ? 92 : 70;
+        int y = screenHeight >= 500 ? 82 : 60;
         int width = LEADERBOARD_ROW_WIDTH;
         if (x + width >= screenWidth || y >= screenHeight - 40) {
             return;
@@ -208,19 +204,20 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             ClientZombiesState.ResultRow row
     ) {
         int accent = row.self() ? TEXT_ACCENT : (row.alive() ? TEXT_OK : TEXT_SECONDARY);
-        graphics.fillGradient(x, y, x + width, y + height, withAlpha(0xFF111820, 160), withAlpha(0xFF080D12, 112));
-        graphics.fill(x, y, x + 2, y + height, withAlpha(accent, 210));
+        graphics.fillGradient(x, y, x + width, y + height, withAlpha(0xFF111820, 144), withAlpha(0xFF080D12, 101));
+        graphics.fill(x, y, x + 2, y + height, withAlpha(accent, 189));
+        int textY = y + (height - font.lineHeight) / 2;
 
         String rank = Integer.toString(index + 1);
-        graphics.drawString(font, rank, x + 5, y + 5, withAlpha(TEXT_SECONDARY, 230), false);
+        graphics.drawString(font, rank, x + 5, textY, withAlpha(TEXT_SECONDARY, 230), false);
 
         String score = Integer.toString(Math.max(0, row.totalEarnedPoints()));
         int scoreWidth = font.width(score);
-        graphics.drawString(font, score, x + width - scoreWidth - 6, y + 5, TEXT_ACCENT, false);
+        graphics.drawString(font, score, x + width - scoreWidth - 6, textY, TEXT_ACCENT, false);
 
         int nameX = x + 19;
         int nameWidth = Math.max(0, width - 28 - scoreWidth);
-        graphics.drawString(font, fit(font, safeName(row.name()), nameWidth), nameX, y + 5, accent, false);
+        graphics.drawString(font, fit(font, safeName(row.name()), nameWidth), nameX, textY, accent, false);
     }
 
     private static void renderIntermissionWaveAnnouncement(
@@ -286,17 +283,20 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             return;
         }
 
-        int avatarX = PLAYER_STATUS_LEFT;
-        int barX = avatarX + TEAMMATE_AVATAR_SIZE + TEAMMATE_AVATAR_GAP;
-        int requiredWidth = barX + TEAMMATE_BAR_WIDTH + TEAMMATE_POINTS_GAP + 28 + TEAMMATE_MIN_RIGHT_MARGIN;
+        int avatarX = PLAYER_STATUS_LEFT + (PLAYER_STATUS_AVATAR_SIZE - TEAMMATE_AVATAR_SIZE) / 2;
+        int barX = PLAYER_STATUS_CONTENT_LEFT;
+        int maxPointsWidth = teammates.stream()
+                .mapToInt(teammate -> font.width(Integer.toString(Math.max(0, teammate.points()))))
+                .max().orElse(0);
+        int requiredWidth = barX + TEAMMATE_HEALTH_BAR_WIDTH + TEAMMATE_POINTS_GAP
+                + maxPointsWidth + 1 + TEAMMATE_MIN_RIGHT_MARGIN;
         if (screenWidth < requiredWidth) {
             return;
         }
 
-        int localAvatarY = screenHeight - PLAYER_STATUS_BOTTOM_MARGIN - PLAYER_STATUS_AVATAR_SIZE - 6;
-        int rowHeight = Math.max(TEAMMATE_AVATAR_SIZE, TEAMMATE_BAR_HEIGHT + 3 + font.lineHeight) + TEAMMATE_ROW_GAP;
-        int compactRowHeight = rowHeight - TEAMMATE_ROW_GAP + TEAMMATE_COMPACT_ROW_GAP;
-        int compactRowY = localAvatarY - TEAMMATE_COMPACT_STATUS_BOTTOM_GAP - teammates.size() * compactRowHeight;
+        int localAvatarY = playerStatusAvatarY(screenHeight);
+        int contentHeight = teammateRowContentHeight(font);
+        int rowHeight = contentHeight + TEAMMATE_ROW_GAP;
         int listBottomY = localAvatarY - TEAMMATE_STATUS_BOTTOM_GAP;
         int rowY = listBottomY - teammates.size() * rowHeight;
         if (rowY < 2) {
@@ -304,15 +304,17 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         }
 
         for (ClientZombiesState.SurvivorStatus teammate : teammates) {
-            renderRoomTeammateRow(graphics, font, teammate, avatarX, barX, compactRowY);
-            int pointsRight = barX + TEAMMATE_BAR_WIDTH + TEAMMATE_POINTS_GAP
+            renderRoomTeammateRow(graphics, font, teammate, avatarX, barX, rowY);
+            int pointsRight = barX + TEAMMATE_HEALTH_BAR_WIDTH + TEAMMATE_POINTS_GAP
                     + font.width(Integer.toString(Math.max(0, teammate.points()))) + 1;
-            int bottom = rowY + Math.max(TEAMMATE_AVATAR_SIZE + 1,
-                    TEAMMATE_BAR_HEIGHT + 3 + font.lineHeight + 1);
+            int bottom = rowY + contentHeight + 1;
             occupied.add(new ZombiesSodaHudLayout.Bounds(avatarX - 1, rowY - 1, pointsRight, bottom));
             rowY += rowHeight;
-            compactRowY += compactRowHeight;
         }
+    }
+
+    private static int teammateRowContentHeight(Font font) {
+        return Math.max(TEAMMATE_AVATAR_SIZE, TEAMMATE_BAR_HEIGHT + TEAMMATE_ID_GAP + font.lineHeight);
     }
 
     private static void renderRoomTeammateRow(
@@ -323,12 +325,15 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             int barX,
             int rowTop
     ) {
-        int barY = rowTop;
-        int idY = barY + TEAMMATE_BAR_HEIGHT + 3;
-        int pointsX = barX + TEAMMATE_BAR_WIDTH + TEAMMATE_POINTS_GAP;
+        int contentHeight = teammateRowContentHeight(font);
+        int avatarY = rowTop + (contentHeight - TEAMMATE_AVATAR_SIZE) / 2;
+        int textHeight = TEAMMATE_BAR_HEIGHT + TEAMMATE_ID_GAP + font.lineHeight;
+        int barY = rowTop + (contentHeight - textHeight) / 2;
+        int idY = barY + TEAMMATE_BAR_HEIGHT + TEAMMATE_ID_GAP;
+        int pointsX = barX + TEAMMATE_HEALTH_BAR_WIDTH + TEAMMATE_POINTS_GAP;
         int pointsY = barY;
 
-        renderSurvivorAvatar(graphics, teammate.playerId(), teammate.name(), avatarX, rowTop, TEAMMATE_AVATAR_SIZE);
+        renderSurvivorAvatar(graphics, teammate.playerId(), teammate.name(), avatarX, avatarY, TEAMMATE_AVATAR_SIZE);
 
         double maxHealth = Math.max(1.0D, teammate.maxHealth());
         double health = Math.max(0.0D, teammate.health());
@@ -346,10 +351,10 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
 
         String armor = Integer.toString(Math.max(0, teammate.armorLevel()));
         int armorWidth = font.width(armor);
-        int idWidth = Math.max(0, TEAMMATE_BAR_WIDTH - armorWidth - 4);
+        int idWidth = Math.max(0, TEAMMATE_HEALTH_BAR_WIDTH - armorWidth - 4);
         String name = fit(font, safeName(teammate.name()), idWidth);
         graphics.drawString(font, name, barX, idY, survivorColor(teammate), true);
-        graphics.drawString(font, armor, barX + TEAMMATE_BAR_WIDTH - armorWidth, idY, PLAYER_STATUS_ARMOR_COLOR, true);
+        graphics.drawString(font, armor, barX + TEAMMATE_HEALTH_BAR_WIDTH - armorWidth, idY, PLAYER_STATUS_ARMOR_COLOR, true);
 
         String points = Integer.toString(Math.max(0, teammate.points()));
         graphics.drawString(font, points, pointsX, pointsY, TEXT_SECONDARY, true);
@@ -1251,6 +1256,12 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         return new InteractionPromptLine(text + "（需要电源）", false, false, TEXT_DANGER);
     }
 
+    private static int playerStatusAvatarY(int screenHeight) {
+        // Align the visible avatar frame with the weapon card's bottom edge at every GUI scale.
+        return Math.round(screenHeight - ZombiesWeaponPanelLayout.MARGIN)
+                - PLAYER_STATUS_AVATAR_SIZE - PLAYER_STATUS_AVATAR_BORDER;
+    }
+
     private static void renderPlayerStatus(GuiGraphics graphics, Font font, int screenWidth, int screenHeight,
                                            List<ZombiesSodaHudLayout.Bounds> occupied) {
         LocalPlayer player = Minecraft.getInstance().player;
@@ -1259,19 +1270,17 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         }
 
         int avatarX = PLAYER_STATUS_LEFT;
-        int avatarY = screenHeight - PLAYER_STATUS_BOTTOM_MARGIN - PLAYER_STATUS_AVATAR_SIZE - 6;
-        if (avatarY < 2) {
+        int avatarY = playerStatusAvatarY(screenHeight);
+        if (avatarY < PLAYER_STATUS_AVATAR_BORDER) {
             return;
         }
 
-        int barX = avatarX + PLAYER_STATUS_AVATAR_SIZE + PLAYER_STATUS_AVATAR_GAP;
+        int barX = PLAYER_STATUS_CONTENT_LEFT;
         int maxBarWidth = screenWidth - barX - PLAYER_STATUS_RIGHT_MARGIN;
         if (maxBarWidth < PLAYER_STATUS_BAR_MIN_WIDTH) {
             return;
         }
-        int barWidth = Math.min(PLAYER_STATUS_BAR_WIDTH, maxBarWidth);
-        int healthBarWidth = Math.max(1, Math.round((float) barWidth
-                * PLAYER_STATUS_HEALTH_BAR_WIDTH / PLAYER_STATUS_BAR_WIDTH));
+        int healthBarWidth = Math.min(PLAYER_STATUS_HEALTH_BAR_WIDTH, maxBarWidth);
 
         int idY = avatarY - 1;
         int pointsY = idY + font.lineHeight + PLAYER_STATUS_LINE_GAP;
@@ -1281,11 +1290,11 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         renderLocalAvatar(graphics, player, avatarX, avatarY, PLAYER_STATUS_AVATAR_SIZE);
 
         String playerId = player.getGameProfile().getName();
-        String fittedPlayerId = fit(font, playerId, barWidth);
+        String fittedPlayerId = fit(font, playerId, healthBarWidth);
         graphics.drawString(font, fittedPlayerId, barX, idY, TEXT_PRIMARY, true);
 
         String points = Component.translatable("hud.codpattern.zombies.points", ClientZombiesState.points()).getString();
-        graphics.drawString(font, fit(font, points, barWidth), barX, pointsY, TEXT_ACCENT, true);
+        graphics.drawString(font, fit(font, points, healthBarWidth), barX, pointsY, TEXT_ACCENT, true);
 
         float maxHealth = Math.max(1.0F, player.getMaxHealth());
         float healthRatio = Mth.clamp(player.getHealth() / maxHealth, 0.0F, 1.0F);
@@ -1300,17 +1309,20 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         }
 
         String armorDots = armorDots(ClientZombiesState.armorLevel());
+        int armorX = barX + healthBarWidth - font.width(armorDots);
         if (!armorDots.isBlank()) {
-            graphics.drawString(font, armorDots, barX + barWidth - font.width(armorDots), armorY, PLAYER_STATUS_ARMOR_COLOR, true);
+            graphics.drawString(font, armorDots, armorX, armorY, PLAYER_STATUS_ARMOR_COLOR, true);
         }
-        int bottom = Math.max(avatarY + PLAYER_STATUS_AVATAR_SIZE + 2,
+        int bottom = Math.max(avatarY + PLAYER_STATUS_AVATAR_SIZE + PLAYER_STATUS_AVATAR_BORDER,
                 armorDots.isBlank() ? barY + PLAYER_STATUS_BAR_HEIGHT + 1 : armorY + font.lineHeight + 1);
-        int left = Math.min(avatarX - 2, barX + barWidth - font.width(armorDots));
-        occupied.add(new ZombiesSodaHudLayout.Bounds(left, avatarY - 2, barX + barWidth + 1, bottom));
+        int left = Math.min(avatarX - PLAYER_STATUS_AVATAR_BORDER, armorX);
+        occupied.add(new ZombiesSodaHudLayout.Bounds(left, avatarY - PLAYER_STATUS_AVATAR_BORDER,
+                barX + healthBarWidth + 1, bottom));
     }
 
     private static void renderLocalAvatar(GuiGraphics graphics, LocalPlayer player, int x, int y, int size) {
-        graphics.fill(x - 2, y - 2, x + size + 2, y + size + 2, 0xFFFFFFFF);
+        graphics.fill(x - PLAYER_STATUS_AVATAR_BORDER, y - PLAYER_STATUS_AVATAR_BORDER,
+                x + size + PLAYER_STATUS_AVATAR_BORDER, y + size + PLAYER_STATUS_AVATAR_BORDER, 0xFFFFFFFF);
         graphics.fill(x - 1, y - 1, x + size + 1, y + size + 1, 0xCC000000);
         ResourceLocation skin = player.getSkinTextureLocation();
         PlayerFaceRenderer.draw(graphics, skin, x, y, size);

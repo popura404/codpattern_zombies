@@ -65,7 +65,7 @@
       "performanceGate": false
     },
     {
-      "testName": "spawnclearancerejectstallbodieswithoutrejectingsilverfish",
+      "testName": "spawnclearanceisdiagnosticonlyforallbodysizes",
       "performanceGate": false
     },
     {

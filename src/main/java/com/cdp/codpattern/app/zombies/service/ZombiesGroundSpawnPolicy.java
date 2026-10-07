@@ -21,7 +21,7 @@ public final class ZombiesGroundSpawnPolicy {
     private static final double DROP_SAMPLE_DISTANCE = 0.25D;
     private final FailureHistory failures = new FailureHistory();
 
-    /** Cheap candidate filter: body clearance only, without landing or hazard scans. */
+    /** Body-clearance diagnostic only, without landing or hazard scans. */
     public Validation validateBody(Mob mob) {
         if (!ZombiesGroundNavigationService.supports(mob) || !(mob.level() instanceof ServerLevel level)) {
             return new Validation(true, "");
@@ -37,7 +37,7 @@ public final class ZombiesGroundSpawnPolicy {
         return new Validation(true, "");
     }
 
-    /** Full bounded diagnostics for the selected point; callers should filter candidates with validateBody. */
+    /** Full bounded diagnostics for the selected point; this result does not gate spawning. */
     public Validation evaluate(Mob mob) {
         Validation bodyValidation = validateBody(mob);
         if (!bodyValidation.allowed() || !bodyValidation.reason().isEmpty()

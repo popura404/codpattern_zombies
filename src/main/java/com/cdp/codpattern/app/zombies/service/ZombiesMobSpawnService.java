@@ -28,6 +28,7 @@ import net.minecraft.world.entity.animal.Wolf;
 import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
@@ -155,10 +156,14 @@ public final class ZombiesMobSpawnService {
         if (candidates.isEmpty()) {
             return SpawnResult.failure(SpawnFailureReason.NO_AVAILABLE_SPAWN);
         }
-        List<ZombiesZombieSpawnData> loadedCandidates = candidates.stream()
-                .filter(spawn -> level.hasChunkAt(spawn.pos()))
+        // A loaded terrain chunk can still have frozen or not-yet-loaded entities.
+        // These status checks never request a chunk load or consume the wave budget.
+        List<ZombiesZombieSpawnData> readyCandidates = candidates.stream()
+                .filter(spawn -> level.hasChunkAt(spawn.pos())
+                        && level.isPositionEntityTicking(spawn.pos())
+                        && level.areEntitiesLoaded(ChunkPos.asLong(spawn.pos())))
                 .toList();
-        if (loadedCandidates.isEmpty()) {
+        if (readyCandidates.isEmpty()) {
             return SpawnResult.failure(SpawnFailureReason.CHUNK_UNAVAILABLE);
         }
 
@@ -171,18 +176,8 @@ public final class ZombiesMobSpawnService {
         applyWaveAttributes(mob, mobId.get(), waveDefinition);
         applyRoomMonsterRetention(mob);
         boolean groundManaged = ZombiesGroundNavigationService.supports(mob);
-        List<ZombiesZombieSpawnData> legalCandidates = loadedCandidates;
-        if (groundManaged) {
-            legalCandidates = loadedCandidates.stream().filter(candidate -> {
-                moveToSpawn(mob, candidate);
-                return groundSpawns.validateBody(mob).allowed();
-            }).toList();
-            if (legalCandidates.isEmpty()) {
-                mob.discard();
-                return SpawnResult.failure(SpawnFailureReason.NO_AVAILABLE_SPAWN);
-            }
-        }
-        ZombiesZombieSpawnData spawn = chooseSpawn(level, legalCandidates, survivorTargets(level),
+        // Body clearance is diagnostic only; it must not exclude configured spawn points.
+        ZombiesZombieSpawnData spawn = chooseSpawn(level, readyCandidates, survivorTargets(level),
                 spawnPointWeighting(), groundManaged
                         ? candidate -> groundSpawns.weightMultiplier(candidate.objectId(), mob, level.getGameTime())
                         : candidate -> 1.0D);

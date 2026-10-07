@@ -228,7 +228,7 @@ public final class ZombiesNavigationLongRouteGameTests {
                             "arrival must include the required real detour or natural descent and landing");
                     helper.assertTrue(LayeredNavigationRuntime.of(mob) == null
                                     || verifiedGuardPhases.containsAll(requiredGuardPhases()),
-                            "complete entity ticks must exercise each required guard phase: expected "
+                            "complete entity ticks must protect continued route execution in each required phase: expected "
                                     + requiredGuardPhases() + ", observed " + verifiedGuardPhases);
                     helper.assertTrue(!scenario.endsWith("-soul-sand") || fractionalDeparture,
                             "the original entity must naturally execute a DROP from the slow fractional support");
@@ -249,7 +249,8 @@ public final class ZombiesNavigationLongRouteGameTests {
         }
 
         private Set<String> requiredGuardPhases() {
-            return dropDepth == 0 ? Set.of("FOLLOW", "NATIVE")
+            // An advancing ground route keeps MOVE; leap and door fixtures cover native handoffs.
+            return dropDepth == 0 ? Set.of("FOLLOW")
                     : dropDepth == 64 || scenario.endsWith("-soul-sand") ? Set.of("COMMIT", "FALL") : Set.of();
         }
 

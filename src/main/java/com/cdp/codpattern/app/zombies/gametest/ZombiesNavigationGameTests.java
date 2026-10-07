@@ -481,8 +481,8 @@ public final class ZombiesNavigationGameTests {
     }
 
     @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 40)
-    public static void spawnClearanceRejectsTallBodiesWithoutRejectingSilverfish(GameTestHelper helper) {
-        ZombiesNavigationTestTiming.begin(helper, "main:spawnClearanceRejectsTallBodiesWithoutRejectingSilverfish", false);
+    public static void spawnClearanceIsDiagnosticOnlyForAllBodySizes(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:spawnClearanceIsDiagnosticOnlyForAllBodySizes", false);
         buildRoom(helper, false);
         for (int x = 7; x <= 9; x++) {
             for (int z = 7; z <= 9; z++) {
@@ -490,20 +490,24 @@ public final class ZombiesNavigationGameTests {
             }
         }
         try (Fixture fixture = new Fixture(helper, new Vec3(18.5D, 1.0D, 18.5D))) {
-            ZombiesMobSpawnService.SpawnResult rejected = fixture.attemptSpawn(
+            ZombiesMobSpawnService.SpawnResult tallSpawn = fixture.attemptSpawn(
                     "wither_skeleton", new BlockPos(8, 1, 8));
-            ZombiesWaveRuntimeState rejectedWave = fixture.waveState;
-            helper.assertFalse(rejected.spawned(), "a Wither Skeleton cannot spawn in two-block headroom");
-            helper.assertTrue(rejectedWave.remainingBudget() == 1 && rejectedWave.activeZombies() == 0,
-                    "a rejected body clearance check must preserve the pending budget");
-            helper.assertTrue(fixture.counter.roomCount(fixture.roomId) == 0
-                            && fixture.ownership.entitiesInRoom(fixture.roomId).isEmpty(),
-                    "a rejected spawn must not leak ownership or active count");
+            ZombiesWaveRuntimeState tallWave = fixture.waveState;
+            helper.assertTrue(tallSpawn.spawned() && tallSpawn.entity().orElseThrow().isAlive(),
+                    "body clearance diagnostics must permit a Wither Skeleton in two-block headroom");
+            helper.assertTrue(tallWave.remainingBudget() == 0 && tallWave.activeZombies() == 1,
+                    "the accepted tall body must consume its budget and register as active");
+            helper.assertTrue(fixture.counter.roomCount(fixture.roomId) == 1
+                            && fixture.ownership.entitiesInRoom(fixture.roomId).size() == 1,
+                    "the accepted tall body must retain room ownership and active count");
             Mob silverfish = fixture.spawn("silverfish", new BlockPos(8, 1, 8));
-            helper.assertTrue(silverfish.isAlive() && fixture.waveState.activeZombies() == 1,
+            helper.assertTrue(silverfish.isAlive() && fixture.waveState.remainingBudget() == 0
+                            && fixture.waveState.activeZombies() == 1,
                     "the same location must permit a physically fitting Silverfish");
-            helper.assertTrue(rejectedWave.remainingBudget() == 1,
-                    "another body profile must not consume the rejected Wither Skeleton budget");
+            helper.assertTrue(tallWave.remainingBudget() == 0 && tallWave.activeZombies() == 1
+                            && fixture.counter.roomCount(fixture.roomId) == 2
+                            && fixture.ownership.entitiesInRoom(fixture.roomId).size() == 2,
+                    "both body sizes must remain owned and counted without changing the first wave's budget");
         }
         ZombiesNavigationTestTiming.succeed(helper);
     }

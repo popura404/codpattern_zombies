@@ -344,14 +344,8 @@ public final class LayeredNavigationRuntime {
             LivingEntity target = mob.getTarget();
             if (!eligible(mob, target) || (!waitingForChunk() && now() < state.nativeUntil)
                     || specialAction() || engaged(target)) return false;
-            Path nativeRoute = mob.getNavigation().getPath();
-            // Vanilla has already proved this particular path ends short of its target.
-            // Begin the budgeted complete search now instead of spending the whole partial
-            // route's travel time before recovery; reaching native routes retain their grace.
-            boolean partialRoute = nativeRoute != null && !nativeRoute.canReach();
-            if (state.plan == null && !progress.loopDetected()
-                    && !partialRoute
-                    && now() - Math.max(progress.lastRoute(), progress.lastCombat()) < 40) return false;
+            if (!state.needsRecovery(now(), progress.lastRoute(), progress.lastCombat(), progress.loopDetected()))
+                return false;
             reservedTarget = (ServerPlayer) target;
             return mob.onGround();
         }
@@ -404,7 +398,7 @@ public final class LayeredNavigationRuntime {
             }
             if (state.plan == null) {
                 hold();
-                if (!waitingForChunk() && now - state.controlledSince >= 20 && nativeTerrainAvailable(target)) {
+                if (state.needsNativeOpportunity(now, waitingForChunk(), false) && nativeTerrainAvailable(target)) {
                     state.nativeUntil = now + 4; state.phase = RouteExecutionState.Phase.NATIVE; return;
                 }
                 if (now < state.nextRequest) return;
@@ -483,16 +477,17 @@ public final class LayeredNavigationRuntime {
             }
         }
         private void follow(TraversalEdge edge) {
-            state.phase = RouteExecutionState.Phase.FOLLOW;
             NativeNavigationGuard.follow(context, mob);
             Path actual = mob.getNavigation().getPath();
-            if (actual != null && actual.isDone() && sameSegment(actual, edge)
-                    && mob.position().distanceToSqr(edge.to().feet()) < 0.64 && mob.onGround()) {
+            if (finishPrecisely(state.phase, actual, edge, mob.position(), mob.onGround())) {
                 // Vanilla's waypoint tolerance is wider than physical portal arrival tolerance.
                 // Finish the same proven edge without treating its Path cursor as actual arrival.
+                // controlledMove clears the native Path; retain this phase on subsequent ticks
+                // instead of rebuilding a two-node path back through the old departure node.
                 state.phase = RouteExecutionState.Phase.PRECISE;
                 NativeNavigationGuard.controlledMove(context, mob); move(edge.to().feet()); return;
             }
+            state.phase = RouteExecutionState.Phase.FOLLOW;
             if (state.path == null || actual == null || actual.isDone() || !sameSegment(actual, edge)) {
                 mob.getNavigation().moveTo(shortPath(edge), 1.15);
                 actual = mob.getNavigation().getPath();
@@ -586,7 +581,14 @@ public final class LayeredNavigationRuntime {
         private void arrive(TraversalEdge edge, long now, double tolerance) {
             hold();
             TraversalValidator.Verdict verdict = planner.requestArrivalValidation(mob, edge.to(), profile, tolerance);
-            if (verdict == TraversalValidator.Verdict.CLEAR) complete(now);
+            if (verdict == TraversalValidator.Verdict.CLEAR) {
+                complete(now);
+                // Queue the next proof now, not one entity tick after arrival completed.
+                // It remains budgeted and must be CLEAR before the next edge can move.
+                TraversalEdge next = state.edge();
+                if (next != null && state.phase != RouteExecutionState.Phase.NATIVE)
+                    planner.requestValidation(mob, next, profile);
+            }
             else if (verdict == TraversalValidator.Verdict.BLOCKED || verdict == TraversalValidator.Verdict.STALE) replan(now, 1);
             else { validationWaiting = true; progress.waiting(now); }
         }
@@ -608,8 +610,11 @@ public final class LayeredNavigationRuntime {
                     progress.portal(state.edgeKey);
             }
             state.edgeIndex++; startEdge(now);
-            if (!waitingForChunk() && now - state.controlledSince >= 20
-                    && nativeTerrainAvailable(mob.getTarget())) {
+            LivingEntity target = mob.getTarget();
+            double distance = target == null ? Double.POSITIVE_INFINITY : mob.distanceToSqr(target);
+            boolean leapOpportunity = mob instanceof Wolf && distance >= 4 && distance <= 16;
+            if (leapOpportunity && state.needsNativeOpportunity(now, waitingForChunk(), true)
+                    && nativeTerrainAvailable(target)) {
                 mob.getNavigation().stop(); state.nativeUntil = now + 4;
                 state.phase = RouteExecutionState.Phase.NATIVE;
             }
@@ -700,6 +705,12 @@ public final class LayeredNavigationRuntime {
                         || goal.getFlags().contains(Flag.MOVE) || goal.getFlags().contains(Flag.JUMP));
             });
         }
+    }
+    static boolean finishPrecisely(RouteExecutionState.Phase phase, Path path, TraversalEdge edge,
+            Vec3 position, boolean onGround) {
+        return onGround && position.distanceToSqr(edge.to().feet()) < 0.64
+                && (phase == RouteExecutionState.Phase.PRECISE
+                    || path != null && path.isDone() && sameSegment(path, edge));
     }
     /** Bounded local adoption; a distant start still falls back to the budgeted planner. */
     static int routeEntryIndex(List<TraversalEdge> edges, Vec3 position) {

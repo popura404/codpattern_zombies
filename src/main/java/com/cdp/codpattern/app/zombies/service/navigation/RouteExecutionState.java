@@ -20,6 +20,15 @@ public final class RouteExecutionState {
     String edgeKey;
 
     public boolean committedDrop() { return phase == Phase.FALL || phase == Phase.LAND; }
+    boolean needsRecovery(long now, long lastRouteProgress, long lastCombat, boolean loopDetected) {
+        // A partial native path can still carry the mob towards a distant target.
+        // Only lack of actual progress, rather than its canReach flag, warrants takeover.
+        return plan != null || loopDetected || now - Math.max(lastRouteProgress, lastCombat) >= 40;
+    }
+    boolean needsNativeOpportunity(long now, boolean waitingForChunk, boolean nativeLeapOpportunity) {
+        // A usable route keeps MOVE unless a nearby wolf can use its equal-priority leap goal.
+        return (plan == null || nativeLeapOpportunity) && !waitingForChunk && now - controlledSince >= 20;
+    }
     TraversalEdge edge() {
         return plan == null || edgeIndex >= plan.edges().size() ? null : plan.edges().get(edgeIndex);
     }

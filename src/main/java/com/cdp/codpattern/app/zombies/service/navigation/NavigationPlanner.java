@@ -27,6 +27,7 @@ public final class NavigationPlanner implements AutoCloseable {
     private final NavigationScheduler scheduler;
     private final Map<UUID, Job> jobs = new HashMap<>();
     private final Map<UUID, ValidationJob> validations = new HashMap<>();
+    private final Map<UUID, JumpValidationJob> jumpValidations = new HashMap<>();
     private final Map<UUID, FailureProbeJob> failureProbes = new HashMap<>();
     private final Map<UUID, LinkedHashMap<TraversalEdge, Long>> avoided = new HashMap<>();
     private int searchRecords;
@@ -71,6 +72,7 @@ public final class NavigationPlanner implements AutoCloseable {
     private record PendingDescription(Vec3 feet, TraversalValidator.ScanStatus status, boolean terminal) { }
     public TraversalValidator.Verdict requestValidation(Mob mob, TraversalEdge edge, MovementProfile profile) {
         if (closed || !context.owns(mob)) return TraversalValidator.Verdict.UNKNOWN;
+        cancelJumpValidation(mob.getUUID());
         ValidationJob existing = validations.get(mob.getUUID());
         if (existing != null && !existing.arrival && existing.edge.equals(edge) && existing.profile.equals(profile)
                 && !(existing.done && existing.verdict == TraversalValidator.Verdict.UNKNOWN))
@@ -83,6 +85,7 @@ public final class NavigationPlanner implements AutoCloseable {
     public TraversalValidator.Verdict requestArrivalValidation(Mob mob, SurfaceNode node,
             MovementProfile profile, double tolerance) {
         if (closed || !context.owns(mob)) return TraversalValidator.Verdict.UNKNOWN;
+        cancelJumpValidation(mob.getUUID());
         ValidationJob existing = validations.get(mob.getUUID());
         if (existing != null && existing.arrival && existing.edge.to().equals(node) && existing.profile.equals(profile)
                 && existing.arrivalTolerance == tolerance && validator.arrivalSnapshotApplies(existing.cursor)
@@ -96,9 +99,29 @@ public final class NavigationPlanner implements AutoCloseable {
         ValidationJob job = validations.get(mobId);
         return job == null ? TraversalValidator.Verdict.UNKNOWN : job.currentVerdict();
     }
+    public TraversalValidator.Verdict requestJumpValidation(Mob mob, TraversalEdge edge,
+            MovementProfile profile, DropJump.Plan plan) {
+        if (closed || !context.owns(mob)) return TraversalValidator.Verdict.UNKNOWN;
+        JumpValidationJob existing = jumpValidations.get(mob.getUUID());
+        if (existing != null && existing.edge.equals(edge) && existing.profile.equals(profile)
+                && existing.plan.equals(plan) && validator.jumpSnapshotApplies(existing.cursor)
+                && !(existing.done && existing.verdict == TraversalValidator.Verdict.UNKNOWN))
+            return existing.currentVerdict();
+        cancelJumpValidation(mob.getUUID());
+        if (!validator.jumpSnapshotApplies(mob, plan)) return TraversalValidator.Verdict.UNKNOWN;
+        JumpValidationJob job = new JumpValidationJob(mob, edge, profile, plan);
+        jumpValidations.put(mob.getUUID(), job);
+        scheduler.submit(context.lifecycleId(), job.queueId, job);
+        return TraversalValidator.Verdict.UNKNOWN;
+    }
+    private void cancelJumpValidation(UUID mobId) {
+        JumpValidationJob job = jumpValidations.remove(mobId);
+        if (job != null) { job.done = true; job.cursor.close(); scheduler.cancel(context.lifecycleId(), job.queueId); }
+    }
     public void cancelValidation(UUID mobId) {
         ValidationJob job = validations.remove(mobId);
         if (job != null) { job.done = true; job.cursor.close(); scheduler.cancel(context.lifecycleId(), job.queueId); }
+        cancelJumpValidation(mobId);
     }
     public void avoidEdge(UUID mobId, TraversalEdge edge, long untilGameTime) {
         LinkedHashMap<TraversalEdge, Long> blocked = avoided.computeIfAbsent(mobId, ignored -> new LinkedHashMap<>());
@@ -186,6 +209,7 @@ public final class NavigationPlanner implements AutoCloseable {
         // Completed validation proofs recheck their dependencies through the same shared
         // scheduler; an invalidation callback never synchronously walks every deep shaft.
         for (ValidationJob validation : List.copyOf(validations.values())) validation.currentVerdict();
+        for (JumpValidationJob validation : List.copyOf(jumpValidations.values())) validation.currentVerdict();
         for (Job job : jobs.values()) {
             // Retain completed unaffected routes; open searches may have seen a changed frontier.
             RoutePlan route = job.result().plan();
@@ -228,6 +252,8 @@ public final class NavigationPlanner implements AutoCloseable {
         }
         for (ValidationJob job : List.copyOf(validations.values()))
             if (!job.mob.isAlive() || job.mob.isRemoved() || !context.owns(job.mob)) cancelValidation(job.mob.getUUID());
+        for (JumpValidationJob job : List.copyOf(jumpValidations.values()))
+            if (!job.mob.isAlive() || job.mob.isRemoved() || !context.owns(job.mob)) cancelJumpValidation(job.mob.getUUID());
         for (FailureProbeJob probe : List.copyOf(failureProbes.values())) {
             Job job = jobs.get(probe.mob.getUUID());
             if (!probe.mob.isAlive() || probe.mob.isRemoved() || !context.owns(probe.mob)
@@ -241,6 +267,7 @@ public final class NavigationPlanner implements AutoCloseable {
     public void reset() {
         for (UUID id : List.copyOf(jobs.keySet())) cancelMob(id);
         for (UUID id : List.copyOf(validations.keySet())) cancelValidation(id);
+        for (UUID id : List.copyOf(jumpValidations.keySet())) cancelJumpValidation(id);
         for (FailureProbeJob probe : failureProbes.values()) { probe.close(); scheduler.cancel(context.lifecycleId(), probe.queueId); }
         failureProbes.clear();
         avoided.clear();
@@ -471,6 +498,46 @@ public final class NavigationPlanner implements AutoCloseable {
             if (done) {
                 completedRevision=cache.revision();validator.releaseValidationGeometry(cursor);
             }
+            if (batch.status() == TraversalValidator.ScanStatus.WAITING_CHUNK) retryTick = budget.serverTick() + 10;
+        }
+    }
+    /** Optional forward jumps consume the same geometry queue as ordinary DROP evidence. */
+    private final class JumpValidationJob implements NavigationScheduler.Work {
+        final UUID queueId = UUID.randomUUID();
+        final Mob mob;
+        final TraversalEdge edge;
+        final MovementProfile profile;
+        final DropJump.Plan plan;
+        final TraversalValidator.JumpCursor cursor;
+        TraversalValidator.Verdict verdict = TraversalValidator.Verdict.UNKNOWN;
+        boolean done;
+        long retryTick, completedRevision = Long.MIN_VALUE;
+        JumpValidationJob(Mob mob, TraversalEdge edge, MovementProfile profile, DropJump.Plan plan) {
+            this.mob = mob; this.edge = edge; this.profile = profile; this.plan = plan;
+            cursor = validator.beginJumpValidation(mob, edge, profile, plan);
+        }
+        @Override public boolean finished() { return done; }
+        TraversalValidator.Verdict currentVerdict() {
+            if (!validator.jumpSnapshotApplies(cursor)) return TraversalValidator.Verdict.UNKNOWN;
+            if (done && completedRevision != cache.revision() && verdict != TraversalValidator.Verdict.CLEAR) {
+                verdict = TraversalValidator.Verdict.UNKNOWN; return verdict;
+            }
+            if (done && validator.recheckJumpValidationEvidence(cursor)) {
+                done = false; verdict = TraversalValidator.Verdict.UNKNOWN;
+                scheduler.submit(context.lifecycleId(), queueId, this);
+            }
+            return verdict;
+        }
+        @Override public void advance(NavigationScheduler.Budget budget) {
+            if (budget.serverTick() < retryTick || budget.geometryRemaining() == 0) return;
+            long before = System.nanoTime();
+            TraversalValidator.ValidationBatch batch = validator.advanceJumpValidation(cursor,
+                    budget.geometryRemaining(), budget.deadlineNanos());
+            budget.recordUnit(NavigationScheduler.UnitKind.GEOMETRY, before);
+            nanos += System.nanoTime() - before; geometry += batch.workUsed();
+            budget.accountGeometry(batch.workUsed()); verdict = batch.verdict();
+            done = batch.status() == TraversalValidator.ScanStatus.COMPLETE;
+            if (done) { completedRevision = cache.revision(); validator.releaseJumpValidationGeometry(cursor); }
             if (batch.status() == TraversalValidator.ScanStatus.WAITING_CHUNK) retryTick = budget.serverTick() + 10;
         }
     }

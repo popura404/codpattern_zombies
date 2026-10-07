@@ -1,12 +1,14 @@
 package com.cdp.codpattern.app.zombies.service.navigation;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.OpenDoorGoal;
 import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.level.pathfinder.BlockPathTypes;
 import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.EntityCollisionContext;
@@ -28,6 +30,7 @@ import java.util.Set;
 public final class TraversalValidator {
     public static final double EPSILON = TraversalMath.EPSILON;
     public static final double DROP_DRIFT = 0.20;
+    public static final double JUMP_POSITION_TOLERANCE = 0.10;
     private static final int SHAPE_BATCH = 16;
     private static final int BLOCK_BATCH = 8;
     private static final int CACHED_CELL_BATCH = 128;
@@ -62,6 +65,151 @@ public final class TraversalValidator {
     }
     public ValidationCursor beginStanding(Mob mob,SurfaceNode target,MovementProfile profile,double tolerance) {
         return new ValidationCursor(mob,target,profile,tolerance);
+    }
+
+    /** A jump has separate evidence: the vertical DROP proof does not include its rising arc. */
+    public JumpCursor beginJumpValidation(Mob mob, TraversalEdge edge, MovementProfile profile, DropJump.Plan plan) {
+        return new JumpCursor(mob, edge, profile, plan);
+    }
+
+    public boolean jumpSnapshotApplies(Mob mob, DropJump.Plan plan) {
+        if (plan == null || !context.owns(mob) || !mob.onGround() || !finite(mob.position())) return false;
+        Vec3 delta = mob.position().subtract(plan.origin());
+        return Math.abs(delta.y) <= EPSILON
+                && delta.x * delta.x + delta.z * delta.z
+                <= (JUMP_POSITION_TOLERANCE + EPSILON) * (JUMP_POSITION_TOLERANCE + EPSILON);
+    }
+
+    public boolean jumpSnapshotApplies(JumpCursor cursor) { return jumpSnapshotApplies(cursor.mob, cursor.plan); }
+
+    public ValidationBatch advanceJumpValidation(JumpCursor cursor, int workUnits, long deadlineNanos) {
+        int used = 0;
+        while (!cursor.done && used < workUnits && System.nanoTime() < deadlineNanos) {
+            used++;
+            if (!jumpSnapshotApplies(cursor)) { cursor.finish(Verdict.UNKNOWN); break; }
+            if (!cursor.samplesReserved) {
+                if (!cursor.memory.reserve(cursor.plan.samples().size()))
+                    return new ValidationBatch(Verdict.UNKNOWN, ScanStatus.RESOURCE_LIMITED, used);
+                cursor.samplesReserved = true;
+            }
+            if (!cursor.inputReady || cursor.provisionalClear || cursor.evidenceRevision != cache.revision()) {
+                cursor.verifyEvidenceBatch();
+                continue;
+            }
+            if (cursor.scan == null) {
+                Vec3 from = cursor.plan.samples().get(cursor.segment - 1), to = cursor.plan.samples().get(cursor.segment);
+                if (!finite(from) || !finite(to)) { cursor.finish(Verdict.BLOCKED); break; }
+                // Speed factors can act through the block below the feet even before landing.
+                AABB area = bodyAt(cursor.envelope, from).minmax(bodyAt(cursor.envelope, to)).expandTowards(0, -0.51, 0);
+                cursor.scan = new ShapeScan(cursor.mob, area, from.y);
+                cursor.scan.jumpMotionChecks = true;
+            }
+            if (!cursor.scan.done) {
+                cursor.scan.advance();
+                if (cursor.scan.waiting) return new ValidationBatch(Verdict.WAITING_CHUNK, ScanStatus.WAITING_CHUNK, used);
+                if (cursor.scan.limited) return new ValidationBatch(Verdict.UNKNOWN, ScanStatus.RESOURCE_LIMITED, used);
+                continue;
+            }
+            if (cursor.scanDependencies == null) cursor.scanDependencies = cursor.scan.dependencies.entrySet().iterator();
+            int retained = 0;
+            while (retained < BLOCK_BATCH && (cursor.nextDependency != null || cursor.scanDependencies.hasNext())) {
+                if (cursor.nextDependency == null) cursor.nextDependency = cursor.scanDependencies.next();
+                var dependency = cursor.nextDependency;
+                Long previous = cursor.dependencies.get(dependency.getKey());
+                if (previous != null && !previous.equals(dependency.getValue())) { cursor.finish(Verdict.STALE); break; }
+                if (previous == null) {
+                    if (!cursor.memory.reserve(1)) return new ValidationBatch(Verdict.UNKNOWN, ScanStatus.RESOURCE_LIMITED, used);
+                    cursor.dependencies.put(dependency.getKey(), dependency.getValue());
+                }
+                cursor.nextDependency = null; retained++;
+            }
+            if (cursor.done) break;
+            if (cursor.nextDependency != null || cursor.scanDependencies.hasNext()) continue;
+            Vec3 from = cursor.plan.samples().get(cursor.segment - 1), to = cursor.plan.samples().get(cursor.segment);
+            if (cursor.scan.jumpMotionBlocked || !clearSweep(from, to, cursor.envelope, cursor.scan)) {
+                cursor.finish(Verdict.BLOCKED); break;
+            }
+            boolean last = cursor.segment == cursor.plan.samples().size() - 1;
+            if (last) {
+                // Earlier contacts are rejected by the segment sweeps; this is the first proven support.
+                for (double dx : new double[]{-JUMP_POSITION_TOLERANCE, 0, JUMP_POSITION_TOLERANCE})
+                    for (double dz : new double[]{-JUMP_POSITION_TOLERANCE, 0, JUMP_POSITION_TOLERANCE})
+                        if (!standing(to.add(dx, 0, dz), cursor.profile, cursor.scan)) cursor.finish(Verdict.BLOCKED);
+                if (cursor.done) break;
+            }
+            cursor.scan.close(); cursor.scan = null; cursor.scanDependencies = null;
+            if (last) { cursor.provisionalClear = true; cursor.restartEvidenceCheck(); }
+            else cursor.segment++;
+        }
+        return new ValidationBatch(cursor.verdict, cursor.done ? ScanStatus.COMPLETE : ScanStatus.PENDING, used);
+    }
+
+    public final class JumpCursor implements AutoCloseable {
+        private final Mob mob;
+        private final TraversalEdge edge;
+        private final MovementProfile profile, envelope;
+        private final DropJump.Plan plan;
+        private final NavigationGraphCache.TransientLease memory = cache.transientLease();
+        private final Map<NavigationGraphCache.TileKey, Long> dependencies = new HashMap<>();
+        private Iterator<Map.Entry<NavigationGraphCache.TileKey, Long>> checkingInput, checkingGeometry, scanDependencies;
+        private Map.Entry<NavigationGraphCache.TileKey, Long> nextDependency;
+        private ShapeScan scan;
+        private int segment = 1;
+        private boolean done, inputReady, provisionalClear, samplesReserved;
+        private Verdict verdict = Verdict.UNKNOWN;
+        private long evidenceRevision = Long.MIN_VALUE;
+
+        private JumpCursor(Mob mob, TraversalEdge edge, MovementProfile profile, DropJump.Plan plan) {
+            this.mob = mob; this.edge = edge; this.profile = profile; this.plan = plan;
+            envelope = new MovementProfile(profile.width() + 2 * JUMP_POSITION_TOLERANCE, profile.height(),
+                    profile.stepHeight(), profile.canOpenDoors(), profile.canPassDoors(), profile.allowDrops(), profile.collisionContext());
+            if (plan == null || edge.action() != TraversalEdge.Action.DROP || edge.controlPoints().size() < 2
+                    || plan.samples().size() < 2 || !finite(plan.origin()) || !finite(plan.departure()) || !finite(plan.landing())
+                    || !finite(plan.samples().get(0)) || !finite(plan.samples().get(plan.samples().size() - 1))
+                    || plan.origin().distanceToSqr(plan.samples().get(0)) > EPSILON * EPSILON
+                    || plan.departure().distanceToSqr(edge.controlPoints().get(1)) > EPSILON * EPSILON
+                    || plan.landing().distanceToSqr(edge.to().feet()) > EPSILON * EPSILON
+                    || Math.abs(plan.samples().get(plan.samples().size() - 1).y - plan.landing().y) > EPSILON
+                    || plan.samples().get(plan.samples().size() - 1).distanceToSqr(plan.landing())
+                            > (DROP_DRIFT + EPSILON) * (DROP_DRIFT + EPSILON))
+                finish(Verdict.BLOCKED);
+        }
+        private void finish(Verdict value) { verdict = value; done = true; }
+        private void restartEvidenceCheck() {
+            evidenceRevision = cache.revision(); inputReady = false;
+            checkingInput = edge.dependencies().entrySet().iterator();
+            checkingGeometry = dependencies.entrySet().iterator();
+        }
+        private void verifyEvidenceBatch() {
+            if (evidenceRevision != cache.revision()) restartEvidenceCheck();
+            int checked = 0;
+            while (checked++ < BLOCK_BATCH) {
+                Iterator<Map.Entry<NavigationGraphCache.TileKey, Long>> source = checkingInput.hasNext() ? checkingInput : checkingGeometry;
+                if (!source.hasNext()) {
+                    inputReady = true;
+                    if (provisionalClear) finish(Verdict.CLEAR);
+                    return;
+                }
+                var dependency = source.next();
+                if (!cache.valid(dependency.getKey(), dependency.getValue())) { finish(Verdict.STALE); return; }
+            }
+        }
+        @Override public void close() {
+            if (scan != null) { scan.close(); scan = null; }
+            memory.close(); dependencies.clear();
+            checkingInput = null; checkingGeometry = null; scanDependencies = null; nextDependency = null;
+        }
+    }
+
+    public boolean recheckJumpValidationEvidence(JumpCursor cursor) {
+        if (!cursor.done || cursor.verdict != Verdict.CLEAR || cursor.evidenceRevision == cache.revision()) return false;
+        cursor.done = false; cursor.verdict = Verdict.UNKNOWN; cursor.restartEvidenceCheck(); return true;
+    }
+
+    public void releaseJumpValidationGeometry(JumpCursor cursor) {
+        if (!cursor.done) throw new IllegalStateException("Unfinished jump evidence");
+        if (cursor.scan != null) { cursor.scan.close(); cursor.scan = null; }
+        if (cursor.verdict != Verdict.CLEAR) cursor.close();
     }
 
     public ValidationBatch advanceValidation(ValidationCursor cursor,int workUnits,long deadlineNanos) {
@@ -851,6 +999,7 @@ public final class TraversalValidator {
         int x,y,z,boxIndex;
         List<AABB> pending = List.of();
         boolean done,waiting,limited,hardLimited,pendingDoor,partialHorizontal;
+        boolean jumpMotionChecks,jumpMotionBlocked;
         private final NavigationGraphCache.TransientLease lease=cache.transientLease();
         private boolean reserve(int entries) {
             if (lease.reserve(entries)) return true; limited=true; return false;
@@ -919,6 +1068,10 @@ public final class TraversalValidator {
                 if (cell==null && cacheProfile!=null) cell=(CachedCell)cache.geometryCell(cacheProfile,feetY,pos);
                 if (cell==null) {
                     var state=context.level().getBlockState(pos);
+                    if (jumpMotionChecks && new AABB(pos).intersects(area)
+                            && (state.getBlock().getSpeedFactor() != 1.0F || state.is(Blocks.COBWEB)
+                            || state.is(Blocks.SCAFFOLDING) || state.is(BlockTags.CLIMBABLE)))
+                        jumpMotionBlocked = true;
                     BlockPathTypes type=WalkNodeEvaluator.getBlockPathTypeStatic(context.level(),pos.mutable());
                     VoxelShape shape=state.getCollisionShape(context.level(),pos,new ProjectedCollisionContext(mob,feetY));
                     List<AABB> shapeBoxes=shape.move(x,y,z).toAabbs();

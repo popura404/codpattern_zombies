@@ -501,6 +501,28 @@ public final class LayeredNavigationRuntime {
             NativeNavigationGuard.controlledMove(context, mob);
             mob.setXxa(0);
             Vec3 landing = edge.to().feet();
+            if (state.phase == RouteExecutionState.Phase.JUMP) {
+                hold(); mob.yya = 0;
+                if (state.dropProofRevision != planner.cache().revision() || !MovementProfile.from(mob).equals(profile))
+                    state.clearAfterLanding = true;
+                // The launch tick still reports onGround until Entity.move consumes the impulse.
+                if (now == state.jumpLaunchedAt) return;
+                if (mob.onGround()) state.phase = RouteExecutionState.Phase.LAND;
+                else {
+                    Vec3 relative = mob.position().subtract(state.jumpOffset);
+                    if (!state.jumpBraked && DropJump.reachedDeparture(state.dropJump, relative)) {
+                        Vec3 velocity = mob.getDeltaMovement();
+                        mob.setDeltaMovement(0, velocity.y, 0);
+                        mob.hasImpulse = true;
+                        state.jumpBraked = true;
+                    }
+                    // External pushes invalidate the landing proof, not the one-shot action.
+                    int sample = (int) Math.min(now - state.jumpLaunchedAt, state.dropJump.samples().size() - 1L);
+                    if (relative.distanceToSqr(state.dropJump.samples().get(sample)) > 0.25)
+                        state.clearAfterLanding = true;
+                    return;
+                }
+            }
             if (state.phase == RouteExecutionState.Phase.FALL) {
                 // A changed revision can affect a deep shaft. Finish falling naturally,
                 // then establish a new proof from the actual landing; do not scan the
@@ -524,6 +546,15 @@ public final class LayeredNavigationRuntime {
                 return;
             }
             if (!mob.onGround()) { state.phase = RouteExecutionState.Phase.FALL; state.previousY = mob.getY(); return; }
+            if (state.phase == RouteExecutionState.Phase.COMMIT && DropJump.required(edge) && !state.jumpDeclined
+                    && state.dropJump == null) {
+                state.jumpProofStarted = now;
+                state.dropJump = planDropJump(edge);
+                if (state.dropJump == null) state.jumpDeclined = true;
+            }
+            if (state.dropJump != null && !state.jumpDeclined) {
+                tryDropJump(edge, now); return;
+            }
             TraversalValidator.Verdict verdict = planner.requestValidation(mob, edge, profile);
             if (verdict == TraversalValidator.Verdict.STALE) { replan(now, 0); return; }
             if (verdict == TraversalValidator.Verdict.UNKNOWN || verdict == TraversalValidator.Verdict.WAITING_CHUNK) {
@@ -539,11 +570,15 @@ public final class LayeredNavigationRuntime {
                 state.phase = RouteExecutionState.Phase.APPROACH; move(start); return;
             }
             if (state.phase != RouteExecutionState.Phase.COMMIT) {
-                // Approach may take several ticks. Read the complete shaft again from the
-                // settled departure position before issuing the first command over the edge.
+                // Approach may take several ticks. Prove the selected ordinary fall or
+                // forward arc from this launch region before the first command over the edge.
                 hold(); state.phase = RouteExecutionState.Phase.COMMIT;
                 state.commandStarted = false;
                 planner.cancelValidation(mob.getUUID()); return;
+            }
+            // This also bounds the old residual-drift wait when a crowd keeps pushing the mob.
+            if (commandStalled(now)) {
+                fail(edge, NavigationGraphCache.FailureEvidence.EXTERNAL_DISPLACEMENT, now); return;
             }
             if (!planner.validator().validateDropDrift(mob, edge, profile)) {
                 // Let native friction remove residual approach velocity before crossing the edge.
@@ -558,6 +593,60 @@ public final class LayeredNavigationRuntime {
             mob.getMoveControl().setWantedPosition(offEdge.x, offEdge.y, offEdge.z, speed);
             if (commandStalled(now))
                 fail(edge, NavigationGraphCache.FailureEvidence.EXTERNAL_DISPLACEMENT, now);
+        }
+        private DropJump.Plan planDropJump(TraversalEdge edge) {
+            double drag = jumpFirstDrag();
+            return Double.isFinite(drag) ? DropJump.plan(mob.position(), edge.controlPoints().get(1),
+                    edge.to().feet(), drag) : null;
+        }
+        private double jumpFirstDrag() {
+            // Match Entity.getBlockPosBelowThatAffectsMyMovement without loading terrain.
+            BlockPos support = mob.getOnPos().atY(net.minecraft.util.Mth.floor(mob.getY() - 0.500001F));
+            if (!context.level().hasChunkAt(support) || !context.level().hasChunkAt(mob.blockPosition()))
+                return Double.NaN;
+            if (mob.isNoGravity() || mob.shouldDiscardFriction() || mob.isFallFlying() || mob.onClimbable()
+                    || mob.isInFluidType() || mob.hasEffect(net.minecraft.world.effect.MobEffects.LEVITATION)
+                    || mob.hasEffect(net.minecraft.world.effect.MobEffects.SLOW_FALLING)
+                    || Math.abs(mob.getAttributeValue(net.minecraftforge.common.ForgeMod.ENTITY_GRAVITY.get())
+                        - DropJump.GRAVITY) > TraversalMath.EPSILON) return Double.NaN;
+            var surface = context.level().getBlockState(support);
+            if (surface.getBlock().getSpeedFactor() != 1.0F) return Double.NaN;
+            return surface.getFriction(context.level(), support, mob) * 0.91F;
+        }
+        private void tryDropJump(TraversalEdge edge, long now) {
+            hold();
+            // A changing/crowded launch region can reject this optional action, but cannot wait forever.
+            if (now - state.jumpProofStarted > 80) { declineDropJump(); return; }
+            if (!planner.validator().jumpSnapshotApplies(mob, state.dropJump)) {
+                planner.cancelValidation(mob.getUUID());
+                state.dropJump = planDropJump(edge);
+                if (state.dropJump == null) { declineDropJump(); return; }
+            }
+            TraversalValidator.Verdict verdict = planner.requestJumpValidation(mob, edge, profile, state.dropJump);
+            if (verdict == TraversalValidator.Verdict.STALE) { replan(now, 0); return; }
+            if (verdict == TraversalValidator.Verdict.UNKNOWN || verdict == TraversalValidator.Verdict.WAITING_CHUNK) {
+                validationWaiting = true; progress.waiting(now); return;
+            }
+            double drag = jumpFirstDrag();
+            if (verdict != TraversalValidator.Verdict.CLEAR || !Double.isFinite(drag)
+                    || Math.abs(drag - state.dropJump.firstDrag()) > TraversalMath.EPSILON) {
+                declineDropJump(); return;
+            }
+            // Consume any pending vanilla jump request before installing exactly one fixed impulse.
+            mob.getJumpControl().tick(); mob.setJumping(false); mob.yya = 0;
+            state.jumpOffset = mob.position().subtract(state.dropJump.origin());
+            state.jumpLaunchedAt = now; state.jumpBraked = false;
+            state.dropProofRevision = planner.cache().revision();
+            state.phase = RouteExecutionState.Phase.JUMP;
+            mob.setDeltaMovement(state.dropJump.initialVelocity()); mob.hasImpulse = true;
+            validationWaiting = false;
+        }
+        private void declineDropJump() {
+            state.dropJump = null; state.jumpDeclined = true;
+            planner.cancelValidation(mob.getUUID());
+            // Ordinary DROP obtains fresh evidence; a blocked jump arc does not blacklist the route.
+            state.commandStarted = false;
+            validationWaiting = false;
         }
         private boolean commandStalled(long now) {
             // Slow support surfaces can require more than 40 ticks for 0.2 blocks.
@@ -596,6 +685,7 @@ public final class LayeredNavigationRuntime {
             planner.cancelValidation(mob.getUUID());
             state.edgeStarted = now; state.commandStarted = false; state.path = null; state.previousY = mob.getY();
             state.dropProofRevision = Long.MIN_VALUE;
+            state.resetDropJump();
             state.furthestCommandProjection = 0; state.lastCommandMotion = now;
             state.edgeKey = state.edge() == null ? null : key(state.edge());
             state.phase = state.edge() != null && state.edge().action() == TraversalEdge.Action.DROP

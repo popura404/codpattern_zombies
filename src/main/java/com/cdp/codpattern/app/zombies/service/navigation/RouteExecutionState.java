@@ -1,10 +1,11 @@
 package com.cdp.codpattern.app.zombies.service.navigation;
 
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.Vec3;
 
 /** Mutable, private-to-one-entity cursor. Immutable RoutePlans never carry native Path cursors. */
 public final class RouteExecutionState {
-    public enum Phase { WAIT, FOLLOW, PRECISE, APPROACH, COMMIT, FALL, LAND, NATIVE }
+    public enum Phase { WAIT, FOLLOW, PRECISE, APPROACH, COMMIT, JUMP, FALL, LAND, NATIVE }
     RoutePlan plan;
     private RoutePlan.Retention planRetention;
     int edgeIndex;
@@ -17,9 +18,17 @@ public final class RouteExecutionState {
     double furthestCommandProjection;
     boolean clearAfterLanding;
     boolean commandStarted;
+    DropJump.Plan dropJump;
+    Vec3 jumpOffset = Vec3.ZERO;
+    long jumpProofStarted, jumpLaunchedAt;
+    boolean jumpDeclined, jumpBraked;
     String edgeKey;
 
-    public boolean committedDrop() { return phase == Phase.FALL || phase == Phase.LAND; }
+    public boolean committedDrop() { return phase == Phase.JUMP || phase == Phase.FALL || phase == Phase.LAND; }
+    void resetDropJump() {
+        dropJump = null; jumpOffset = Vec3.ZERO;
+        jumpProofStarted = 0; jumpLaunchedAt = 0; jumpDeclined = false; jumpBraked = false;
+    }
     boolean needsRecovery(long now, long lastRouteProgress, long lastCombat, boolean loopDetected) {
         // A partial native path can still carry the mob towards a distant target.
         // Only lack of actual progress, rather than its canReach flag, warrants takeover.
@@ -43,5 +52,6 @@ public final class RouteExecutionState {
         if (planRetention != null) { planRetention.close(); planRetention = null; }
         edgeIndex = 0; path = null; edgeKey = null; phase = Phase.WAIT;
         dropProofRevision = Long.MIN_VALUE;
+        resetDropJump();
     }
 }

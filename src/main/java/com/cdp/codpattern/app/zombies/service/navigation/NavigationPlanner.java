@@ -281,10 +281,11 @@ public final class NavigationPlanner implements AutoCloseable {
         }
         PlanningResult result() { return search == null ? initial : search.result(); }
         void retarget(Vec3 newTarget) {
-            if (newTarget.equals(target)) return;
             target = newTarget;
             // Keep an in-flight locate cursor; restarting it each moving-player tick starves acquisition.
-            if (search != null && repair == null) search.retarget(newTarget);
+            // Its standing destination may be in a different tile from the requested target,
+            // so the search itself must decide whether its original frontier can be reused.
+            if (search != null && repair == null && !search.retarget(newTarget)) restart();
         }
         @Override public boolean finished() { return cancelled || !activated || search != null && search.finished(); }
         @Override public void advance(NavigationScheduler.Budget budget) {
@@ -643,20 +644,22 @@ public final class NavigationPlanner implements AutoCloseable {
             Pending first = pending.peekFirst();
             return first == null ? null : new PendingDescription(first.node.feet(), first.status, first.terminal);
         }
-        /** Target motion within the same standing tile keeps explored topology and open frontier. */
-        public void retarget(Vec3 next) {
-            if (finished()) return;
+        /** Reuse the frontier when compatible; false tells the owner to restart from a fresh standing target. */
+        public boolean retarget(Vec3 next) {
+            if (finished()) return true;
+            if (suffix == null && !goalFrozen && reconstructionEnd == null
+                    && !NavigationGraphCache.TileKey.at(next).equals(NavigationGraphCache.TileKey.at(heuristicAnchor)))
+                return false;
             latestTarget = next;
-            if (suffix != null) return; // A repair's search goal is the rejoin point, never the moving player.
-            if (next.equals(target)) return;
+            if (suffix != null) return true; // A repair's search goal is the rejoin point, never the moving player.
+            if (next.equals(target)) return true;
             // Preserve a finite completion phase. A continuously moving player cannot keep
             // canceling a proven endpoint or a long route's resumable reconstruction.
             // The resulting plan advertises this frozen snapshot; execution can refresh its tail.
-            if (goalFrozen || reconstructionEnd != null) return;
-            if (!NavigationGraphCache.TileKey.at(next).equals(NavigationGraphCache.TileKey.at(heuristicAnchor)))
-                throw new IllegalArgumentException("Retarget must remain within the same tile");
+            if (goalFrozen || reconstructionEnd != null) return true;
             target = next;
             tailDirty = true;
+            return true;
         }
         public int recordCount() { return records.size(); }
         @Override public boolean finished() {

@@ -59,16 +59,17 @@ def navigationDoors = project.hasProperty('navigationDoors')
 def navigationRaid = project.hasProperty('navigationRaid')
 def navigationScaledRoutes = project.hasProperty('navigationScaledRoutes')
 def navigationArrival = project.hasProperty('navigationArrival')
+def navigationRetarget = project.hasProperty('navigationRetarget')
 def navigationDiagnostic = navigationReference || navigationDropMatrix || navigationDropChanges || navigationDropShapes || navigationLifecycle
         || navigationDropSurfaces || navigationDropContext || navigationRoomLifecycle
         || navigationQualification || navigationChunks || navigationDoors || navigationRaid || navigationScaledRoutes
-        || navigationArrival
+        || navigationArrival || navigationRetarget
 def navigationVerification = navigationRegression || navigationDiagnostic || navigationMultiRoomLoad || navigationLoadSize != null
 def selectedTestGroups = [backpackGameTests, barrierGroupRulesGameTests, navigationLoadSize != null,
                           navigationMultiRoomLoad, navigationRegression, navigationReference, navigationDropMatrix, navigationDropChanges, navigationDropShapes, navigationLifecycle,
                           navigationDropSurfaces, navigationDropContext, navigationRoomLifecycle,
                           navigationQualification, navigationChunks, navigationDoors, navigationRaid, navigationScaledRoutes,
-                          navigationArrival,
+                          navigationArrival, navigationRetarget,
                           project.hasProperty('forceEndGameTests')]
 if (selectedTestGroups.count { it } > 1) {
     throw new GradleException('Choose exactly one GameTest namespace group')
@@ -90,7 +91,8 @@ try {
 } catch (NumberFormatException ignored) {
     throw new GradleException('navigationSeed must be a signed 64-bit integer')
 }
-def navigationScenario = navigationArrival ? 'arrival'
+def navigationScenario = navigationRetarget ? 'retarget'
+        : navigationArrival ? 'arrival'
         : navigationScaledRoutes ? 'scaled-routes'
         : navigationRaid ? 'raid'
         : navigationDoors ? 'doors'
@@ -107,7 +109,8 @@ def navigationScenario = navigationArrival ? 'arrival'
         : navigationReference ? 'reference'
         : navigationMultiRoomLoad ? 'multi'
         : navigationLoadSize ?: 'regression'
-def navigationHolder = navigationArrival ? 'codpattern_navigation_arrival'
+def navigationHolder = navigationRetarget ? 'codpattern_navigation_retarget'
+        : navigationArrival ? 'codpattern_navigation_arrival'
         : navigationScaledRoutes ? 'codpattern_navigation_scaled_routes'
         : navigationRaid ? 'codpattern_navigation_raid'
         : navigationDoors ? 'codpattern_navigation_doors'

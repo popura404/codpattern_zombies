@@ -24,6 +24,8 @@ public final class NavigationPlannerCompatTest {
         portalPathsRetainFineEvidenceAndInvalidateLocally();
         fractionalFloorsAndNegativeTilesDoNotAlias();
         targetMotionKeepsOpenFrontier();
+        crossTileRetargetRequestsRestartWithoutChangingSearch();
+        frozenGoalKeepsCompletionAcrossTileBoundaries();
         failureProbeRequiresObservedShapeChange();
         nearTargetNeedsAProvenConnection();
         partialScansCanReceiveAnotherFairSliceInSameTick();
@@ -45,7 +47,7 @@ public final class NavigationPlannerCompatTest {
         repairWaitsForChunksAndRejectsChangedEvidence();
         repeatedRepairsHaveNoReservationAncestry();
         verifiedSuffixCannotOutliveEvictedVersionMetadata();
-        System.out.println("NavigationPlannerCompatTest: 31 checks passed");
+        System.out.println("NavigationPlannerCompatTest: 33 checks passed");
     }
     private static void longRouteHasNoRadiusOrLengthCutoff() {
         List<TraversalEdge> small = longRoute(1), large = longRoute(64);
@@ -188,11 +190,61 @@ public final class NavigationPlannerCompatTest {
             graph.put(previous, List.of(edge(cache, previous, next, TraversalEdge.Action.WALK))); previous = next; }
         NavigationPlanner.Search search = search(cache, first, node(cache, 5, 0), graph, 20);
         search.advance(budget(1, 1)); int count = search.recordCount();
-        search.retarget(previous.feet());
+        require(search.retarget(previous.feet()), "same-tile motion must reuse the search");
         require(search.recordCount() == count, "moving target must retain existing open/closed records");
         run(search, 1, 100);
         require(search.result().status() == PlanningResult.Status.READY && search.result().plan().edges().size() == 7,
                 "refinement follows the updated endpoint in the same standing tile");
+    }
+    private static void crossTileRetargetRequestsRestartWithoutChangingSearch() {
+        for (Vec3 next : List.of(new Vec3(8, 7.5, 0), new Vec3(-.1, 7.5, 0),
+                new Vec3(5.1, 8.1, 0), new Vec3(5, -.1, 0), new Vec3(5, 7.5, 8), new Vec3(5, 7.5, -.1))) {
+            NavigationGraphCache cache = new NavigationGraphCache();
+            Map<SurfaceNode, List<TraversalEdge>> graph = new HashMap<>();
+            SurfaceNode start = node(cache, 0, 7.5), target = node(cache, 5, 7.5), previous = start;
+            for (int x = 1; x <= 7; x++) {
+                SurfaceNode node = node(cache, x, 7.5);
+                graph.put(previous, List.of(edge(cache, previous, node, TraversalEdge.Action.WALK)));
+                previous = node;
+            }
+            NavigationPlanner.Search search = search(cache, start, target, graph, 32);
+            search.advance(budget(1, 1));
+            int records = search.recordCount(), memory = cache.stats().transientEntries();
+            PlanningResult before = search.result();
+            require(records > 0 && !search.completionInProgress(), "fixture has a live, unfrozen frontier");
+            require(!search.retarget(next), "cross-tile motion must request a restart without throwing");
+            require(search.target().equals(target.feet()) && search.recordCount() == records
+                            && cache.stats().transientEntries() == memory && search.result() == before,
+                    "a refused retarget cannot partially change the old target, frontier or resource ownership");
+            require(search.retarget(previous.feet()), "a refused target cannot poison subsequent same-tile reuse");
+            run(search, 1, 100);
+            require(search.result().status() == PlanningResult.Status.READY
+                            && search.result().plan().targetSnapshot().equals(previous.feet()),
+                    "the retained frontier must still complete to an accepted target");
+            search.close();
+            require(cache.stats().transientEntries() == 0, "closing a retargeted search releases all reservations");
+        }
+    }
+    private static void frozenGoalKeepsCompletionAcrossTileBoundaries() {
+        NavigationGraphCache cache = new NavigationGraphCache();
+        SurfaceNode start = node(cache, 0, 0), target = node(cache, 7, 0);
+        require(cache.putEdges(start, PROFILE, List.of(edge(cache, start, target, TraversalEdge.Action.WALK))),
+                "fixture caches a proven connection to the target");
+        NavigationPlanner.Search search = search(cache, start, target, Map.of(), 32);
+        search.advance(budget(1, 1));
+        require(search.completionInProgress() && search.recordCount() == 2,
+                "one expansion freezes the proven goal before route reconstruction starts");
+        require(search.retarget(new Vec3(8.1, 0, 0)) && search.target().equals(target.feet()),
+                "cross-tile motion cannot cancel a frozen goal or relabel its proven endpoint");
+        for (int tick = 2; tick < 100 && !search.finished(); tick++) {
+            require(search.retarget(new Vec3(8.1 + tick, 0, 0)), "completion must accept continued target motion");
+            search.advance(budget(1, tick));
+        }
+        require(search.result().status() == PlanningResult.Status.READY
+                        && search.result().plan().targetSnapshot().equals(target.feet()),
+                "frozen completion publishes its proven snapshot despite movement across tiles");
+        search.close();
+        require(cache.stats().transientEntries() == 0, "closing the frozen route releases all reservations");
     }
     private static void failureProbeRequiresObservedShapeChange() {
         NavigationGraphCache cache = new NavigationGraphCache();

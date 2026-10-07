@@ -6,7 +6,7 @@ import java.nio.file.Path;
 
 public final class ZombiesObjectLabelWorldRendererStaticContractCompatTest {
     private static final Path RENDERER =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/event/client/zombies/ZombiesObjectLabelWorldRenderer.java");
+            Path.of("src/main/java/com/cdp/codpattern/event/client/zombies/ZombiesObjectLabelWorldRenderer.java");
 
     private ZombiesObjectLabelWorldRendererStaticContractCompatTest() {
     }

@@ -265,8 +265,8 @@ public final class ZombiesWaveTextCompatTest {
     }
 
     private static void mapLifecycleOwnsReloadBroadcastAndCancellationIntegration() throws IOException {
-        Path mapPath = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
-        Path pathsPath = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/config/zombies/ZombiesConfigPaths.java");
+        Path mapPath = Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
+        Path pathsPath = Path.of("src/main/java/com/cdp/codpattern/config/zombies/ZombiesConfigPaths.java");
         String map = Files.readString(mapPath);
         String paths = Files.readString(pathsPath);
 

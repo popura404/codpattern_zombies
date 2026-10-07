@@ -6,13 +6,13 @@ import java.nio.file.Path;
 
 public final class ZombiesBuffRuntimeEffectStaticContractCompatTest {
     private static final Path RUNTIME_EFFECT_SERVICE = Path.of(
-            "../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesBuffRuntimeEffectService.java");
+            "src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesBuffRuntimeEffectService.java");
     private static final Path BUFF_COMBAT_SERVICE = Path.of(
-            "../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesBuffCombatService.java");
+            "src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesBuffCombatService.java");
     private static final Path ZOMBIES_MAP = Path.of(
-            "../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
+            "src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
     private static final Path TACZ_HEADSHOT_HANDLER = Path.of(
-            "../zombies-addon/src/main/java/com/cdp/codpattern/compat/tacz/event/zombies/TaczHeadshotMultiplierOverrideHandler.java");
+            "src/main/java/com/cdp/codpattern/compat/tacz/event/zombies/TaczHeadshotMultiplierOverrideHandler.java");
 
     private ZombiesBuffRuntimeEffectStaticContractCompatTest() {
     }

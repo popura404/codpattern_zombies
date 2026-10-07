@@ -15,7 +15,4 @@ plugins {
 
 rootProject.name = 'codpattern-zombies'
 
-// The addon is the runnable build.  It consumes the main mod as a sibling
-// project, which keeps the main repository independent of addon sources.
-include(':codpattern-main')
-project(':codpattern-main').projectDir = file('../codPattern')
+// COD Pattern is resolved from its published Modrinth artifact by build.gradle.

@@ -6,15 +6,15 @@ import java.nio.file.Path;
 
 public final class ZombiesReconnectRecoveryStaticContractCompatTest {
     private static final Path RECOVERY_SERVICE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesReconnectRecoveryService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesReconnectRecoveryService.java");
     private static final Path PLAYER_STATE_SERVICE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesPlayerStateService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesPlayerStateService.java");
     private static final Path LOGIN_CONTRIBUTOR =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesLoginRecoveryContributor.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesLoginRecoveryContributor.java");
     private static final Path ZOMBIES_MAP =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
     private static final Path ROOM_HANDLE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesRoomHandleFactory.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesRoomHandleFactory.java");
 
     private ZombiesReconnectRecoveryStaticContractCompatTest() {
     }

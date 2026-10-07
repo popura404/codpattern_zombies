@@ -6,21 +6,21 @@ import java.nio.file.Path;
 
 public final class ZombiesMapScopedConfigStaticContractCompatTest {
     private static final Path CONFIG_PATH =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/config/zombies/ZombiesConfigPaths.java");
+            Path.of("src/main/java/com/cdp/codpattern/config/zombies/ZombiesConfigPaths.java");
     private static final Path RULES_REPOSITORY =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/config/zombies/ZombiesRulesRepository.java");
+            Path.of("src/main/java/com/cdp/codpattern/config/zombies/ZombiesRulesRepository.java");
     private static final Path CONFIG_REPOSITORY =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/config/zombies/ZombiesConfigRepository.java");
+            Path.of("src/main/java/com/cdp/codpattern/config/zombies/ZombiesConfigRepository.java");
     private static final Path RULES_CONFIG =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/config/zombies/ZombiesRulesConfig.java");
+            Path.of("src/main/java/com/cdp/codpattern/config/zombies/ZombiesRulesConfig.java");
     private static final Path ZOMBIES_MAP =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
     private static final Path STARTUP_VALIDATION =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesStartupValidationService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesStartupValidationService.java");
     private static final Path STARTER_KIT =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesStarterKitDistributor.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesStarterKitDistributor.java");
     private static final Path SPAWN_SERVICE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesMobSpawnService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesMobSpawnService.java");
 
     private ZombiesMapScopedConfigStaticContractCompatTest() {
     }

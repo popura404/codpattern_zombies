@@ -183,7 +183,7 @@ public final class ZombiesPurchaseStateServicesCompatTest {
 
     private static void barrierPurchaseSuccessRecordsOpenCounter() throws IOException {
         String service = Files.readString(Path.of(
-                "../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesBarrierService.java"));
+                "src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesBarrierService.java"));
         requireContains(service, "objectStateStore.clearBarrierGroup(barrier.group(), barriersSupplier.get())",
                 "barrier purchase must clear a barrier group before recording stats");
         requireContains(service, "economyService.recordBarrierOpened(playerId);",

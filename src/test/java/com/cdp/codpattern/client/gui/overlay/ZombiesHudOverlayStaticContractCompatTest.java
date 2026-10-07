@@ -5,8 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class ZombiesHudOverlayStaticContractCompatTest {
-    private static final Path OVERLAY = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/client/gui/overlay/zombies/ZombiesHudOverlay.java");
-    private static final Path TACZ_SUPPRESSOR = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/event/client/zombies/ZombiesTaczHudSuppressor.java");
+    private static final Path OVERLAY = Path.of("src/main/java/com/cdp/codpattern/client/gui/overlay/zombies/ZombiesHudOverlay.java");
+    private static final Path TACZ_SUPPRESSOR = Path.of("src/main/java/com/cdp/codpattern/event/client/zombies/ZombiesTaczHudSuppressor.java");
 
     private ZombiesHudOverlayStaticContractCompatTest() {
     }

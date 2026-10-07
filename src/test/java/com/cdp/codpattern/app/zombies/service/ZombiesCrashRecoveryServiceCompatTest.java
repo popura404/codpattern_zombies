@@ -54,11 +54,11 @@ public final class ZombiesCrashRecoveryServiceCompatTest {
 
     private static void cleanupWiringStaysInsideZombiesBoundary() throws Exception {
         String recoveryService = Files.readString(Path.of(
-                "../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesCrashRecoveryService.java"));
+                "src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesCrashRecoveryService.java"));
         String zombiesMap = Files.readString(Path.of(
-                "../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java"));
+                "src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java"));
         String lifecycleHandler = Files.readString(Path.of(
-                "../zombies-addon/src/main/java/com/cdp/codpattern/event/zombies/ZombiesServerLifecycleEventHandler.java"));
+                "src/main/java/com/cdp/codpattern/event/zombies/ZombiesServerLifecycleEventHandler.java"));
 
         require(recoveryService.contains("cleanupResidualTaggedEntitiesForRoom("),
                 "zombies recovery should expose a room-scoped NPC cleanup entry point");

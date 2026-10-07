@@ -5,7 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class ZombiesDeployObjectEditorStaticContractCompatTest {
-    private static final Path EDITOR = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployObjectEditor.java");
+    private static final Path EDITOR = Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployObjectEditor.java");
 
     private ZombiesDeployObjectEditorStaticContractCompatTest() {
     }

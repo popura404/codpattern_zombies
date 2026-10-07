@@ -9,15 +9,15 @@ public final class FpsmToolPermissionStaticContractCompatTest {
     private static final Path TOOL_INTERACTION_PACKET = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/packet/ToolInteractionC2SPacket.java");
     private static final Path MAP_CREATOR_ACTION_PACKET = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/packet/MapCreatorToolActionC2SPacket.java");
     private static final Path SPAWN_POINT_ACTION_PACKET = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/packet/SpawnPointToolActionC2SPacket.java");
-    private static final Path ZOMBIES_DEPLOY_ACTION_PACKET = Path.of("../zombies-addon/src/main/java/com/phasetranscrystal/fpsmatch/common/packet/zombies/ZombiesDeployToolActionC2SPacket.java");
+    private static final Path ZOMBIES_DEPLOY_ACTION_PACKET = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/packet/zombies/ZombiesDeployToolActionC2SPacket.java");
     private static final Path FPSM_EVENTS = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/FPSMEvents.java");
     private static final Path TDM_MODE_MODULE = Path.of(
             "src/main/java/com/cdp/codpattern/app/tdm/TdmModeModule.java");
     private static final Path ZOMBIES_PREVIEW_CONTRIBUTOR = Path.of(
-            "../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/bootstrap/ZombiesHeldToolPreviewContributor.java");
+            "src/main/java/com/cdp/codpattern/app/zombies/bootstrap/ZombiesHeldToolPreviewContributor.java");
     private static final Path MAP_CREATOR_TOOL = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/MapCreatorTool.java");
     private static final Path SPAWN_POINT_TOOL = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/SpawnPointTool.java");
-    private static final Path ZOMBIES_DEPLOY_TOOL = Path.of("../zombies-addon/src/main/java/com/phasetranscrystal/fpsmatch/common/item/zombies/ZombiesDeployTool.java");
+    private static final Path ZOMBIES_DEPLOY_TOOL = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/zombies/ZombiesDeployTool.java");
     private static final Path[] LANG_FILES = {
             Path.of("src/main/resources/assets/codpattern/lang/en_us.json"),
             Path.of("src/main/resources/assets/codpattern/lang/zh_cn.json"),
@@ -29,18 +29,26 @@ public final class FpsmToolPermissionStaticContractCompatTest {
     }
 
     public static void main(String[] args) throws IOException {
-        assertHelperRequiresLevelTwoOp();
-        assertWorldInteractionPacketGate();
-        assertActionPacketGates();
-        assertToolMethodGates();
-        assertPreviewTickGate();
-        assertPermissionMessageLocalized();
+        assertZombiesActionPacketGate();
+        assertToolMethodGate(ZOMBIES_DEPLOY_TOOL, "zombies deploy tool");
+        assertZombiesPreviewTickGate();
 
         System.out.println("PASS FPSM tool permission static contract compat");
     }
 
-    private static void assertHelperRequiresLevelTwoOp() throws IOException {
-        String helper = Files.readString(TOOL_ACCESS_HELPER);
+    /** Audits implementation details only when the main mod checkout is explicitly supplied. */
+    public static void mainSourceContracts(Path mainSourceRoot) throws IOException {
+        assertHelperRequiresLevelTwoOp(mainSourceRoot);
+        assertWorldInteractionPacketGate(mainSourceRoot);
+        assertMainActionPacketGates(mainSourceRoot);
+        assertToolMethodGate(mainSourceRoot.resolve(MAP_CREATOR_TOOL), "map creator tool");
+        assertToolMethodGate(mainSourceRoot.resolve(SPAWN_POINT_TOOL), "spawn point tool");
+        assertMainPreviewTickGate(mainSourceRoot);
+        assertPermissionMessageLocalized(mainSourceRoot);
+    }
+
+    private static void assertHelperRequiresLevelTwoOp(Path mainSourceRoot) throws IOException {
+        String helper = Files.readString(mainSourceRoot.resolve(TOOL_ACCESS_HELPER));
         requireContains(helper, "private static final int ADMIN_PERMISSION_LEVEL = 2",
                 "tool permission helper must require operator level 2");
         requireContains(helper, "player.hasPermissions(ADMIN_PERMISSION_LEVEL)",
@@ -49,8 +57,8 @@ public final class FpsmToolPermissionStaticContractCompatTest {
                 "tool permission helper must notify denied players");
     }
 
-    private static void assertWorldInteractionPacketGate() throws IOException {
-        String packet = Files.readString(TOOL_INTERACTION_PACKET);
+    private static void assertWorldInteractionPacketGate(Path mainSourceRoot) throws IOException {
+        String packet = Files.readString(mainSourceRoot.resolve(TOOL_INTERACTION_PACKET));
         String handleBody = methodBody(packet, "public void handle");
         requireContains(handleBody, "ToolAccessHelper.ensureAdminAccess(player)",
                 "world tool interaction packet must gate use behind op level 2");
@@ -58,14 +66,16 @@ public final class FpsmToolPermissionStaticContractCompatTest {
                 "permission gate must run before dispatching world tool interaction");
     }
 
-    private static void assertActionPacketGates() throws IOException {
-        assertPacketHandleGate(MAP_CREATOR_ACTION_PACKET, "map creator action packet");
+    private static void assertMainActionPacketGates(Path mainSourceRoot) throws IOException {
+        assertPacketHandleGate(mainSourceRoot.resolve(MAP_CREATOR_ACTION_PACKET), "map creator action packet");
 
-        String spawnPacket = Files.readString(SPAWN_POINT_ACTION_PACKET);
+        String spawnPacket = Files.readString(mainSourceRoot.resolve(SPAWN_POINT_ACTION_PACKET));
         assertPacketHandleGate(spawnPacket, "spawn point action packet");
         requireOccurrencesAtLeast(spawnPacket, "ToolAccessHelper.ensureAdminAccess(player)", 2,
                 "spawn point screen send and action handling must both require op level 2");
+    }
 
+    private static void assertZombiesActionPacketGate() throws IOException {
         String zombiesPacket = Files.readString(ZOMBIES_DEPLOY_ACTION_PACKET);
         assertPacketHandleGate(zombiesPacket, "zombies deploy action packet");
         requireOccurrencesAtLeast(zombiesPacket, "ToolAccessHelper.ensureAdminAccess(player)", 2,
@@ -78,14 +88,16 @@ public final class FpsmToolPermissionStaticContractCompatTest {
 
     private static void assertPacketHandleGate(String source, String label) {
         String handleBody = methodBody(source, "public void handle");
+        if (!handleBody.contains("ToolAccessHelper.ensureAdminAccess(player)")) {
+            requireContains(handleBody, "enqueueWork(() -> process(ctx.get().getSender()))",
+                    label + " must delegate to the server-side processor when its gate is extracted");
+            String processBody = methodBody(source, "public void process(ServerPlayer player)");
+            requireOrder(processBody, "ToolAccessHelper.ensureAdminAccess(player)", "switch (action)",
+                    label + " processor must check permissions before dispatching mutations");
+            return;
+        }
         requireContains(handleBody, "ToolAccessHelper.ensureAdminAccess(player)",
                 label + " must gate server-side mutations behind op level 2");
-    }
-
-    private static void assertToolMethodGates() throws IOException {
-        assertToolMethodGate(MAP_CREATOR_TOOL, "map creator tool");
-        assertToolMethodGate(SPAWN_POINT_TOOL, "spawn point tool");
-        assertToolMethodGate(ZOMBIES_DEPLOY_TOOL, "zombies deploy tool");
     }
 
     private static void assertToolMethodGate(Path path, String label) throws IOException {
@@ -98,10 +110,9 @@ public final class FpsmToolPermissionStaticContractCompatTest {
                 label + " preview sync must not expose editor overlays to non-ops");
     }
 
-    private static void assertPreviewTickGate() throws IOException {
-        String events = Files.readString(FPSM_EVENTS);
-        String tdmModeModule = Files.readString(TDM_MODE_MODULE);
-        String zombiesContributor = Files.readString(ZOMBIES_PREVIEW_CONTRIBUTOR);
+    private static void assertMainPreviewTickGate(Path mainSourceRoot) throws IOException {
+        String events = Files.readString(mainSourceRoot.resolve(FPSM_EVENTS));
+        String tdmModeModule = Files.readString(mainSourceRoot.resolve(TDM_MODE_MODULE));
         requireContains(events, "ToolAccessHelper.hasAdminAccess(player)",
                 "tool preview tick must be gated behind op level 2");
         requireContains(events, "ModeHeldToolPreviewContributors.route(player, stack",
@@ -110,13 +121,17 @@ public final class FpsmToolPermissionStaticContractCompatTest {
                 "map creator preview must clear for non-op players");
         requireContains(tdmModeModule, "SpawnPointTool.clearHeldPreview(player)",
                 "spawn point preview must clear for non-op players");
+    }
+
+    private static void assertZombiesPreviewTickGate() throws IOException {
+        String zombiesContributor = Files.readString(ZOMBIES_PREVIEW_CONTRIBUTOR);
         requireContains(zombiesContributor, "ZombiesDeployTool.clearHeldPreview(player)",
                 "zombies deploy preview must clear for non-op players");
     }
 
-    private static void assertPermissionMessageLocalized() throws IOException {
+    private static void assertPermissionMessageLocalized(Path mainSourceRoot) throws IOException {
         for (Path langFile : LANG_FILES) {
-            requireContains(Files.readString(langFile), "\"message.fpsm.tool.admin_required\"",
+            requireContains(Files.readString(mainSourceRoot.resolve(langFile)), "\"message.fpsm.tool.admin_required\"",
                     "tool permission denial message must be localized in " + langFile);
         }
     }

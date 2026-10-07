@@ -6,17 +6,17 @@ import java.nio.file.Path;
 
 public final class ZombiesRoomLobbyFlowStaticContractCompatTest {
     private static final Path ZOMBIES_MAP =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
     private static final Path ROOM_HANDLE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesRoomHandleFactory.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesRoomHandleFactory.java");
     private static final Path OBJECT_INTERACTION_SERVICE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesObjectInteractionService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesObjectInteractionService.java");
     private static final Path CLIENT_PACKET_HANDLER =
             Path.of("src/main/java/com/cdp/codpattern/network/handler/ClientPacketHandler.java");
-    private static final Path EN_US_LANG = Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/en_us.json");
-    private static final Path ZH_CN_LANG = Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/zh_cn.json");
-    private static final Path ZH_TW_LANG = Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/zh_tw.json");
-    private static final Path JA_JP_LANG = Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/ja_jp.json");
+    private static final Path EN_US_LANG = Path.of("src/main/resources/assets/codpattern_zombies/lang/en_us.json");
+    private static final Path ZH_CN_LANG = Path.of("src/main/resources/assets/codpattern_zombies/lang/zh_cn.json");
+    private static final Path ZH_TW_LANG = Path.of("src/main/resources/assets/codpattern_zombies/lang/zh_tw.json");
+    private static final Path JA_JP_LANG = Path.of("src/main/resources/assets/codpattern_zombies/lang/ja_jp.json");
 
     private ZombiesRoomLobbyFlowStaticContractCompatTest() {
     }
@@ -25,7 +25,6 @@ public final class ZombiesRoomLobbyFlowStaticContractCompatTest {
         String zombiesMap = read(ZOMBIES_MAP);
         String roomHandle = read(ROOM_HANDLE);
         String objectInteractionService = read(OBJECT_INTERACTION_SERVICE);
-        String clientPacketHandler = read(CLIENT_PACKET_HANDLER);
 
         requireContains(roomHandle, ".withReady(ports)",
                 "zombies room handle should route ready-state writes through its ports");
@@ -94,13 +93,6 @@ public final class ZombiesRoomLobbyFlowStaticContractCompatTest {
         requireContains(objectInteractionService, "FAILURE_PHASE_LOCKED",
                 "phase-locked interaction failures should use a dedicated translation key");
 
-        requireContains(clientPacketHandler, "closeStaleModeVoteDialog(minecraft, snapshot);",
-                "runtime state sync should close stale vote dialogs after a failed/cancelled start vote");
-        requireContains(clientPacketHandler, "\"START_VOTE\".equalsIgnoreCase(snapshot.phaseKey())",
-                "vote dialogs should remain open only while the room is still in START_VOTE");
-        requireContains(clientPacketHandler, "minecraft.setScreen(restorePreviousScreen ? previousScreen : null);",
-                "failed-vote dialog cleanup should restore the previous screen instead of leaving no UI context");
-
         requireContains(read(EN_US_LANG), "message.codpattern.zombies.interaction.failure.phase_locked",
                 "English phase-locked interaction message should exist");
         requireContains(read(ZH_CN_LANG), "message.codpattern.zombies.interaction.failure.phase_locked",
@@ -111,6 +103,18 @@ public final class ZombiesRoomLobbyFlowStaticContractCompatTest {
                 "Japanese phase-locked interaction message should exist");
 
         System.out.println("PASS zombies room lobby flow static contract compat");
+    }
+
+    /** Audits implementation details only when the main mod checkout is explicitly supplied. */
+    public static void mainSourceContracts(Path mainSourceRoot) throws IOException {
+        String clientPacketHandler = read(mainSourceRoot.resolve(CLIENT_PACKET_HANDLER));
+
+        requireContains(clientPacketHandler, "closeStaleModeVoteDialog(minecraft, snapshot);",
+                "runtime state sync should close stale vote dialogs after a failed/cancelled start vote");
+        requireContains(clientPacketHandler, "\"START_VOTE\".equalsIgnoreCase(snapshot.phaseKey())",
+                "vote dialogs should remain open only while the room is still in START_VOTE");
+        requireContains(clientPacketHandler, "minecraft.setScreen(restorePreviousScreen ? previousScreen : null);",
+                "failed-vote dialog cleanup should restore the previous screen instead of leaving no UI context");
     }
 
     private static String read(Path path) throws IOException {

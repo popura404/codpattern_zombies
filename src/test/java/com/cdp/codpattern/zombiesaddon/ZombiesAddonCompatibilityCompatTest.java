@@ -5,6 +5,7 @@ import com.cdp.codpattern.architecture.ModeSplitVerificationRoots;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Properties;
 
 public final class ZombiesAddonCompatibilityCompatTest {
     private static final String ADDON_VERSION = "0.2.4b";
@@ -43,14 +44,19 @@ public final class ZombiesAddonCompatibilityCompatTest {
     }
 
     private static void metadataUsesIndependentMainVersionRange() throws Exception {
-        Path addonRoot = ModeSplitVerificationRoots.repositoryRoot().resolve("../zombies-addon").normalize();
-        String properties = read(addonRoot.resolve("gradle.properties"));
+        Path addonRoot = ModeSplitVerificationRoots.repositoryRoot();
+        Properties properties = new Properties();
+        try (var reader = Files.newBufferedReader(addonRoot.resolve("gradle.properties"))) {
+            properties.load(reader);
+        }
         String metadata = read(addonRoot.resolve("src/main/resources/META-INF/mods.toml"));
 
-        require(properties.contains("mod_version=" + ADDON_VERSION),
+        require(ADDON_VERSION.equals(properties.getProperty("mod_version")),
                 "addon project version must be " + ADDON_VERSION);
-        require(properties.contains("codpattern_version_range=[0.8.6b,)"),
-                "main mod compatibility must start at 0.8.6b");
+        String mainVersion = properties.getProperty("codpattern_version", "");
+        require(!mainVersion.isBlank()
+                        && ("[" + mainVersion + ",)").equals(properties.getProperty("codpattern_version_range")),
+                "main compatibility must start at the independently pinned published main version");
         require(metadata.contains("versionRange=\"${codpattern_version_range}\""),
                 "main dependency must use its independent compatibility range");
         require(!metadata.contains("versionRange=\"[${mod_version}]\""),
@@ -58,24 +64,27 @@ public final class ZombiesAddonCompatibilityCompatTest {
     }
 
     private static void physicalEntriesPreserveBootstrapOrdering() throws Exception {
-        Path mainRoot = ModeSplitVerificationRoots.repositoryRoot();
-        Path addonRoot = mainRoot.resolve("../zombies-addon").normalize();
-        String mainEntry = read(mainRoot.resolve("src/main/java/com/cdp/codpattern/CodPattern.java"));
+        Path addonRoot = ModeSplitVerificationRoots.repositoryRoot();
         String addonEntry = read(addonRoot.resolve(
                 "src/main/java/com/cdp/codpattern/zombiesaddon/ZombiesAddon.java"));
-        String coreBootstrap = read(mainRoot.resolve(
-                "src/main/java/com/cdp/codpattern/bootstrap/CoreBootstrap.java"));
         String zombiesBootstrap = read(addonRoot.resolve(
                 "src/main/java/com/cdp/codpattern/app/zombies/bootstrap/ZombiesBootstrap.java"));
 
-        require(mainEntry.contains("CoreBootstrap.install(modEventBus);")
-                        && !mainEntry.contains("ZombiesBootstrap"),
-                "main entry must install only CoreBootstrap");
         require(addonEntry.contains("ZombiesAddonCompatibility.install(localVersion);")
                         && addonEntry.contains("ZombiesBootstrap.install(modEventBus);"),
                 "addon entry must install topology enforcement and ZombiesBootstrap");
         require(zombiesBootstrap.contains("ZombiesNetworkPacketContributor.install();"),
                 "addon construction must install packet contributions");
+    }
+
+    /** Optional cross-project source audit, invoked only by runMainSourceIntegrationCompat. */
+    public static void mainSourceContracts(Path mainRoot) throws Exception {
+        String mainEntry = read(mainRoot.resolve("src/main/java/com/cdp/codpattern/CodPattern.java"));
+        String coreBootstrap = read(mainRoot.resolve(
+                "src/main/java/com/cdp/codpattern/bootstrap/CoreBootstrap.java"));
+        require(mainEntry.contains("CoreBootstrap.install(modEventBus);")
+                        && !mainEntry.contains("ZombiesBootstrap"),
+                "main entry must install only CoreBootstrap");
         require(coreBootstrap.contains("modEventBus.addListener(CoreBootstrap::onCommonSetup);")
                         && coreBootstrap.contains("ModNetworkChannel.register();"),
                 "main must register the real channel from the later common-setup callback");

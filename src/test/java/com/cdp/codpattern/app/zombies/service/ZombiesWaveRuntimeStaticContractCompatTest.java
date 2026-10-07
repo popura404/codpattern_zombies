@@ -6,35 +6,35 @@ import java.nio.file.Path;
 
 public final class ZombiesWaveRuntimeStaticContractCompatTest {
     private static final Path SPAWN_SERVICE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesMobSpawnService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesMobSpawnService.java");
     private static final Path COMBAT_ADAPTER =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesEntityCombatEventAdapter.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesEntityCombatEventAdapter.java");
     private static final Path WAVE_STATE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/runtime/ZombiesWaveRuntimeState.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/runtime/ZombiesWaveRuntimeState.java");
     private static final Path RECYCLE_SERVICE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesMobRecycleService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesMobRecycleService.java");
     private static final Path WAVE_DIRECTOR =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesWaveDirector.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesWaveDirector.java");
     private static final Path WAVE_DEFINITION =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/model/ZombiesWaveDefinition.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/model/ZombiesWaveDefinition.java");
     private static final Path PHASE_STATE_MACHINE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/runtime/ZombiesPhaseStateMachine.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/runtime/ZombiesPhaseStateMachine.java");
     private static final Path ROOM_HANDLE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesRoomHandleFactory.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesRoomHandleFactory.java");
     private static final Path ZOMBIES_MAP =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
     private static final Path MODE_ROOM_TICK_EVENT_HANDLER =
             Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/event/ModeRoomTickEventHandler.java");
     private static final Path ENTITY_RECONCILIATION_CONTRIBUTOR =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesEntityReconciliationContributor.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesEntityReconciliationContributor.java");
     private static final Path COD_TDM_EVENT_HANDLER =
             Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/event/CodTdmEventHandler.java");
     private static final Path AREA_PROTECTION_CONTRIBUTOR =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/bootstrap/ZombiesAreaProtectionContributor.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/bootstrap/ZombiesAreaProtectionContributor.java");
     private static final Path CLIENT_STATE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/client/zombies/ClientZombiesState.java");
+            Path.of("src/main/java/com/cdp/codpattern/client/zombies/ClientZombiesState.java");
     private static final Path ZOMBIES_MARKER_RENDERER =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/event/client/zombies/ZombiesCombatMarkerWorldRenderer.java");
+            Path.of("src/main/java/com/cdp/codpattern/event/client/zombies/ZombiesCombatMarkerWorldRenderer.java");
 
     private ZombiesWaveRuntimeStaticContractCompatTest() {
     }
@@ -49,9 +49,7 @@ public final class ZombiesWaveRuntimeStaticContractCompatTest {
         String phaseStateMachine = read(PHASE_STATE_MACHINE);
         String roomHandle = read(ROOM_HANDLE);
         String zombiesMap = read(ZOMBIES_MAP);
-        String modeRoomTickEventHandler = read(MODE_ROOM_TICK_EVENT_HANDLER);
         String entityReconciliationContributor = read(ENTITY_RECONCILIATION_CONTRIBUTOR);
-        String codTdmEventHandler = read(COD_TDM_EVENT_HANDLER);
         String areaProtectionContributor = read(AREA_PROTECTION_CONTRIBUTOR);
         String clientState = read(CLIENT_STATE);
         String zombiesMarkerRenderer = read(ZOMBIES_MARKER_RENDERER);
@@ -286,12 +284,47 @@ public final class ZombiesWaveRuntimeStaticContractCompatTest {
         requireContains(zombiesMap,
                 "mobRecycleService.reset();",
                 "zombies map should reset recycle monitor state during cleanup/runtime reset");
-        requireContains(modeRoomTickEventHandler,
-                "ModeEntityReconciliationContributors.onMissingEntity(entry);",
-                "missing entities should dispatch through a mode-owned reconciliation contributor");
         requireContains(entityReconciliationContributor,
                 "ZombiesActiveMobCounter.instance().unregister(entry.roomId(), entry.entityId());",
                 "missing zombies entities must still clear active mob counters when no live room port handles them");
+        requireContains(areaProtectionContributor,
+                "entity instanceof ItemEntity || entity instanceof ExperienceOrb",
+                "zombies room drop suppression should include experience orbs");
+        requireContains(areaProtectionContributor,
+                "FpsMatchMapRegistry.listMaps(BuiltInGameModes.ZOMBIES)",
+                "item-drop suppression should be scoped to zombies map areas");
+        requireContains(clientState,
+                "public static Set<UUID> activeZombieEntityIds()",
+                "client zombies state must parse active zombie entity ids");
+        requireContains(zombiesMarkerRenderer,
+                "CombatMarkerWorldRenderer.renderEnemyMarker(",
+                "zombies markers should reuse the shared combat marker renderer");
+        requireContains(zombiesMarkerRenderer,
+                "findClientEntity(level, entityId)",
+                "zombies markers should render only synced active zombie ids");
+        requireContains(zombiesMarkerRenderer,
+                "for (UUID entityId : activeZombieIds)",
+                "zombies markers should inspect every synced active zombie");
+        requireContains(zombiesMarkerRenderer,
+                "event.getFrustum().isVisible(livingEntity.getBoundingBox().inflate(0.25D))",
+                "zombies markers should render only active zombies in the camera view");
+        requireContains(zombiesMarkerRenderer,
+                "localPlayer.hasLineOfSight(livingEntity)",
+                "zombies markers should hide health bars for active zombies the player cannot see");
+        requireAbsent(zombiesMarkerRenderer,
+                "enemyFocusRequiredTicks",
+                "zombies markers must not wait for a focus delay before rendering visible active zombies");
+
+        System.out.println("PASS zombies wave runtime static contract compat");
+    }
+
+    /** Audits implementation details only when the main mod checkout is explicitly supplied. */
+    public static void mainSourceContracts(Path mainSourceRoot) throws IOException {
+        String modeRoomTickEventHandler = read(mainSourceRoot.resolve(MODE_ROOM_TICK_EVENT_HANDLER));
+        String codTdmEventHandler = read(mainSourceRoot.resolve(COD_TDM_EVENT_HANDLER));
+        requireContains(modeRoomTickEventHandler,
+                "ModeEntityReconciliationContributors.onMissingEntity(entry);",
+                "missing entities should dispatch through a mode-owned reconciliation contributor");
         requireContains(codTdmEventHandler,
                 "public static void onExplosionDetonate(ExplosionEvent.Detonate event)",
                 "owned creeper explosions should be handled by the Forge explosion event");
@@ -322,38 +355,9 @@ public final class ZombiesWaveRuntimeStaticContractCompatTest {
         requireContains(codTdmEventHandler,
                 "ModeAreaProtectionContributors.suppressEntitySpawn(",
                 "the shared Forge join hook should delegate room-area protection to mode contributors");
-        requireContains(areaProtectionContributor,
-                "entity instanceof ItemEntity || entity instanceof ExperienceOrb",
-                "zombies room drop suppression should include experience orbs");
         requireContains(codTdmEventHandler,
                 "event.getEntity().discard();",
                 "zombies room drop entities should be discarded when blocked");
-        requireContains(areaProtectionContributor,
-                "FpsMatchMapRegistry.listMaps(BuiltInGameModes.ZOMBIES)",
-                "item-drop suppression should be scoped to zombies map areas");
-        requireContains(clientState,
-                "public static Set<UUID> activeZombieEntityIds()",
-                "client zombies state must parse active zombie entity ids");
-        requireContains(zombiesMarkerRenderer,
-                "CombatMarkerWorldRenderer.renderEnemyMarker(",
-                "zombies markers should reuse the shared combat marker renderer");
-        requireContains(zombiesMarkerRenderer,
-                "findClientEntity(level, entityId)",
-                "zombies markers should render only synced active zombie ids");
-        requireContains(zombiesMarkerRenderer,
-                "for (UUID entityId : activeZombieIds)",
-                "zombies markers should inspect every synced active zombie");
-        requireContains(zombiesMarkerRenderer,
-                "event.getFrustum().isVisible(livingEntity.getBoundingBox().inflate(0.25D))",
-                "zombies markers should render only active zombies in the camera view");
-        requireContains(zombiesMarkerRenderer,
-                "localPlayer.hasLineOfSight(livingEntity)",
-                "zombies markers should hide health bars for active zombies the player cannot see");
-        requireAbsent(zombiesMarkerRenderer,
-                "enemyFocusRequiredTicks",
-                "zombies markers must not wait for a focus delay before rendering visible active zombies");
-
-        System.out.println("PASS zombies wave runtime static contract compat");
     }
 
     private static String read(Path path) throws IOException {

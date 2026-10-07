@@ -13,44 +13,44 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.jar.JarFile;
 
-/** Combined-classpath checks that complement the isolated Phase 7 compiler and fresh-JVM fence. */
+/** Verifies addon ownership and mode registration against the published main-mod JAR. */
 public final class ModeSplitPhase7BoundaryCompatTest {
-    private static final Path OWNERSHIP_MANIFEST =
-            ModeSplitVerificationRoots.resolveRepositoryPath(
-                    Path.of("docs/mode-split/phase0/ownership-manifest.tsv"));
-
     private ModeSplitPhase7BoundaryCompatTest() {
     }
 
     public static void main(String[] args) throws Exception {
         testRunsFromExpectedClassRoot();
-        physicalSourceRootsContainBothRepositories();
+        physicalArtifactsHaveIndependentOwnership();
         zombiesGatewaysStayOutsideTheCompositionShim();
         combinedDistributionProvidesAllThreeModes();
-        verificationHarnessHasDocumentedTwoStageTopologyGates();
-        System.out.println("PASS Phase 7 ownership, gateway, combined-distribution, and two-stage topology compat");
+        verificationHarnessUsesPublishedDependency();
+        System.out.println("PASS Phase 7 addon ownership, public gateway, published dependency, and combined modes compat");
     }
 
-    private static void physicalSourceRootsContainBothRepositories() throws IOException {
-        List<Path> javaRoots = ModeSplitVerificationRoots.productionJavaRoots();
-        List<Path> resourceRoots = ModeSplitVerificationRoots.productionResourceRoots();
-        require(javaRoots.size() == 2 && javaRoots.stream().allMatch(Files::isDirectory),
-                "physical verification must receive main and addon Java roots: " + javaRoots);
-        require(resourceRoots.size() == 2 && resourceRoots.stream().allMatch(Files::isDirectory),
-                "physical verification must receive main and addon resource roots: " + resourceRoots);
-        require(Files.isRegularFile(ModeSplitVerificationRoots.productionJavaSource(
-                        "com.cdp.codpattern.app.tdm.TdmModeModule")),
-                "main physical root must own TdmModeModule");
-        require(Files.isRegularFile(ModeSplitVerificationRoots.productionJavaSource(
-                        "com.cdp.codpattern.app.zombies.ZombiesModeModule")),
-                "addon physical root must own ZombiesModeModule");
+    private static void physicalArtifactsHaveIndependentOwnership() throws IOException {
+        Path root = ModeSplitVerificationRoots.repositoryRoot();
+        Path addonJava = root.resolve("src/main/java");
+        require(Files.isDirectory(addonJava), "addon sources must belong to this checkout");
+        require(!Files.exists(addonJava.resolve("com/cdp/codpattern/CodPattern.java")),
+                "addon must not own or bundle the main entry point");
+        try (JarFile mainJar = new JarFile(ModeSplitVerificationRoots.mainDependencyJar().toFile());
+             var sources = Files.walk(addonJava)) {
+            require(mainJar.getJarEntry("com/cdp/codpattern/app/tdm/TdmModeModule.class") != null,
+                    "published main dependency must own TdmModeModule");
+            require(mainJar.getJarEntry("com/cdp/codpattern/app/zombies/ZombiesModeModule.class") == null,
+                    "published main dependency must not bundle ZombiesModeModule");
+            for (Path source : sources.filter(path -> path.toString().endsWith(".java")).toList()) {
+                String entry = addonJava.relativize(source).toString().replace('\\', '/')
+                        .replaceFirst("\\.java$", ".class");
+                require(mainJar.getJarEntry(entry) == null,
+                        "addon production class collides with the published main dependency: " + entry);
+            }
+        }
     }
 
     private static void zombiesGatewaysStayOutsideTheCompositionShim() throws IOException {
@@ -101,18 +101,18 @@ public final class ModeSplitPhase7BoundaryCompatTest {
         }
     }
 
-    private static void verificationHarnessHasDocumentedTwoStageTopologyGates() throws IOException {
-        String stage = System.getProperty("modeSplit.verificationStage", "combined");
-        Path settingsPath = ModeSplitVerificationRoots.resolveRepositoryPath(Path.of(
-                System.getProperty("modeSplit.settingsFile", "settings.gradle")));
-        String settings = Files.readString(settingsPath, StandardCharsets.UTF_8);
-        if ("target".equals(stage) || "target-rehearsal".equals(stage)) {
-            require(Pattern.compile("(?m)^\\s*include\\s*\\(?[\"']?:?codpattern-main")
-                            .matcher(settings).find(),
-                    "addon target build must include the sibling main project");
-        } else {
-            throw new AssertionError("unknown modeSplit.verificationStage: " + stage);
-        }
+    private static void verificationHarnessUsesPublishedDependency() throws IOException {
+        Path root = ModeSplitVerificationRoots.repositoryRoot();
+        String settings = Files.readString(root.resolve("settings.gradle"), StandardCharsets.UTF_8);
+        String build = Files.readString(root.resolve("build.gradle"), StandardCharsets.UTF_8);
+        require(!Pattern.compile("(?m)^\\s*include\\s*\\(?[\"']?:?codpattern-main")
+                        .matcher(settings).find(),
+                "addon build must not include a main-mod source subproject");
+        require(!settings.contains("../codPattern") && !build.contains("mainProject"),
+                "standalone build must not reach a sibling main checkout");
+        require(build.contains("maven.modrinth:cod-pattern:"),
+                "addon must resolve its main dependency from the published Modrinth artifact");
+        ModeSplitVerificationRoots.mainDependencyJar();
     }
 
     private static void testRunsFromExpectedClassRoot() throws Exception {
@@ -139,64 +139,4 @@ public final class ModeSplitPhase7BoundaryCompatTest {
         }
     }
 
-    private enum Owner {
-        FUTURE_MAIN,
-        ZOMBIES_ADDON,
-        COMPOSITION_SHIM
-    }
-
-    private enum MatchKind {
-        EXACT,
-        PREFIX,
-        REGEX
-    }
-
-    private record OwnershipRule(Owner owner, MatchKind kind, String expression, Pattern pattern) {
-        private boolean matches(String path) {
-            return switch (kind) {
-                case EXACT -> path.equals(expression);
-                case PREFIX -> path.startsWith(expression);
-                case REGEX -> pattern.matcher(path).matches();
-            };
-        }
-    }
-
-    private record OwnershipManifest(List<OwnershipRule> rules) {
-        private static OwnershipManifest read(Path path) throws IOException {
-            require(Files.isRegularFile(path), "missing final ownership manifest: " + path);
-            List<OwnershipRule> rules = new ArrayList<>();
-            for (String rawLine : Files.readAllLines(path, StandardCharsets.UTF_8)) {
-                String line = rawLine.trim();
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-                String[] fields = rawLine.split("\\t", -1);
-                require(fields.length >= 3, "invalid final ownership manifest row: " + rawLine);
-                Owner owner = Owner.valueOf(fields[0].trim());
-                MatchKind kind = MatchKind.valueOf(fields[1].trim());
-                String expression = fields[2].trim();
-                if (kind != MatchKind.REGEX) {
-                    expression = expression.replace('\\', '/');
-                }
-                rules.add(new OwnershipRule(
-                        owner,
-                        kind,
-                        expression,
-                        kind == MatchKind.REGEX ? Pattern.compile(expression) : null));
-            }
-            require(!rules.isEmpty(), "final ownership manifest must contain rules");
-            return new OwnershipManifest(List.copyOf(rules));
-        }
-
-        private Owner ownerOf(String rawPath) {
-            String path = rawPath.replace('\\', '/');
-            Owner resolved = null;
-            for (OwnershipRule rule : rules) {
-                if (rule.matches(path)) {
-                    resolved = rule.owner();
-                }
-            }
-            return resolved;
-        }
-    }
 }

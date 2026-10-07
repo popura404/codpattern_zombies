@@ -2,8 +2,7 @@ gradle.projectsEvaluated {
     def p = gradle.rootProject
     def candidate = p.file(p.findProperty('waveIntroProbeRoot') ?: p.projectDir)
     def output = p.layout.buildDirectory.dir('verification/wave-intro/probe-' + (p.findProperty('waveIntroProbeLabel') ?: 'current'))
-    def compileCp = p.files(p.layout.buildDirectory.dir('classes/java/main'),
-            p.project(':codpattern-main').layout.buildDirectory.dir('classes/java/main')) + p.sourceSets.main.compileClasspath
+    def compileCp = p.sourceSets.main.output + p.sourceSets.main.compileClasspath
     def compileProbe = p.tasks.register('compileWaveIntroProbe', JavaCompile) {
         dependsOn p.tasks.named('classes')
         source p.files(new File(candidate, 'src/main/java/com/cdp/codpattern/app/zombies/model/ZombiesWaveDefinition.java'),

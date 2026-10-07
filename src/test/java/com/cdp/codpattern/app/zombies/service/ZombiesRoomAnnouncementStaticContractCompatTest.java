@@ -6,23 +6,23 @@ import java.nio.file.Path;
 
 public final class ZombiesRoomAnnouncementStaticContractCompatTest {
     private static final Path BARRIER_DATA =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/map/object/ZombiesBarrierData.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/map/object/ZombiesBarrierData.java");
     private static final Path FIELD_SCHEMA =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployFieldSchema.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployFieldSchema.java");
     private static final Path OBJECT_EDITOR =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployObjectEditor.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployObjectEditor.java");
     private static final Path OBJECT_STATE_STORE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesObjectStateStore.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesObjectStateStore.java");
     private static final Path INTERACTION_SERVICE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesObjectInteractionService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesObjectInteractionService.java");
     private static final Path ANNOUNCEMENT_SERVICE =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesRoomAnnouncementService.java");
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/service/ZombiesRoomAnnouncementService.java");
     private static final Path ZOMBIES_MAP =
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
+            Path.of("src/main/java/com/cdp/codpattern/compat/fpsmatch/map/zombies/ZombiesMap.java");
     private static final Path EN_US_LANG =
-            Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/en_us.json");
+            Path.of("src/main/resources/assets/codpattern_zombies/lang/en_us.json");
     private static final Path ZH_CN_LANG =
-            Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/zh_cn.json");
+            Path.of("src/main/resources/assets/codpattern_zombies/lang/zh_cn.json");
 
     private ZombiesRoomAnnouncementStaticContractCompatTest() {
     }

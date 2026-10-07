@@ -2,12 +2,15 @@ package com.cdp.codpattern.architecture;
 
 import com.cdp.codpattern.app.match.model.GameModeDefinition;
 import com.cdp.codpattern.app.zombies.ZombiesModeModule;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -20,8 +23,7 @@ public final class ZombiesAddonPublicApiBoundaryCompatTest {
 
     public static void main(String[] args) throws Exception {
         Path root = ModeSplitVerificationRoots.repositoryRoot();
-        Path mainJava = root.resolve("src/main/java");
-        Path addonJava = root.resolve("../zombies-addon/src/main/java");
+        Path addonJava = root.resolve("src/main/java");
         List<Path> addonSources;
         try (Stream<Path> paths = Files.walk(addonJava)) {
             addonSources = paths.filter(path -> path.toString().endsWith(".java"))
@@ -31,25 +33,29 @@ public final class ZombiesAddonPublicApiBoundaryCompatTest {
         require(!addonSources.isEmpty(), "physical addon source root contains no Java sources");
 
         int publicMainImports = 0;
-        for (Path source : addonSources) {
-            String relative = normalize(root.relativize(source));
-            String text = Files.readString(source, StandardCharsets.UTF_8);
-            require(!text.contains("import com.cdp.codpattern.CodPattern;")
-                            && !text.contains("CodPattern.MODID")
-                            && !text.contains("com.cdp.codpattern.bootstrap.CoreBootstrap")
-                            && !text.contains("import com.cdp.codpattern.bootstrap."),
-                    "addon source reaches back into the combined shim/core bootstrap: " + relative);
+        try (JarFile mainJar = new JarFile(ModeSplitVerificationRoots.mainDependencyJar().toFile())) {
+            for (Path source : addonSources) {
+                String relative = normalize(root.relativize(source));
+                String text = Files.readString(source, StandardCharsets.UTF_8);
+                require(!text.contains("import com.cdp.codpattern.CodPattern;")
+                                && !text.contains("CodPattern.MODID")
+                                && !text.contains("com.cdp.codpattern.bootstrap.CoreBootstrap")
+                                && !text.contains("import com.cdp.codpattern.bootstrap."),
+                        "addon source reaches back into the combined shim/core bootstrap: " + relative);
 
-            Matcher imports = IMPORT.matcher(text);
-            while (imports.find()) {
-                String imported = imports.group(1).trim();
-                Path target = resolveProjectType(mainJava, imported);
-                if (target == null) {
-                    continue;
+                Matcher imports = IMPORT.matcher(text);
+                while (imports.find()) {
+                    String imported = imports.group(1).trim();
+                    JarEntry target = resolvePublishedType(mainJar, imported);
+                    if (target == null) {
+                        continue;
+                    }
+                    try (var bytecode = mainJar.getInputStream(target)) {
+                      require((new ClassReader(bytecode).getAccess() & Opcodes.ACC_PUBLIC) != 0,
+                            "addon source imports a non-public main type: " + relative + " -> " + imported);
+                    }
+                    publicMainImports++;
                 }
-                require(isPublicTopLevelType(target),
-                        "addon source imports a non-public main type: " + relative + " -> " + imported);
-                publicMainImports++;
             }
         }
 
@@ -62,12 +68,12 @@ public final class ZombiesAddonPublicApiBoundaryCompatTest {
                 + addonSources.size() + " addon sources, " + publicMainImports + " public main imports");
     }
 
-    private static Path resolveProjectType(Path sourceRoot, String imported) {
+    private static JarEntry resolvePublishedType(JarFile mainJar, String imported) {
         String candidate = imported;
         while (!candidate.isBlank()) {
-            Path source = sourceRoot.resolve(candidate.replace('.', '/') + ".java");
-            if (Files.isRegularFile(source)) {
-                return source;
+            JarEntry bytecode = mainJar.getJarEntry(candidate.replace('.', '/') + ".class");
+            if (bytecode != null) {
+                return bytecode;
             }
             int dot = candidate.lastIndexOf('.');
             if (dot < 0) {
@@ -76,15 +82,6 @@ public final class ZombiesAddonPublicApiBoundaryCompatTest {
             candidate = candidate.substring(0, dot);
         }
         return null;
-    }
-
-    private static boolean isPublicTopLevelType(Path source) throws IOException {
-        String name = source.getFileName().toString().replaceFirst("\\.java$", "");
-        String text = Files.readString(source, StandardCharsets.UTF_8);
-        Pattern declaration = Pattern.compile(
-                "(?m)^public\\s+(?:(?:final|abstract|sealed|non-sealed)\\s+)?"
-                        + "(?:class|interface|record|enum)\\s+" + Pattern.quote(name) + "\\b");
-        return declaration.matcher(text).find();
     }
 
     private static String normalize(Path path) {

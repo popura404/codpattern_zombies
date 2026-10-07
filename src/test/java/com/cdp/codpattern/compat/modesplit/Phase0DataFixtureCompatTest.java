@@ -3,15 +3,15 @@ package com.cdp.codpattern.compat.modesplit;
 /**
  * Historical Phase 0 compatibility entry point.
  *
- * <p>Round 4 keeps this class executable while delegating physical ownership to
- * the main-only and Zombies-addon fixture runners.</p>
+ * <p>The addon owns these fixture runners and exercises the published main dependency
+ * together with Zombies data, without a main-mod source checkout.</p>
  */
 public final class Phase0DataFixtureCompatTest {
     private Phase0DataFixtureCompatTest() {
     }
 
     public static void main(String[] args) throws Exception {
-        Phase0MainDataFixtureCompatTest.runAll();
+        Phase0PublishedMainDataFixtureCompatTest.runAll();
         Phase0ZombiesDataFixtureCompatTest.runAll();
         System.out.println("PASS phase0 combined data fixture compat");
     }

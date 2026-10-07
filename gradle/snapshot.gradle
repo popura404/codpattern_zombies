@@ -1,0 +1,16 @@
+// Usage: ./gradlew buildSnapshot (Windows: gradlew.bat buildSnapshot)
+// Copy the completed, reobfuscated addon without changing its mod metadata.
+// Builds on the same local date replace that day's snapshot; clean removes all.
+def snapshotDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
+def releaseJar = tasks.named('jar', Jar)
+
+tasks.register('buildSnapshot', Copy) {
+    group = 'build'
+    description = 'Build a reobfuscated addon snapshot named <mod>-<version>-SNAPSHOT-yyyyMMdd.jar.'
+    dependsOn tasks.named('build'), 'reobfJar'
+    inputs.property('snapshotDate', snapshotDate)
+
+    from releaseJar.flatMap { it.archiveFile }
+    into layout.buildDirectory.dir('libs')
+    rename { "${project.base.archivesName.get()}-${project.version}-SNAPSHOT-${snapshotDate}.jar" }
+}

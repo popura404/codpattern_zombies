@@ -12,30 +12,30 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class ZombiesDeployGuiStaticContractCompatTest {
-    private static final Path SCREEN = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/client/gui/screen/zombies/deploy/ZombiesDeployToolScreen.java");
-    private static final Path SERVICE = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployToolService.java");
-    private static final Path TOOL = Path.of("../zombies-addon/src/main/java/com/phasetranscrystal/fpsmatch/common/item/zombies/ZombiesDeployTool.java");
-    private static final Path PACKET = Path.of("../zombies-addon/src/main/java/com/phasetranscrystal/fpsmatch/common/packet/zombies/ZombiesDeployToolActionC2SPacket.java");
+    private static final Path SCREEN = Path.of("src/main/java/com/cdp/codpattern/client/gui/screen/zombies/deploy/ZombiesDeployToolScreen.java");
+    private static final Path SERVICE = Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployToolService.java");
+    private static final Path TOOL = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/zombies/ZombiesDeployTool.java");
+    private static final Path PACKET = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/packet/zombies/ZombiesDeployToolActionC2SPacket.java");
     private static final Path TOOL_INTERACTION_PACKET = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/packet/ToolInteractionC2SPacket.java");
     private static final Path TOOL_INTERACTION_HANDLER = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/tool/ToolInteractionClientHandler.java");
     private static final Path TOOL_INTERACTION_HIT = Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/tool/ToolInteractionHit.java");
-    private static final Path FIELD_SCHEMA = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployFieldSchema.java");
-    private static final Path VALIDATOR = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/validation/ZombiesMapValidator.java");
+    private static final Path FIELD_SCHEMA = Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployFieldSchema.java");
+    private static final Path VALIDATOR = Path.of("src/main/java/com/cdp/codpattern/app/zombies/validation/ZombiesMapValidator.java");
     private static final List<Path> KEY_SOURCE_FILES = List.of(
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/client/gui/screen/zombies/deploy/ZombiesDeployToolScreen.java"),
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/client/gui/screen/zombies/deploy/ZombiesDeployUnsavedChangesScreen.java"),
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/client/gui/overlay/zombies/ZombiesDeploySessionOverlay.java"),
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployToolService.java"),
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployPreviewService.java"),
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployServiceResult.java"),
-            Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployFieldSchema.java"),
-            Path.of("../zombies-addon/src/main/java/com/phasetranscrystal/fpsmatch/common/item/zombies/ZombiesDeployTool.java"),
-            Path.of("../zombies-addon/src/main/java/com/phasetranscrystal/fpsmatch/common/packet/zombies/ZombiesDeployToolActionC2SPacket.java"));
+            Path.of("src/main/java/com/cdp/codpattern/client/gui/screen/zombies/deploy/ZombiesDeployToolScreen.java"),
+            Path.of("src/main/java/com/cdp/codpattern/client/gui/screen/zombies/deploy/ZombiesDeployUnsavedChangesScreen.java"),
+            Path.of("src/main/java/com/cdp/codpattern/client/gui/overlay/zombies/ZombiesDeploySessionOverlay.java"),
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployToolService.java"),
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployPreviewService.java"),
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployServiceResult.java"),
+            Path.of("src/main/java/com/cdp/codpattern/app/zombies/deploy/ZombiesDeployFieldSchema.java"),
+            Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/item/zombies/ZombiesDeployTool.java"),
+            Path.of("src/main/java/com/phasetranscrystal/fpsmatch/common/packet/zombies/ZombiesDeployToolActionC2SPacket.java"));
     private static final List<Path> LANG_FILES = List.of(
-            Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/en_us.json"),
-            Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/zh_cn.json"),
-            Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/ja_jp.json"),
-            Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/zh_tw.json"));
+            Path.of("src/main/resources/assets/codpattern_zombies/lang/en_us.json"),
+            Path.of("src/main/resources/assets/codpattern_zombies/lang/zh_cn.json"),
+            Path.of("src/main/resources/assets/codpattern_zombies/lang/ja_jp.json"),
+            Path.of("src/main/resources/assets/codpattern_zombies/lang/zh_tw.json"));
     private static final Pattern JAVA_DEPLOY_KEY = Pattern.compile("\"((?:gui\\.codpattern\\.zombies\\.deploy|message\\.codpattern\\.zombies\\.deploy|tooltip\\.codpattern\\.zombies_deploy)\\.[^\"]+)\"");
     private static final Pattern JSON_DEPLOY_KEY = Pattern.compile("\"((?:gui\\.codpattern\\.zombies\\.deploy|message\\.codpattern\\.zombies\\.deploy|tooltip\\.codpattern\\.zombies_deploy)\\.[^\"]+)\"\\s*:");
     private static final Pattern JSON_DEPLOY_ENTRY = Pattern.compile("\"((?:gui\\.codpattern\\.zombies\\.deploy|message\\.codpattern\\.zombies\\.deploy|tooltip\\.codpattern\\.zombies_deploy)\\.[^\"]+)\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"");
@@ -48,19 +48,10 @@ public final class ZombiesDeployGuiStaticContractCompatTest {
         String service = read(SERVICE);
         String tool = read(TOOL);
         String packet = read(PACKET);
-        String toolInteractionPacket = read(TOOL_INTERACTION_PACKET);
-        String toolInteractionHandler = read(TOOL_INTERACTION_HANDLER);
-        String toolInteractionHit = read(TOOL_INTERACTION_HIT);
         String fieldSchema = read(FIELD_SCHEMA);
         String validator = read(VALIDATOR);
         verifyCurrentDeployContract(screen, service, tool, packet, validator);
         requireSingleObjectPolicy(fieldSchema);
-        requireContains(toolInteractionHit, "clickedBlockPos.relative(clickedFace)",
-                "world deployment should use the clicked face placement position");
-        requireContains(toolInteractionPacket, "ToolInteractionHit.fromClicked(clickedPos, clickedFace)",
-                "world interaction should preserve clicked face context");
-        requireContains(toolInteractionHandler, "&& clickedFace == lastSentFace",
-                "interaction de-duplication should include the clicked face");
 
         Set<String> javaKeys = deployKeysFromJava();
         Map<Path, Set<String>> langKeysByPath = new LinkedHashMap<>();
@@ -108,6 +99,19 @@ public final class ZombiesDeployGuiStaticContractCompatTest {
         assertSameDeployPlaceholderCounts(langValuesByPath);
 
         System.out.println("PASS zombies deploy GUI static contract compat");
+    }
+
+    /** Audits implementation details only when the main mod checkout is explicitly supplied. */
+    public static void mainSourceContracts(Path mainSourceRoot) throws IOException {
+        String toolInteractionPacket = read(mainSourceRoot.resolve(TOOL_INTERACTION_PACKET));
+        String toolInteractionHandler = read(mainSourceRoot.resolve(TOOL_INTERACTION_HANDLER));
+        String toolInteractionHit = read(mainSourceRoot.resolve(TOOL_INTERACTION_HIT));
+        requireContains(toolInteractionHit, "clickedBlockPos.relative(clickedFace)",
+                "world deployment should use the clicked face placement position");
+        requireContains(toolInteractionPacket, "ToolInteractionHit.fromClicked(clickedPos, clickedFace)",
+                "world interaction should preserve clicked face context");
+        requireContains(toolInteractionHandler, "&& clickedFace == lastSentFace",
+                "interaction de-duplication should include the clicked face");
     }
 
     private static void verifyCurrentDeployContract(

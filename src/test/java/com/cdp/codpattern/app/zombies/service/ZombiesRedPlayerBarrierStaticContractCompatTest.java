@@ -5,14 +5,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class ZombiesRedPlayerBarrierStaticContractCompatTest {
-    private static final Path BLOCK = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/common/block/ZombiesRedPlayerBarrierBlock.java");
-    private static final Path ITEM = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/common/block/ZombiesRedPlayerBarrierItem.java");
-    private static final Path REGISTRY = Path.of("../zombies-addon/src/main/java/com/cdp/codpattern/common/block/CodPatternBlockRegister.java");
-    private static final Path BLOCKSTATE = Path.of("../zombies-addon/src/main/resources/assets/codpattern/blockstates/zombies_red_player_barrier.json");
-    private static final Path BLOCK_MODEL = Path.of("../zombies-addon/src/main/resources/assets/codpattern/models/block/zombies_red_player_barrier.json");
-    private static final Path ITEM_MODEL = Path.of("../zombies-addon/src/main/resources/assets/codpattern/models/item/zombies_red_player_barrier.json");
-    private static final Path EN_US = Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/en_us.json");
-    private static final Path ZH_CN = Path.of("../zombies-addon/src/main/resources/assets/codpattern_zombies/lang/zh_cn.json");
+    private static final Path BLOCK = Path.of("src/main/java/com/cdp/codpattern/common/block/ZombiesRedPlayerBarrierBlock.java");
+    private static final Path ITEM = Path.of("src/main/java/com/cdp/codpattern/common/block/ZombiesRedPlayerBarrierItem.java");
+    private static final Path REGISTRY = Path.of("src/main/java/com/cdp/codpattern/common/block/CodPatternBlockRegister.java");
+    private static final Path BLOCKSTATE = Path.of("src/main/resources/assets/codpattern/blockstates/zombies_red_player_barrier.json");
+    private static final Path BLOCK_MODEL = Path.of("src/main/resources/assets/codpattern/models/block/zombies_red_player_barrier.json");
+    private static final Path ITEM_MODEL = Path.of("src/main/resources/assets/codpattern/models/item/zombies_red_player_barrier.json");
+    private static final Path EN_US = Path.of("src/main/resources/assets/codpattern_zombies/lang/en_us.json");
+    private static final Path ZH_CN = Path.of("src/main/resources/assets/codpattern_zombies/lang/zh_cn.json");
 
     private ZombiesRedPlayerBarrierStaticContractCompatTest() {
     }

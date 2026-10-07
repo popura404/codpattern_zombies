@@ -7,6 +7,7 @@ import com.cdp.codpattern.app.zombies.map.object.ZombiesZombieSpawnData;
 import com.cdp.codpattern.app.zombies.model.ZombiesWaveDefinition;
 import com.cdp.codpattern.app.zombies.model.ZombiesWaveMobEntry;
 import com.cdp.codpattern.app.zombies.runtime.ZombiesWaveRuntimeState;
+import com.cdp.codpattern.app.zombies.service.navigation.NavigationContext;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
 import com.cdp.codpattern.config.zombies.ZombiesRulesRepository;
 import net.minecraft.resources.ResourceKey;
@@ -19,6 +20,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.goal.WrappedGoal;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
@@ -79,6 +81,9 @@ public final class ZombiesMobSpawnService {
     private final boolean roomTargetingEnabled;
     private final ZombiesGroundNavigationService groundNavigation;
     private final ZombiesGroundSpawnPolicy groundSpawns = new ZombiesGroundSpawnPolicy();
+    private RoomId navigationRoom;
+    private ServerLevel navigationLevel;
+    private AABB navigationBounds;
 
     public ZombiesMobSpawnService() {
         this(ModeEntityOwnershipRegistry.instance(), null);
@@ -192,13 +197,15 @@ public final class ZombiesMobSpawnService {
             applyRoomMonsterDropDownChasing(mob);
             applyRoomMonsterAttackCadence(mob);
         }
-        applyRoomMonsterTargeting(mob, groundManaged ? () -> groundNavigation.targetsFor(mob)
-                : survivorTargetSupplier, roomTargetingEnabled);
         attachWaveRewardMetadata(mob, mobId.get(), waveDefinition);
         attachRecycleCountMetadata(mob, mobId.get(), waveState);
 
         ownershipRegistry.register(roomId, mob);
+        applyRoomMonsterTargeting(mob, groundManaged ? () -> groundNavigation.targetsFor(mob)
+                : survivorTargetSupplier, roomTargetingEnabled);
         if (!level.addFreshEntity(mob)) {
+            // A rejected join has no level callback, so discard need not emit EntityLeaveLevelEvent.
+            groundNavigation.cancelMob(mob.getUUID());
             mob.discard();
             ownershipRegistry.unregister(mob);
             com.cdp.codpattern.app.match.runtime.termination.RoomTerminationService.current()
@@ -206,6 +213,7 @@ public final class ZombiesMobSpawnService {
             return SpawnResult.failure(SpawnFailureReason.ENTITY_ADD_FAILED);
         }
         if (!waveState.consumeBudget(mobId.get())) {
+            groundNavigation.cancelMob(mob.getUUID());
             mob.discard();
             return SpawnResult.failure(SpawnFailureReason.NO_BUDGET);
         }
@@ -224,9 +232,20 @@ public final class ZombiesMobSpawnService {
         groundNavigation.reset();
     }
 
+    /** Production maps and test fixtures both provide their actual finite navigation domain. */
+    public void configureNavigationContext(RoomId roomId, ServerLevel level, AABB bounds) {
+        if (Objects.equals(navigationRoom, roomId) && navigationLevel == level && Objects.equals(navigationBounds, bounds)) return;
+        navigationRoom = roomId; navigationLevel = level; navigationBounds = bounds;
+        groundNavigation.configureContext(new NavigationContext(
+                roomId, level, bounds, survivorTargetSupplier,
+                mob -> ownershipRegistry.roomIdOf(mob).map(owned -> owned.encode().equals(roomId.encode())).orElse(false),
+                UUID.randomUUID()));
+    }
+
     public ZombiesGroundNavigationService.SearchMetrics navigationMetrics() {
         return groundNavigation.metrics();
     }
+    public ZombiesGroundNavigationService.RuntimeMetrics navigationRuntimeMetrics() { return groundNavigation.runtimeMetrics(); }
 
     private ZombiesRulesConfig.SpawnPointWeighting spawnPointWeighting() {
         ZombiesRulesConfig.SpawnPointWeighting weighting = spawnPointWeightingSupplier.get();
@@ -234,6 +253,7 @@ public final class ZombiesMobSpawnService {
     }
 
     public boolean recordMobEnded(RoomId roomId, UUID entityId) {
+        groundNavigation.cancelMob(entityId);
         return activeMobCounter.unregister(roomId, entityId);
     }
 
@@ -606,6 +626,17 @@ public final class ZombiesMobSpawnService {
         pathfinderMob.targetSelector.addGoal(
                 0,
                 new RoomSurvivorTargetGoal(pathfinderMob, targetSupplier));
+        if (ZombiesGroundNavigationService.usesLayered(mob)) {
+            // Layered installation precedes targeting. Own TARGET before vanilla's
+            // first canUse, which may otherwise perform an unchecked visibility ray.
+            Set<WrappedGoal> goals = pathfinderMob.targetSelector.getAvailableGoals();
+            List<WrappedGoal> existing = List.copyOf(goals);
+            WrappedGoal roomTarget = existing.stream().filter(wrapped -> wrapped.getGoal() instanceof RoomSurvivorTargetGoal)
+                    .findFirst().orElseThrow();
+            goals.clear();
+            goals.add(roomTarget);
+            goals.addAll(existing);
+        }
         nearestRoomSurvivor(pathfinderMob, safeTargets(targetSupplier)).ifPresent(target -> {
             applyRoomTargetSpecialRules(pathfinderMob, target);
             pathfinderMob.setTarget(target);
@@ -657,6 +688,9 @@ public final class ZombiesMobSpawnService {
     }
 
     static boolean isEligibleRoomSurvivor(Mob mob, ServerPlayer player) {
+        if (ZombiesGroundNavigationService.usesLayered(mob)) {
+            return ZombiesGroundNavigationService.isLayeredTargetEligible(mob, player);
+        }
         if (mob == null || player == null || !player.isAlive() || player.isSpectator()) {
             return false;
         }
@@ -1118,7 +1152,7 @@ public final class ZombiesMobSpawnService {
 
         @Override
         public void tick() {
-            if (ZombiesGroundNavigationService.supports(mob)) {
+            if (ZombiesGroundNavigationService.isInstalled(mob)) {
                 long now = mob.level().getGameTime();
                 if (now >= nextGroundScan || !isCurrentRoomTarget(mob.getTarget())
                         || !containsCurrentTarget(safeTargets())) {
@@ -1140,7 +1174,7 @@ public final class ZombiesMobSpawnService {
 
         @Override
         public boolean requiresUpdateEveryTick() {
-            return ZombiesGroundNavigationService.supports(mob);
+            return ZombiesGroundNavigationService.isInstalled(mob);
         }
 
         @Override
@@ -1153,6 +1187,12 @@ public final class ZombiesMobSpawnService {
         private void refreshTarget() {
             List<ServerPlayer> targets = safeTargets();
             LivingEntity currentTarget = mob.getTarget();
+            // The room planner can select a reachable survivor after proving the previous
+            // target disconnected. Adopt that eligible association before nearest-player selection.
+            if (ZombiesGroundNavigationService.usesLayered(mob)
+                    && currentTarget instanceof ServerPlayer player && isEligibleRoomSurvivor(player)) {
+                currentRoomTargetId = player.getUUID();
+            }
             if (isCurrentRoomTarget(currentTarget) && containsCurrentTarget(targets)) {
                 applyRoomTargetSpecialRules(mob, (ServerPlayer) currentTarget);
                 mob.setTarget(currentTarget);

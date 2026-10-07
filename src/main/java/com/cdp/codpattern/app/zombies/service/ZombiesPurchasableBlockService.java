@@ -1,5 +1,7 @@
 package com.cdp.codpattern.app.zombies.service;
 
+import com.cdp.codpattern.app.zombies.service.navigation.NavigationWorldChanges;
+
 import com.cdp.codpattern.app.zombies.map.ZombiesMapObjects;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
 import com.cdp.codpattern.common.block.ZombiesBoxInteractionBlock;
@@ -187,6 +189,7 @@ public final class ZombiesPurchasableBlockService {
                 if (!change.level().setBlock(change.pos(), change.next(), Block.UPDATE_ALL)) {
                     throw new IllegalStateException("Failed to update purchase point at " + change.pos());
                 }
+                NavigationWorldChanges.blockChanged(change.level(), change.pos(), "room-purchase-point-changed");
             }
             return changes;
         } catch (RuntimeException failure) {
@@ -220,9 +223,11 @@ public final class ZombiesPurchasableBlockService {
             for (int index = changes.size() - 1; index >= 0; index--) {
                 BlockChange change = changes.get(index);
                 try {
-                    if (!change.level().getBlockState(change.pos()).equals(change.previous())
-                            && !change.level().setBlock(change.pos(), change.previous(), Block.UPDATE_ALL)) {
-                        throw new IllegalStateException("Failed to restore purchase point at " + change.pos());
+                    if (!change.level().getBlockState(change.pos()).equals(change.previous())) {
+                        if (!change.level().setBlock(change.pos(), change.previous(), Block.UPDATE_ALL)) {
+                            throw new IllegalStateException("Failed to restore purchase point at " + change.pos());
+                        }
+                        NavigationWorldChanges.blockChanged(change.level(), change.pos(), "room-purchase-point-restored");
                     }
                 } catch (RuntimeException rollbackFailure) {
                     if (failure == null) {

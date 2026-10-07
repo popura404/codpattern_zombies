@@ -58,43 +58,51 @@ public final class ZombiesNavigationGameTests {
     private ZombiesNavigationGameTests() {
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void zombieUsesNearbyStairsAwayFromElevatedPlayer(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:zombieUsesNearbyStairsAwayFromElevatedPlayer", false);
         climbNearbyStairs(helper, "zombie");
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void huskUsesNearbyStairsAwayFromElevatedPlayer(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:huskUsesNearbyStairsAwayFromElevatedPlayer", false);
         climbNearbyStairs(helper, "husk");
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void witherSkeletonUsesNearbyStairsWithEnoughHeadroom(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:witherSkeletonUsesNearbyStairsWithEnoughHeadroom", false);
         climbNearbyStairs(helper, "wither_skeleton");
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void creeperUsesNearbyStairsAwayFromElevatedPlayer(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:creeperUsesNearbyStairsAwayFromElevatedPlayer", false);
         climbNearbyStairs(helper, "creeper");
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void wolfUsesNearbyStairsAwayFromElevatedPlayer(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:wolfUsesNearbyStairsAwayFromElevatedPlayer", false);
         climbNearbyStairs(helper, "wolf");
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void silverfishUsesNearbyStairsAwayFromElevatedPlayer(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:silverfishUsesNearbyStairsAwayFromElevatedPlayer", false);
         climbNearbyStairs(helper, "silverfish");
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void vindicatorUsesNearbyStairsAwayFromElevatedPlayer(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:vindicatorUsesNearbyStairsAwayFromElevatedPlayer", false);
         climbNearbyStairs(helper, "vindicator");
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void zombieRetriesAnIncompleteRouteWhenNearbyStairsBecomeAvailable(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:zombieRetriesAnIncompleteRouteWhenNearbyStairsBecomeAvailable", false);
         buildRoom(helper, false);
         buildUpperPlatform(helper);
         Fixture fixture = new Fixture(helper, new Vec3(7.5D, 6.0D, 5.5D));
@@ -106,6 +114,7 @@ public final class ZombiesNavigationGameTests {
                         "the mob must not teleport onto an initially inaccessible upper floor");
                 buildStairs(helper);
             } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                 fixture.close();
                 throw failure;
             }
@@ -114,19 +123,20 @@ public final class ZombiesNavigationGameTests {
             if (helper.getTick() > 80 && mob.getY() >= upperFloorY - 0.15D
                     && horizontalDistance(mob, fixture.player) < 4.0D) {
                 fixture.close();
-                helper.succeed();
+                ZombiesNavigationTestTiming.succeed(helper);
             }
         });
         helper.runAtTickTime(ROUTE_TIMEOUT - 5, () -> {
             String detail = "a stationary elevated target must be retried after stairs become available; "
                     + describeNavigation(mob);
             fixture.close();
-            helper.fail(detail);
+            ZombiesNavigationTestTiming.fail(helper, detail);
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 80)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 80)
     public static void creeperStillStartsSwellingNearItsTarget(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:creeperStillStartsSwellingNearItsTarget", false);
         buildRoom(helper, false);
         Fixture fixture = new Fixture(helper, new Vec3(10.5D, 1.0D, 8.5D));
         Creeper creeper = (Creeper) fixture.spawn("creeper", new BlockPos(8, 1, 8));
@@ -139,17 +149,18 @@ public final class ZombiesNavigationGameTests {
                 } finally {
                     fixture.close();
                 }
-                helper.succeed();
+                ZombiesNavigationTestTiming.succeed(helper);
             }
         });
         helper.runAtTickTime(75, () -> {
             fixture.close();
-            helper.fail("room pursuit suppressed the creeper's native swelling goal");
+            ZombiesNavigationTestTiming.fail(helper, "room pursuit suppressed the creeper's native swelling goal");
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ROUTE_TIMEOUT)
     public static void creeperBelowClosePlayerDoesNotStayInADefusedSwellGoal(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:creeperBelowClosePlayerDoesNotStayInADefusedSwellGoal", false);
         buildRoom(helper, false);
         // A bottom slab has enough clearance for a Creeper below it while keeping the player < 3 blocks away.
         for (int x = 3; x <= 13; x++) {
@@ -179,19 +190,20 @@ public final class ZombiesNavigationGameTests {
                 } finally {
                     fixture.close();
                 }
-                helper.succeed();
+                ZombiesNavigationTestTiming.succeed(helper);
             }
         });
         helper.runAtTickTime(ROUTE_TIMEOUT - 5, () -> {
             String detail = "a defused SwellGoal below a close player must yield to the nearby stair route; "
                     + describeNavigation(creeper);
             fixture.close();
-            helper.fail(detail);
+            ZombiesNavigationTestTiming.fail(helper, detail);
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 160)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 160)
     public static void wolfRetainsItsNativeLeapAndLanding(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:wolfRetainsItsNativeLeapAndLanding", false);
         buildRoom(helper, false);
         Fixture fixture = new Fixture(helper, new Vec3(13.5D, 1.0D, 10.5D));
         Wolf wolf = (Wolf) fixture.spawn("wolf", new BlockPos(10, 1, 10));
@@ -208,7 +220,7 @@ public final class ZombiesNavigationGameTests {
                 } finally {
                     fixture.close();
                 }
-                helper.succeed();
+                ZombiesNavigationTestTiming.succeed(helper);
                 return;
             }
             if (!observedLeap[0]) {
@@ -220,12 +232,13 @@ public final class ZombiesNavigationGameTests {
             String detail = "room navigation must permit a native wolf leap and subsequent landing; "
                     + describeNavigation(wolf);
             fixture.close();
-            helper.fail(detail);
+            ZombiesNavigationTestTiming.fail(helper, detail);
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 420)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 420)
     public static void wolfRecoveryYieldsToANewNativeLeapOpportunity(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:wolfRecoveryYieldsToANewNativeLeapOpportunity", false);
         buildRoom(helper, false);
         buildUpperPlatform(helper);
         Fixture fixture = new Fixture(helper, new Vec3(7.5D, 6.0D, 8.5D));
@@ -236,12 +249,17 @@ public final class ZombiesNavigationGameTests {
         helper.onEachTick(() -> {
             try {
                 long tick = helper.getTick();
-                boolean recoveryRunning = isGoalRunning(wolf, "RecoveryGoal");
+                var runtime = com.cdp.codpattern.app.zombies.service.navigation.LayeredNavigationRuntime.of(wolf);
+                boolean recoveryRunning = isGoalRunning(wolf, runtime == null ? "RecoveryGoal" : "Controller");
                 var path = wolf.getNavigation().getPath();
                 if (targetMovedTick[0] < 0L) {
                     // With one inaccessible target, a complete path to a different endpoint is a real local recovery.
-                    if (recoveryRunning && path != null && !path.isDone() && path.canReach()
-                            && !path.getTarget().equals(fixture.player.blockPosition())) {
+                    // A layered request exposes its planning work and current MOVE owner as recovery evidence.
+                    boolean controlledPlanning = runtime != null && runtime.planningStats().requests() > 0
+                            && runtime.planningStats().expansions() > 0 && tick >= 40L;
+                    boolean localRecovery = runtime == null && path != null && !path.isDone() && path.canReach()
+                            && !path.getTarget().equals(fixture.player.blockPosition());
+                    if (recoveryRunning && (localRecovery || controlledPlanning)) {
                         helper.assertTrue(tick >= 40L,
                                 "the wolf must enter recovery after an actual stall observation window");
                         targetMovedTick[0] = tick;
@@ -263,7 +281,7 @@ public final class ZombiesNavigationGameTests {
                     helper.assertTrue(wolf.getSensing().hasLineOfSight(fixture.player),
                             "the new leap opportunity must be toward the visible nearby survivor");
                     fixture.close();
-                    helper.succeed();
+                    ZombiesNavigationTestTiming.succeed(helper);
                     return;
                 }
                 helper.assertTrue(tick - targetMovedTick[0] <= 100L,
@@ -272,6 +290,7 @@ public final class ZombiesNavigationGameTests {
                 fixture.player.moveTo(wolf.getX() + 3.0D,
                         helper.absolutePos(new BlockPos(0, 1, 0)).getY(), wolf.getZ(), 0.0F, 0.0F);
             } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                 fixture.close();
                 throw failure;
             }
@@ -280,12 +299,13 @@ public final class ZombiesNavigationGameTests {
             String detail = "wolf must enter a real local recovery and then hand movement to native leap; "
                     + describeNavigation(wolf);
             fixture.close();
-            helper.fail(detail);
+            ZombiesNavigationTestTiming.fail(helper, detail);
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 420)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 420)
     public static void newlyIgnitedCreeperSurvivesTheFirstExpiredRecycleScan(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:newlyIgnitedCreeperSurvivesTheFirstExpiredRecycleScan", false);
         buildRoom(helper, false);
         buildClosedChamber(helper);
         Fixture fixture = new Fixture(helper, new Vec3(7.5D, 5.0D, 8.5D));
@@ -336,21 +356,23 @@ public final class ZombiesNavigationGameTests {
                                     && fixture.ownership.entryOf(creeper).isPresent(),
                             "the protected scan must retain the live fuse entity and its existing accounting");
                     fixture.close();
-                    helper.succeed();
+                    ZombiesNavigationTestTiming.succeed(helper);
                 }
             } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                 fixture.close();
                 throw failure;
             }
         });
         helper.runAtTickTime(415, () -> {
             fixture.close();
-            helper.fail("the first expired recycle scan must execute while the late ignition is protected");
+            ZombiesNavigationTestTiming.fail(helper, "the first expired recycle scan must execute while the late ignition is protected");
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 500)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 500)
     public static void closeUnreachableTargetEventuallyRequeuesTheRealRoomMob(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:closeUnreachableTargetEventuallyRequeuesTheRealRoomMob", false);
         buildRoom(helper, false);
         // A close player stands on the roof of a one-cell chamber. No legal route or useful local move exists.
         buildClosedChamber(helper);
@@ -388,18 +410,19 @@ public final class ZombiesNavigationGameTests {
             } finally {
                 fixture.close();
             }
-            helper.succeed();
+            ZombiesNavigationTestTiming.succeed(helper);
         });
         helper.runAtTickTime(495, () -> {
             String detail = "a close target through a roof must not preserve the final mob forever; "
                     + describeNavigation(mob);
             fixture.close();
-            helper.fail(detail);
+            ZombiesNavigationTestTiming.fail(helper, detail);
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 600)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 600)
     public static void unreachableUpperPlayerFallsBackToReachableRoomSurvivor(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:unreachableUpperPlayerFallsBackToReachableRoomSurvivor", false);
         buildRoom(helper, false);
         buildUpperPlatform(helper);
         Fixture fixture = new Fixture(helper, new Vec3(7.5D, 6.0D, 5.5D));
@@ -417,19 +440,20 @@ public final class ZombiesNavigationGameTests {
                 } finally {
                     fixture.close();
                 }
-                helper.succeed();
+                ZombiesNavigationTestTiming.succeed(helper);
             }
         });
         helper.runAtTickTime(595, () -> {
             String detail = "bounded recovery must select and approach a reachable room survivor; "
                     + describeNavigation(mob);
             fixture.close();
-            helper.fail(detail);
+            ZombiesNavigationTestTiming.fail(helper, detail);
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 60)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 60)
     public static void witherSkeletonWeaponChangesKeepOneNativeCombatGoal(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:witherSkeletonWeaponChangesKeepOneNativeCombatGoal", false);
         buildRoom(helper, false);
         Fixture fixture = new Fixture(helper, new Vec3(18.5D, 1.0D, 18.5D));
         WitherSkeleton skeleton = (WitherSkeleton) fixture.spawn("wither_skeleton", new BlockPos(3, 1, 3));
@@ -438,6 +462,7 @@ public final class ZombiesNavigationGameTests {
                 skeleton.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
                 assertNativeWeaponGoals(helper, skeleton, true);
             } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                 fixture.close();
                 throw failure;
             }
@@ -451,12 +476,13 @@ public final class ZombiesNavigationGameTests {
             } finally {
                 fixture.close();
             }
-            helper.succeed();
+            ZombiesNavigationTestTiming.succeed(helper);
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 40)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 40)
     public static void spawnClearanceRejectsTallBodiesWithoutRejectingSilverfish(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:spawnClearanceRejectsTallBodiesWithoutRejectingSilverfish", false);
         buildRoom(helper, false);
         for (int x = 7; x <= 9; x++) {
             for (int z = 7; z <= 9; z++) {
@@ -479,11 +505,12 @@ public final class ZombiesNavigationGameTests {
             helper.assertTrue(rejectedWave.remainingBudget() == 1,
                     "another body profile must not consume the rejected Wither Skeleton budget");
         }
-        helper.succeed();
+        ZombiesNavigationTestTiming.succeed(helper);
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 40)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 40)
     public static void installationPreservesNativeSpeciesGoalsAndWolfAnger(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:installationPreservesNativeSpeciesGoalsAndWolfAnger", false);
         buildRoom(helper, false);
         try (Fixture fixture = new Fixture(helper, new Vec3(18.5D, 1.0D, 18.5D))) {
             Wolf wolf = (Wolf) fixture.spawn("wolf", new BlockPos(3, 1, 3));
@@ -511,11 +538,12 @@ public final class ZombiesNavigationGameTests {
             assertGoalPresent(helper, creeper, "SwellGoal");
             assertGoalPresent(helper, creeper, "FloatGoal");
         }
-        helper.succeed();
+        ZombiesNavigationTestTiming.succeed(helper);
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = 40)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = 40)
     public static void excludedSpeciesAndOrdinaryZombieKeepTheirNavigation(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "main:excludedSpeciesAndOrdinaryZombieKeepTheirNavigation", false);
         buildRoom(helper, false);
         try (Fixture fixture = new Fixture(helper, new Vec3(18.5D, 1.0D, 18.5D))) {
             int x = 3;
@@ -543,7 +571,7 @@ public final class ZombiesNavigationGameTests {
                 ordinary.discard();
             }
         }
-        helper.succeed();
+        ZombiesNavigationTestTiming.succeed(helper);
     }
 
     private static void climbNearbyStairs(GameTestHelper helper, String mobId) {
@@ -565,7 +593,7 @@ public final class ZombiesNavigationGameTests {
                 } finally {
                     fixture.close();
                 }
-                helper.succeed();
+                ZombiesNavigationTestTiming.succeed(helper);
             }
         });
         helper.runAtTickTime(ROUTE_TIMEOUT - 5, () -> {
@@ -573,7 +601,7 @@ public final class ZombiesNavigationGameTests {
                     + ", target=" + fixture.player.position()
                     + ", " + describeNavigation(mob);
             fixture.close();
-            helper.fail(detail);
+            ZombiesNavigationTestTiming.fail(helper, detail);
         });
     }
 
@@ -633,9 +661,11 @@ public final class ZombiesNavigationGameTests {
 
     private static String describeNavigation(Mob mob) {
         var path = mob.getNavigation().getPath();
+        var runtime = com.cdp.codpattern.app.zombies.service.navigation.LayeredNavigationRuntime.of(mob);
         return "position=" + mob.position() + ", navigationDone=" + mob.getNavigation().isDone()
                 + ", path=" + path + ", canReach=" + (path == null ? "none" : path.canReach())
                 + ", end=" + (path == null ? "none" : path.getEndNode())
+                + ", execution=" + (runtime == null ? "legacy" : runtime.describe(mob))
                 + ", runningGoals=" + mob.goalSelector.getRunningGoals()
                 .map(goal -> goal.getGoal().getClass().getSimpleName()).toList();
     }
@@ -678,22 +708,28 @@ public final class ZombiesNavigationGameTests {
         return Math.hypot(mob.getX() - player.getX(), mob.getZ() - player.getZ());
     }
 
-    static final class Fixture implements AutoCloseable {
+    public static final class Fixture implements AutoCloseable {
         private final GameTestHelper helper;
         private final RoomId roomId = RoomId.of(BuiltInGameModes.ZOMBIES, "navigation-" + UUID.randomUUID());
         private final ModeEntityOwnershipRegistry ownership = ModeEntityOwnershipRegistry.instance();
         private final ZombiesActiveMobCounter counter = new ZombiesActiveMobCounter();
         private final List<Mob> mobs = new ArrayList<>();
         private final List<ServerPlayer> targets = new ArrayList<>();
-        final ServerPlayer player;
-        final ZombiesMobSpawnService spawnService;
+        public final ServerPlayer player;
+        public final ZombiesMobSpawnService spawnService;
         private ZombiesWaveRuntimeState waveState;
 
         Fixture(GameTestHelper helper, Vec3 relativePlayerPosition) {
+            this(helper, relativePlayerPosition, new BlockPos(24, 12, 24));
+        }
+
+        public Fixture(GameTestHelper helper, Vec3 relativePlayerPosition, BlockPos templateSize) {
             this.helper = helper;
             player = addPlayer(relativePlayerPosition);
             spawnService = new ZombiesMobSpawnService(ownership, () -> List.copyOf(targets),
                     ZombiesRulesConfig.SpawnPointWeighting::new, counter);
+            spawnService.configureNavigationContext(roomId, helper.getLevel(), new net.minecraft.world.phys.AABB(
+                    helper.absolutePos(BlockPos.ZERO), helper.absolutePos(templateSize)));
         }
 
         ServerPlayer addPlayer(Vec3 relativePosition) {
@@ -707,9 +743,41 @@ public final class ZombiesNavigationGameTests {
             return added;
         }
 
-        Mob spawn(String mobId, BlockPos position) {
+        public RoomId roomId() {
+            return roomId;
+        }
+
+        public ZombiesWaveRuntimeState waveState() {
+            return waveState;
+        }
+
+        public ZombiesMobRecycleService createRecycler() {
+            return new ZombiesMobRecycleService(ownership,
+                    new ZombiesMobLifecycleService(ownership, spawnService), () -> List.copyOf(targets));
+        }
+
+        public int activeRoomCount() {
+            return counter.roomCount(roomId);
+        }
+
+        public int ownedRoomCount() {
+            return ownership.entitiesInRoom(roomId).size();
+        }
+
+        public void removeTarget(ServerPlayer target) {
+            targets.remove(target);
+        }
+
+        public Mob spawn(String mobId, BlockPos position) {
             ZombiesMobSpawnService.SpawnResult result = attemptSpawn(mobId, position);
             helper.assertTrue(result.spawned(), "real room spawn must succeed for " + mobId + ": " + result);
+            return result.entity().orElseThrow();
+        }
+
+        /** Supplemental wave-context fixtures still use the real production spawn and budget path. */
+        public Mob spawn(String mobId, BlockPos position, ZombiesWaveDefinition wave) {
+            ZombiesMobSpawnService.SpawnResult result = attemptSpawn(mobId, position, wave);
+            helper.assertTrue(result.spawned(), "real configured-wave spawn must succeed for " + mobId + ": " + result);
             return result.entity().orElseThrow();
         }
 
@@ -719,7 +787,19 @@ public final class ZombiesNavigationGameTests {
                             + "\",\"count\":1}]}", ZombiesWaveDefinition.class);
             wave.attachSource(null, 1, true);
             wave.applyDefaults(new ZombiesRulesConfig.Defaults());
+            return attemptSpawn(mobId, position, wave);
+        }
+
+        private ZombiesMobSpawnService.SpawnResult attemptSpawn(String mobId, BlockPos position, ZombiesWaveDefinition wave) {
+            java.util.Objects.requireNonNull(wave, "wave");
+            BlockPos actualSpawn = helper.absolutePos(position);
+            // Structure placement forces chunks asynchronously. Start the behavioral clock
+            // only after the annotation's setup ticks, and verify actual entity readiness.
+            helper.assertTrue(helper.getLevel().isPositionEntityTicking(actualSpawn)
+                            && helper.getLevel().areEntitiesLoaded(new net.minecraft.world.level.ChunkPos(actualSpawn).toLong()),
+                    "test environment must have a ticking, entity-loaded spawn chunk before room registration: " + actualSpawn);
             waveState = new ZombiesWaveRuntimeState();
+            waveState.prepareTargetWave(wave.getWave());
             waveState.beginTargetWave(wave);
             ZombiesZombieSpawnData spawn = new ZombiesZombieSpawnData("test-spawn", 0, 1.0D,
                     helper.getLevel().dimension(), helper.absolutePos(position), 0.0F, 0.0F);
@@ -727,7 +807,10 @@ public final class ZombiesNavigationGameTests {
                     List.of(), List.of(), List.of(), Optional.empty(), List.of(), List.of(), List.of(), List.of());
             ZombiesMobSpawnService.SpawnResult result = spawnService.spawnNext(roomId, helper.getLevel(), objects,
                     waveState, wave, Set.of(0));
-            result.entity().ifPresent(mobs::add);
+            result.entity().ifPresent(mob -> {
+                mob.getRandom().setSeed(ZombiesNavigationTestReport.SEED + mobs.size());
+                mobs.add(mob);
+            });
             return result;
         }
 
@@ -736,6 +819,7 @@ public final class ZombiesNavigationGameTests {
             mobs.forEach(Mob::discard);
             ownership.clearRoom(roomId);
             counter.clearRoom(roomId);
+            spawnService.resetNavigationRuntime();
             targets.forEach(ServerPlayer::discard);
         }
     }

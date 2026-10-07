@@ -171,6 +171,9 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 ModeEntityOwnershipRegistry.instance(),
                 this::aliveSurvivorPlayers,
                 () -> rulesConfig().getSpawnPointWeighting());
+        if (serverLevel != null && areaData != null) this.mobSpawnService.configureNavigationContext(roomId, serverLevel,
+                new net.minecraft.world.phys.AABB(areaData.pos1()).minmax(
+                        new net.minecraft.world.phys.AABB(areaData.pos2())));
         this.mobLifecycleService = new ZombiesMobLifecycleService(ModeEntityOwnershipRegistry.instance(), mobSpawnService);
         this.mobRecycleService = new ZombiesMobRecycleService(
                 ModeEntityOwnershipRegistry.instance(),
@@ -504,6 +507,10 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
 
     ZombiesCleanupService cleanupService() {
         return cleanupService;
+    }
+
+    ZombiesMobSpawnService mobSpawnService() {
+        return mobSpawnService;
     }
 
     ZombiesObjectInteractionService objectInteractionService() {

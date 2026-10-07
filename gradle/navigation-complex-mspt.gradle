@@ -1,0 +1,161 @@
+// Test-only archive checks. No profiler or listener is installed in ordinary games.
+ext.auditNavigationComplexMspt = { File directory, Map expectedWindows, Long startedAt ->
+    def errors = []
+    def archive = new File(directory, 'complex-mspt.json')
+    def required = !expectedWindows.isEmpty()
+    def result = [required: required, expectedWindowCount: expectedWindows.size(),
+                  archive: archive.absolutePath, errors: errors]
+    if (!required) {
+        result.success = null
+        result.scope = 'This namespace has no declared complex-scene performance windows.'
+        return result
+    }
+    def launchArchive = new File(directory, 'launch-environment.json')
+    if (launchArchive.isFile()) {
+        def launch = new groovy.json.JsonSlurper().parse(launchArchive)
+        def debugPrefix = '-Dcodpattern.zombies.navigationDebug='
+        def debugArgument = launch.jvmArgs?.any {
+            it instanceof String && it.startsWith(debugPrefix)
+                    && !it.substring(debugPrefix.length()).equalsIgnoreCase('false')
+        } == true
+        result.navigationDebugEnabled = launch.navigationDebugEnabled == true || debugArgument
+        if (launch.navigationDebugEnabled != false || result.navigationDebugEnabled)
+            errors.add('Navigation debug logging is diagnostic only and cannot pass complex performance acceptance')
+    }
+    def timing = null
+    if (!archive.isFile()) errors.add('Missing complex-mspt.json')
+    else if (startedAt != null && archive.lastModified() < startedAt) errors.add('Stale complex-mspt.json')
+    else {
+        try { timing = new groovy.json.JsonSlurper().parse(archive) }
+        catch (Exception failure) { errors.add('Invalid complex-mspt.json: ' + failure.message) }
+    }
+    if (!(timing instanceof Map)) {
+        result.success = false
+        return result
+    }
+    def finite = { value -> value instanceof Number && Double.isFinite(value.doubleValue()) }
+    def count = { value -> finite(value) && value.doubleValue() >= 0 && value.doubleValue() == value.longValue() }
+    if (timing.schemaVersion != 1) errors.add('Unsupported timing schemaVersion')
+    if (timing.measurement != 'forge-start-highest-through-end-lowest')
+        errors.add('Timing must include Forge START HIGHEST through END LOWEST')
+    if (timing.timingComplete != true || timing.unfinishedWindowCount != 0)
+        errors.add('Complex-scene timing has unfinished windows')
+    if (timing.startedWindowCount != expectedWindows.size() || timing.completedWindowCount != expectedWindows.size())
+        errors.add('Started/completed window count differs from the declared catalog')
+    def windows = timing.windows instanceof List ? timing.windows : []
+    result.observedWindowCount = windows.size()
+    def observed = windows.collect { it instanceof Map ? it.testName : null }
+    if (windows.size() != expectedWindows.size() || observed.toSet() != expectedWindows.keySet()
+            || observed.toSet().size() != observed.size())
+        errors.add('Window identities are missing, duplicated, or outside the declared catalog')
+    def measurements = []
+    windows.each { window ->
+        if (!(window instanceof Map)) {
+            errors.add('A timing window is not an object')
+            return
+        }
+        def name = window.testName
+        def prefix = (name ?: '<unnamed>') + ': '
+        if (window.measurement != 'forge-start-highest-through-end-lowest')
+            errors.add(prefix + 'window must use the complete Forge tick measurement')
+        if (window.complete != true || window.functionalSuccess != true || window.serverWide != true)
+            errors.add(prefix + 'window must be complete, functionally successful, and server-wide')
+        if (!(window.scenario instanceof String) || window.scenario.trim().isEmpty()
+                || !(window.declaredTestMethod instanceof String) || window.declaredTestMethod.trim().isEmpty())
+            errors.add(prefix + 'scenario and declared test method must be recorded')
+        def expectedGate = expectedWindows[name]
+        if (!(expectedGate instanceof Boolean) || window.performanceGate != expectedGate)
+            errors.add(prefix + 'performance gate differs from the frozen catalog')
+        def samples = window.serverTickSamples
+        if (!count(samples) || samples <= 0 || window.schedulerCoverageSamples != samples)
+            errors.add(prefix + 'every measured tick must have scheduler coverage')
+        ['schedulerTickMismatchSamples', 'startTickMismatchSamples', 'missingTickSamples',
+         'maxUncoveredSchedulerNanos'].each { key ->
+            if (window[key] != 0) errors.add(prefix + key + ' must be zero')
+        }
+        def first = window.firstMeasuredServerTick
+        def last = window.lastMeasuredServerTick
+        if (!count(first) || !count(last) || last < first || !count(samples) || samples != last - first + 1)
+            errors.add(prefix + 'measured ticks must form a complete continuous window')
+        if (first != window.startRequestedServerTick || last != window.endRequestedServerTick)
+            errors.add(prefix + 'all requested ticks, including the final END, must be measured')
+        if (!count(window.maxConcurrentWindows) || window.maxConcurrentWindows < 1
+                || !(window.concurrentScenarios instanceof List))
+            errors.add(prefix + 'concurrent scenario scope must be recorded')
+        def values = ['serverTickP50Millis', 'serverTickP95Millis', 'serverTickP99Millis', 'serverTickMaxMillis']
+                .collect { window[it] }
+        if (values.any { !finite(it) || it < 0 }) errors.add(prefix + 'timing quantiles must be finite nonnegative numbers')
+        else {
+            if (values != values.sort(false)) errors.add(prefix + 'timing quantiles are inconsistent')
+            if (expectedGate == true && values[1] > 50.0) errors.add(prefix + 'P95 exceeds the frozen 50 ms threshold')
+            if (window.p95Within50Millis != (values[1] <= 50.0))
+                errors.add(prefix + 'reported P95 threshold result differs from the actual quantile')
+        }
+        measurements.add([testName: name, performanceGate: expectedGate, samples: samples,
+                          p95Millis: window.serverTickP95Millis, p99Millis: window.serverTickP99Millis,
+                          maxConcurrentWindows: window.maxConcurrentWindows])
+    }
+    result.windows = measurements
+    result.success = errors.isEmpty()
+    result.scope = 'Each window measures complete server ticks, including native work and END scheduling. Concurrent windows share server cost; this is not per-entity CPU attribution. P99 is reported without a new threshold.'
+    return result
+}
+
+tasks.register('verifyNavigationComplexMsptAudit') {
+    group = 'verification'
+    description = 'Exercise missing, incomplete, mislabeled and over-budget timing archive rejection.'
+    doLast {
+        def directory = layout.buildDirectory.dir('verification/navigation/complex-mspt-audit-fixtures').get().asFile
+        directory.mkdirs()
+        def expected = [controlled: true, compatibility: false]
+        def baseWindow = { String name, boolean gate ->
+            [scenario: name, testName: name, declaredTestMethod: 'Fixture.' + name,
+             performanceGate: gate, measurement: 'forge-start-highest-through-end-lowest', serverWide: true,
+             startRequestedServerTick: 10, endRequestedServerTick: 12,
+             firstMeasuredServerTick: 10, lastMeasuredServerTick: 12,
+             serverTickSamples: 3, schedulerCoverageSamples: 3,
+             schedulerTickMismatchSamples: 0, startTickMismatchSamples: 0, missingTickSamples: 0,
+             maxUncoveredSchedulerNanos: 0, maxConcurrentWindows: 2,
+             concurrentScenarios: ['controlled', 'compatibility'], functionalSuccess: true, complete: true,
+             serverTickP50Millis: 1.0, serverTickP95Millis: gate ? 2.0 : 51.0,
+             serverTickP99Millis: 55.0, serverTickMaxMillis: 60.0, p95Within50Millis: gate]
+        }
+        def base = [schemaVersion: 1, measurement: 'forge-start-highest-through-end-lowest',
+                    startedWindowCount: 2, completedWindowCount: 2, unfinishedWindowCount: 0,
+                    timingComplete: true, windows: [baseWindow('controlled', true), baseWindow('compatibility', false)]]
+        def checks = []
+        def check = { String name, boolean shouldPass, Closure mutation ->
+            def value = new groovy.json.JsonSlurper().parseText(groovy.json.JsonOutput.toJson(base))
+            mutation(value)
+            def caseDirectory = new File(directory, name)
+            caseDirectory.mkdirs()
+            new File(caseDirectory, 'complex-mspt.json').setText(groovy.json.JsonOutput.toJson(value), 'UTF-8')
+            def actual = project.ext.auditNavigationComplexMspt(caseDirectory, expected, null)
+            assert actual.success == shouldPass : name + ': ' + actual.errors
+            checks.add([name: name, expectedSuccess: shouldPass, actualSuccess: actual.success, errors: actual.errors])
+        }
+        check('complete-with-observational-compatibility-over-50', true) { }
+        check('required-p95-over-50', false) { it.windows[0].serverTickP95Millis = 51; it.windows[0].p95Within50Millis = false }
+        check('missing-window', false) { it.windows.remove(0) }
+        check('duplicate-window', false) { it.windows[1] = it.windows[0] }
+        check('missing-final-end', false) { it.windows[0].endRequestedServerTick = 13 }
+        check('incomplete-coverage', false) { it.windows[0].schedulerCoverageSamples = 2 }
+        check('scheduler-outside-measurement', false) { it.windows[0].maxUncoveredSchedulerNanos = 1 }
+        check('wrong-measurement', false) { it.measurement = 'vanilla-tickTimes' }
+        check('wrong-performance-classification', false) { it.windows[0].performanceGate = false }
+        check('null-quantile', false) { it.windows[0].serverTickP95Millis = null }
+        check('unfinished-window', false) { it.unfinishedWindowCount = 1; it.timingComplete = false }
+        check('functional-failure', false) { it.windows[0].functionalSuccess = false }
+        def debugDirectory = new File(directory, 'debug-logging')
+        debugDirectory.mkdirs()
+        new File(debugDirectory, 'complex-mspt.json').setText(groovy.json.JsonOutput.toJson(base), 'UTF-8')
+        new File(debugDirectory, 'launch-environment.json').setText(groovy.json.JsonOutput.toJson([
+                navigationDebugEnabled: false, jvmArgs: ['-Dcodpattern.zombies.navigationDebug=true']]), 'UTF-8')
+        def debugAudit = project.ext.auditNavigationComplexMspt(debugDirectory, expected, null)
+        assert !debugAudit.success : 'actual JVM debug flag must override contradictory metadata'
+        checks.add([name: 'debug-logging', expectedSuccess: false, actualSuccess: debugAudit.success, errors: debugAudit.errors])
+        new File(directory, 'verification.json').setText(groovy.json.JsonOutput.prettyPrint(
+                groovy.json.JsonOutput.toJson([checks: checks, success: true])), 'UTF-8')
+        logger.lifecycle('Navigation complex MSPT archive audit: {} checks passed', checks.size())
+    }
+}

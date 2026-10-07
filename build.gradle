@@ -6,6 +6,8 @@ plugins {
     id 'org.parchmentmc.librarian.forgegradle' version '1.2.0.7-dev-SNAPSHOT'
 }
 
+apply from: 'gradle/navigation-complex-mspt.gradle'
+
 version = mod_version
 group = mod_group_id
 
@@ -19,8 +21,123 @@ def mainProject = project(':codpattern-main')
 def barrierGroupRulesGameTests = project.hasProperty('barrierGroupRulesGameTests')
 def backpackGameTests = project.hasProperty('backpackGameTests')
 def navigationLoadSize = findProperty('navigationLoad')?.toString()
-if (navigationLoadSize && !(navigationLoadSize in ['8', '32', '64'])) {
+if (navigationLoadSize != null && !(navigationLoadSize in ['8', '32', '64'])) {
     throw new GradleException('navigationLoad must be 8, 32, or 64')
+}
+def navigationMultiRoomLoad = project.hasProperty('navigationMultiRoomLoad')
+def navigationLoadTargetMotion = project.hasProperty('navigationLoadTargetMotion')
+        ? findProperty('navigationLoadTargetMotion').toString() : 'after-deadline'
+if (!(navigationLoadTargetMotion in ['after-deadline', 'after-first-arrival'])) {
+    throw new GradleException('navigationLoadTargetMotion must be after-deadline or after-first-arrival')
+}
+if (project.hasProperty('navigationLoadTargetMotion') && navigationLoadSize == null && !navigationMultiRoomLoad) {
+    throw new GradleException('navigationLoadTargetMotion requires navigationLoad or navigationMultiRoomLoad')
+}
+def navigationRegression = project.hasProperty('navigationGameTests')
+def navigationReference = project.hasProperty('navigationReference')
+def navigationDropMatrix = project.hasProperty('navigationDropMatrix')
+def navigationDropChanges = project.hasProperty('navigationDropChanges')
+def navigationDropShapes = project.hasProperty('navigationDropShapes')
+def navigationLifecycle = project.hasProperty('navigationLifecycle')
+def navigationDropSurfaces = project.hasProperty('navigationDropSurfaces')
+def navigationDropContext = project.hasProperty('navigationDropContext')
+def navigationRoomLifecycle = project.hasProperty('navigationRoomLifecycle')
+def navigationQualification = project.hasProperty('navigationQualification')
+def navigationChunks = project.hasProperty('navigationChunks')
+def navigationChunkStartsMissing = project.hasProperty('navigationChunkStartsMissing')
+def navigationChunkTargetMovesMissing = project.hasProperty('navigationChunkTargetMovesMissing')
+if (navigationChunkStartsMissing && !navigationChunks) {
+    throw new GradleException('navigationChunkStartsMissing requires navigationChunks')
+}
+if (navigationChunkTargetMovesMissing && !navigationChunks) {
+    throw new GradleException('navigationChunkTargetMovesMissing requires navigationChunks')
+}
+if (navigationChunkStartsMissing && navigationChunkTargetMovesMissing) {
+    throw new GradleException('Choose one isolated missing-chunk test mode per JVM')
+}
+def navigationDoors = project.hasProperty('navigationDoors')
+def navigationRaid = project.hasProperty('navigationRaid')
+def navigationScaledRoutes = project.hasProperty('navigationScaledRoutes')
+def navigationMirroredWalls = project.hasProperty('navigationMirroredWalls')
+def navigationWeapon = project.hasProperty('navigationWeapon')
+def navigationArrival = project.hasProperty('navigationArrival')
+def navigationDiagnostic = navigationReference || navigationDropMatrix || navigationDropChanges || navigationDropShapes || navigationLifecycle
+        || navigationDropSurfaces || navigationDropContext || navigationRoomLifecycle
+        || navigationQualification || navigationChunks || navigationDoors || navigationRaid || navigationScaledRoutes
+        || navigationMirroredWalls
+        || navigationWeapon || navigationArrival
+def navigationVerification = navigationRegression || navigationDiagnostic || navigationMultiRoomLoad || navigationLoadSize != null
+def selectedTestGroups = [backpackGameTests, barrierGroupRulesGameTests, navigationLoadSize != null,
+                          navigationMultiRoomLoad, navigationRegression, navigationReference, navigationDropMatrix, navigationDropChanges, navigationDropShapes, navigationLifecycle,
+                          navigationDropSurfaces, navigationDropContext, navigationRoomLifecycle,
+                          navigationQualification, navigationChunks, navigationDoors, navigationRaid, navigationScaledRoutes,
+                          navigationMirroredWalls,
+                          navigationWeapon, navigationArrival,
+                          project.hasProperty('forceEndGameTests')]
+if (selectedTestGroups.count { it } > 1) {
+    throw new GradleException('Choose exactly one GameTest namespace group')
+}
+def navigationEngine = project.hasProperty('navigationEngine') ? findProperty('navigationEngine').toString() : 'legacy'
+if (!(navigationEngine in ['legacy', 'layered'])) {
+    throw new GradleException('navigationEngine must be legacy or layered')
+}
+def navigationDifficulty = project.hasProperty('navigationDifficulty') ? findProperty('navigationDifficulty').toString() : 'easy'
+if (!(navigationDifficulty in ['easy', 'normal', 'hard'])) {
+    throw new GradleException('navigationDifficulty must be easy, normal, or hard')
+}
+def navigationSeedText = project.hasProperty('navigationSeed') ? findProperty('navigationSeed').toString() : '1701'
+if (!(navigationSeedText ==~ /-?\d+/)) {
+    throw new GradleException('navigationSeed must be a signed 64-bit integer')
+}
+try {
+    Long.parseLong(navigationSeedText)
+} catch (NumberFormatException ignored) {
+    throw new GradleException('navigationSeed must be a signed 64-bit integer')
+}
+def navigationScenario = navigationArrival ? 'arrival'
+        : navigationWeapon ? 'weapon'
+        : navigationMirroredWalls ? 'mirrored-walls'
+        : navigationScaledRoutes ? 'scaled-routes'
+        : navigationRaid ? 'raid'
+        : navigationDoors ? 'doors'
+        : navigationChunks ? (navigationChunkStartsMissing ? 'chunks-initial-missing'
+                : navigationChunkTargetMovesMissing ? 'chunks-moving-target-missing' : 'chunks')
+        : navigationQualification ? 'qualification'
+        : navigationRoomLifecycle ? 'room-lifecycle'
+        : navigationDropContext ? "drop-context-${navigationDifficulty}"
+        : navigationDropSurfaces ? 'drop-surfaces'
+        : navigationLifecycle ? 'lifecycle'
+        : navigationDropShapes ? 'drop-shapes'
+        : navigationDropChanges ? 'drop-changes'
+        : navigationDropMatrix ? 'drop-matrix'
+        : navigationReference ? 'reference'
+        : navigationMultiRoomLoad ? 'multi'
+        : navigationLoadSize ?: 'regression'
+def navigationHolder = navigationArrival ? 'codpattern_navigation_arrival'
+        : navigationWeapon ? 'codpattern_navigation_weapon'
+        : navigationMirroredWalls ? 'codpattern_navigation_mirrored_walls'
+        : navigationScaledRoutes ? 'codpattern_navigation_scaled_routes'
+        : navigationRaid ? 'codpattern_navigation_raid'
+        : navigationDoors ? 'codpattern_navigation_doors'
+        : navigationChunks ? 'codpattern_navigation_chunks'
+        : navigationQualification ? 'codpattern_navigation_qualification'
+        : navigationRoomLifecycle ? 'codpattern_navigation_room_lifecycle'
+        : navigationDropContext ? 'codpattern_navigation_drop_context'
+        : navigationDropSurfaces ? 'codpattern_navigation_drop_surfaces'
+        : navigationLifecycle ? 'codpattern_navigation_lifecycle'
+        : navigationDropShapes ? 'codpattern_navigation_drop_shapes'
+        : navigationDropChanges ? 'codpattern_navigation_drop_changes'
+        : navigationDropMatrix ? 'codpattern_navigation_drop_matrix'
+        : navigationReference ? 'codpattern_navigation_reference'
+        : navigationMultiRoomLoad ? 'codpattern_navigation_multi'
+        : navigationLoadSize ? "codpattern_navigation_load${navigationLoadSize}" : 'codpattern_navigation'
+def navigationResultsDirectory = file(findProperty('navigationResultsDirectory')
+        ?: "build/verification/navigation/${navigationEngine}-${navigationScenario}-${navigationSeedText}"
+                + (navigationLoadTargetMotion == 'after-deadline' ? '' : "-${navigationLoadTargetMotion}"))
+def navigationComplexCatalog = new groovy.json.JsonSlurper().parse(file('gradle/navigation-complex-window-catalog.json'))
+def navigationComplexScenario = navigationDropContext ? 'drop-context' : navigationScenario
+def navigationExpectedComplexWindows = (navigationComplexCatalog[navigationComplexScenario] ?: []).collectEntries {
+    [(it.testName): it.performanceGate]
 }
 def gameTestRunDirectory = file(findProperty('gameTestRunDirectory') ?: layout.buildDirectory.dir('gametest/run').get().asFile)
 def dedicatedServerRunRequested = gradle.startParameter.taskNames.any {
@@ -36,6 +153,7 @@ def mainTestOutput = files(
 minecraft {
     mappings channel: mapping_channel, version: mapping_version
     copyIdeResources = true
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
 
     runs {
         configureEach {
@@ -69,10 +187,22 @@ minecraft {
             workingDirectory gameTestRunDirectory
             property 'codpattern.test.workspace', project.projectDir.absolutePath
             property 'codpattern.test.results', (findProperty('barrierGroupRulesResultsPath') ?: 'build/verification/barrier-group-rules/forge-results.txt').toString()
-            property 'forge.enabledGameTestNamespaces', backpackGameTests ? 'codpattern_backpack' : barrierGroupRulesGameTests ? 'codpattern_barrier_rules' : navigationLoadSize ? "codpattern_navigation_load${navigationLoadSize}"
-                    : (project.hasProperty('navigationGameTests') ? 'codpattern_navigation'
-                    : (findProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'))
+            property 'forge.enabledGameTestNamespaces', backpackGameTests ? 'codpattern_backpack'
+                    : barrierGroupRulesGameTests ? 'codpattern_barrier_rules'
+                    : navigationVerification ? navigationHolder
+                    : project.hasProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'
             property 'codpattern.zombies.navigationDebug', project.hasProperty('navigationDebug') ? 'true' : 'false'
+            property 'codpattern.zombies.navigationEngine', navigationEngine
+            property 'codpattern.zombies.navigationSeed', navigationSeedText
+            property 'codpattern.zombies.navigationDifficulty', navigationDifficulty
+            property 'codpattern.zombies.navigationLoadTargetMotion', navigationLoadTargetMotion
+            property 'codpattern.zombies.navigationChunkStartsMissing', navigationChunkStartsMissing.toString()
+            property 'codpattern.zombies.navigationChunkTargetMovesMissing', navigationChunkTargetMovesMissing.toString()
+            property 'codpattern.zombies.navigationResultsDirectory', navigationResultsDirectory.absolutePath
+            property 'codpattern.zombies.navigationClassManifest', new File(navigationResultsDirectory, 'compiled-addon-classes.sha256').absolutePath
+            if (project.hasProperty('navigationJfr')) {
+                jvmArgs "-XX:StartFlightRecording=filename=${new File(navigationResultsDirectory, 'navigation.jfr').absolutePath},settings=profile,dumponexit=true"
+            }
             property 'mixin.env.remapRefMap', 'true'
             property 'mixin.env.refMapRemappingFile', layout.buildDirectory.file('createSrgToMcp/output.srg').get().asFile.absolutePath
             environment 'MOD_CLASSES', [
@@ -118,6 +248,7 @@ tasks.register('compileBarrierGroupRulesGameTests', JavaCompile) {
     javaCompiler.set(project.javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) })
     options.encoding = 'UTF-8'
     dependsOn tasks.named('classes')
+    dependsOn ':codpattern-main:testClasses'
 }
 
 tasks.register('syncZombiesDeployGameTestClasses', Sync) {
@@ -147,6 +278,164 @@ tasks.register('syncZombiesDeployGameTestClasses', Sync) {
 tasks.matching { it.name == 'runGameTestServer' }.configureEach {
     dependsOn tasks.named('syncGameTestStructures')
     dependsOn tasks.named('syncZombiesDeployGameTestClasses')
+    if (navigationVerification) {
+        doFirst {
+            navigationResultsDirectory.mkdirs()
+            extensions.extraProperties.set('navigationRunStartedAt', System.currentTimeMillis())
+            def existingWorld = fileTree(gameTestRunDirectory).matching { include '**/level.dat', '**/level.dat_old' }.files
+            if (!existingWorld.empty) {
+                throw new GradleException("Navigation verification requires a fresh world directory; existing world data must be preserved: ${gameTestRunDirectory}")
+            }
+            gameTestRunDirectory.mkdirs()
+            def worldProperties = new Properties()
+            def propertiesFile = new File(gameTestRunDirectory, 'server.properties')
+            if (propertiesFile.isFile()) propertiesFile.withInputStream { worldProperties.load(it) }
+            worldProperties.setProperty('level-seed', navigationSeedText)
+            worldProperties.setProperty('level-type', 'minecraft:flat')
+            worldProperties.setProperty('generate-structures', 'false')
+            worldProperties.setProperty('difficulty', navigationDifficulty)
+            worldProperties.setProperty('level-name', 'world')
+            propertiesFile.withOutputStream { worldProperties.store(it, 'Isolated navigation GameTest world; actual world settings are verified on ServerStartedEvent.') }
+            new File(navigationResultsDirectory, 'requested-server.properties').bytes = propertiesFile.bytes
+            def expected = navigationRegression || navigationDiagnostic ? sourceSets.main.allJava.files.findAll {
+                it.getText('UTF-8').contains('@GameTestHolder("' + navigationHolder + '")')
+            }.sum { (it.getText('UTF-8') =~ /@GameTest\(/).count } : 1
+            extensions.extraProperties.set('navigationExpectedTests', expected)
+            extensions.extraProperties.set('navigationExpectedComplexWindows', new LinkedHashMap(navigationExpectedComplexWindows))
+            new File(navigationResultsDirectory, 'expected-complex-windows.json').setText(
+                    groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(navigationExpectedComplexWindows)), 'UTF-8')
+            def compiledRoot = file(findProperty('navigationCompiledClassesDirectory')
+                    ?: layout.buildDirectory.dir('classes/java/main').get().asFile)
+            def classManifest = fileTree(compiledRoot).matching { include '**/*.class' }.files.sort {
+                compiledRoot.toPath().relativize(it.toPath()).toString()
+            }.collect { classFile ->
+                def digest = java.security.MessageDigest.getInstance('SHA-256')
+                classFile.withInputStream { stream ->
+                    byte[] buffer = new byte[8192]
+                    int read
+                    while ((read = stream.read(buffer)) != -1) digest.update(buffer, 0, read)
+                }
+                "${digest.digest().encodeHex()}  ${compiledRoot.toPath().relativize(classFile.toPath())}"
+            }
+            new File(navigationResultsDirectory, 'compiled-addon-classes.sha256').setText(classManifest.join('\n') + '\n', 'UTF-8')
+            def launch = [engine: navigationEngine, seed: navigationSeedText.toLong(), forge: forge_version,
+                          scenario: navigationScenario, chunkStartsMissing: navigationChunkStartsMissing,
+                          chunkTargetMovesMissing: navigationChunkTargetMovesMissing,
+                          gradleJava: System.getProperty('java.version'), os: System.getProperty('os.name'),
+                          arch: System.getProperty('os.arch'), processors: Runtime.getRuntime().availableProcessors(),
+                          jvmArgs: allJvmArgs, javaExecutable: executable,
+                          compiledClassCount: classManifest.size(), compiledRoot: compiledRoot.absolutePath,
+                          classManifest: 'compiled-addon-classes.sha256',
+                          sourceStatus: 'Compiled classes are the executed implementation; concurrent source edits are not this snapshot.',
+                          baselineEnvironment: file('build/verification/navigation/legacy-baseline-1701').absolutePath,
+                          expectedWorldSeed: navigationSeedText.toLong(), expectedOverworldGenerator: 'minecraft:flat',
+                          expectedWorldDifficulty: navigationDifficulty,
+                          expectedGenerateStructures: false, worldEnvironment: 'world-environment.json',
+                          navigationDebugEnabled: project.hasProperty('navigationDebug'),
+                          targetMotionPolicy: navigationLoadTargetMotion,
+                          jfrEnabled: project.hasProperty('navigationJfr')]
+            new File(navigationResultsDirectory, 'launch-environment.json').setText(
+                    groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(launch)), 'UTF-8')
+        }
+        finalizedBy 'archiveNavigationGameTestResult'
+    }
+}
+
+tasks.register('archiveNavigationGameTestResult') {
+    group = 'verification'
+    description = 'Archive actual navigation GameTest counts and reject a missing or wrong test namespace.'
+    doLast {
+        def testTask = tasks.named('runGameTestServer').get()
+        def launchFile = new File(navigationResultsDirectory, 'launch-environment.json')
+        if (launchFile.isFile()) {
+            def launch = new groovy.json.JsonSlurper().parse(launchFile)
+            launch.jvmArgs = testTask.allJvmArgs
+            launch.javaExecutable = testTask.executable ?: testTask.javaLauncher.orNull?.executablePath?.asFile?.absolutePath
+            launch.executedModClasses = testTask.environment.get('MOD_CLASSES')?.toString()
+            launch.compiledClassRootLoaded = launch.executedModClasses?.split(java.util.regex.Pattern.quote(File.pathSeparator))
+                    ?.contains('codpattern_zombies%%' + launch.compiledRoot) == true
+            launch.launchArgumentsRecordedAfterTaskConfiguration = true
+            launchFile.setText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(launch)), 'UTF-8')
+        }
+        def startedAt = testTask.extensions.extraProperties.has('navigationRunStartedAt')
+                ? testTask.extensions.extraProperties.get('navigationRunStartedAt') : null
+        def logFile = new File(gameTestRunDirectory, 'logs/latest.log')
+        def freshLog = logFile.isFile() && startedAt != null && logFile.lastModified() >= startedAt
+        def log = freshLog ? logFile.getText('UTF-8') : ''
+        def completed = (log =~ /(\d+) GAME TESTS COMPLETE/).collect { it[1].toInteger() }
+        def failureNames = (log =~ /LogTestReporter[^\n]*?: ([^\n]+?) failed!/).collect { it[1] }.unique()
+        def requiredFailures = (log =~ /(\d+) required tests failed/).collect { it[1].toInteger() }
+        def optionalFailures = (log =~ /(\d+) optional tests failed/).collect { it[1].toInteger() }
+        def expected = testTask.extensions.extraProperties.has('navigationExpectedTests')
+                ? testTask.extensions.extraProperties.get('navigationExpectedTests') : null
+        def executed = completed ? completed.last() : null
+        def failed = executed == null ? null : (requiredFailures ? requiredFailures.last() : 0)
+                + (optionalFailures ? optionalFailures.last() : 0)
+        def processExit = testTask.state.failure == null ? 0 : null
+        def worldFile = new File(navigationResultsDirectory, 'world-environment.json')
+        def world = worldFile.isFile() && startedAt != null && worldFile.lastModified() >= startedAt
+                ? new groovy.json.JsonSlurper().parse(worldFile) : null
+        def worldVerified = world?.verified == true && world?.actualWorldSeed == navigationSeedText.toLong()
+                && world?.generateStructures == false && world?.actualWorldDifficulty == navigationDifficulty
+        def classRootVerified = launchFile.isFile()
+                && new groovy.json.JsonSlurper().parse(launchFile).compiledClassRootLoaded == true
+        def failureMessages = []
+        def cause = testTask.state.failure
+        while (cause != null && failureMessages.size() < 20) {
+            failureMessages.add(cause.toString())
+            cause = cause.cause
+        }
+        def exitMatch = failureMessages.join('\n') =~ /non-zero exit value (\d+)/
+        if (exitMatch.find()) processExit = exitMatch.group(1).toInteger()
+        def expectedWindows = testTask.extensions.extraProperties.has('navigationExpectedComplexWindows')
+                ? testTask.extensions.extraProperties.get('navigationExpectedComplexWindows') : navigationExpectedComplexWindows
+        def complexTiming = project.ext.auditNavigationComplexMspt(navigationResultsDirectory, expectedWindows, startedAt)
+        new File(navigationResultsDirectory, 'complex-mspt-audit.json').setText(
+                groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(complexTiming)), 'UTF-8')
+        def report = [engine: navigationEngine, seed: navigationSeedText.toLong(), scenario: navigationScenario,
+                      chunkStartsMissing: navigationChunkStartsMissing,
+                      chunkTargetMovesMissing: navigationChunkTargetMovesMissing,
+                      targetMotionPolicy: navigationLoadTargetMotion,
+                      worldDifficulty: navigationDifficulty,
+                      expectedTests: expected, executedTests: executed, passedTests: executed == null ? null : executed - failed,
+                      failedTests: failed, failureNames: failureNames, processExitCode: processExit,
+                      gameTestTaskFailed: testTask.state.failure != null,
+                      freshServerLog: freshLog,
+                      worldEnvironmentVerified: worldVerified,
+                      compiledClassRootLoaded: classRootVerified,
+                      complexTimingRequired: complexTiming.required, complexTimingVerified: complexTiming.success,
+                      gameTestRunDirectory: gameTestRunDirectory.absolutePath,
+                      complete: executed != null && executed == expected,
+                      success: executed != null && executed == expected && failed == 0 && processExit == 0 && worldVerified && classRootVerified
+                              && (!complexTiming.required || complexTiming.success)]
+        navigationResultsDirectory.mkdirs()
+        new File(navigationResultsDirectory, 'run-summary.json').setText(
+                groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(report)), 'UTF-8')
+        if (freshLog) {
+            new File(navigationResultsDirectory, 'server-latest.log').bytes = logFile.bytes
+        }
+        if (executed == null || executed != expected) {
+            throw new GradleException("Navigation GameTest execution count mismatch: expected ${expected}, observed ${executed}; see run-summary.json")
+        }
+        if (!worldVerified) throw new GradleException('Navigation GameTest world settings were not verified; see world-environment.json')
+        if (!classRootVerified) throw new GradleException('Executed MOD_CLASSES does not contain the snapshotted addon class root; see launch-environment.json')
+        if (complexTiming.required && !complexTiming.success)
+            throw new GradleException('Complex-scene measurement or performance gate failed; see complex-mspt-audit.json')
+    }
+}
+
+tasks.register('auditNavigationComplexMspt') {
+    group = 'verification'
+    description = 'Audit an existing complex scene timing archive against its frozen test-name catalog.'
+    doLast {
+        def frozenCatalog = new File(navigationResultsDirectory, 'expected-complex-windows.json')
+        def expected = frozenCatalog.isFile() ? new groovy.json.JsonSlurper().parse(frozenCatalog) : navigationExpectedComplexWindows
+        def audit = project.ext.auditNavigationComplexMspt(navigationResultsDirectory, expected, null)
+        navigationResultsDirectory.mkdirs()
+        new File(navigationResultsDirectory, 'complex-mspt-audit.json').setText(
+                groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(audit)), 'UTF-8')
+        if (audit.required && !audit.success) throw new GradleException(audit.errors.join('; '))
+    }
 }
 
 repositories {
@@ -231,6 +520,50 @@ tasks.named('jar', Jar).configure {
     finalizedBy 'reobfJar'
 }
 
+tasks.register('verifyNavigationAccessTransformerPackaging') {
+    group = 'verification'
+    description = 'Verify the built addon contains exactly the single approved navigation AT rule; runtime application still requires a packaged server test.'
+    dependsOn tasks.named('jar')
+    doLast {
+        def archive = tasks.named('jar', Jar).get().archiveFile.get().asFile
+        def entries = zipTree(archive).matching { include 'META-INF/accesstransformer.cfg' }.files
+        if (entries.size() != 1) {
+            throw new GradleException('Addon JAR must contain META-INF/accesstransformer.cfg exactly once')
+        }
+        def rules = entries.first().readLines('UTF-8').collect { it.split('#', 2)[0].trim() }.findAll { it }
+        if (rules != ['public net.minecraft.world.entity.ai.navigation.PathNavigation f_26506_']) {
+            throw new GradleException("Unexpected navigation access-transformer rules: ${rules}")
+        }
+        logger.lifecycle('Navigation AT packaging verified; packaged-server application is a separate runtime gate.')
+    }
+}
+
+// Production Forge deliberately disables GameTests. This separate, reobfuscated probe mod invokes
+// the final addon's Guard in a real production server; it is not part of the addon distribution.
+tasks.register('compileNavigationProductionProbe', JavaCompile) {
+    group = 'verification'
+    source 'src/test/java/com/cdp/codpattern/navigationverification/ZombiesNavigationProductionProbe.java'
+    classpath = sourceSets.main.compileClasspath + sourceSets.main.output
+    destinationDirectory.set(layout.buildDirectory.dir('verification/navigation/production-probe-classes'))
+    javaCompiler.set(project.javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(17) })
+    dependsOn tasks.named('classes')
+    dependsOn mainProject.tasks.named('classes')
+}
+tasks.register('navigationProductionProbeJar', Jar) {
+    group = 'verification'
+    archiveClassifier = 'navigation-production-probe'
+    dependsOn tasks.named('compileNavigationProductionProbe')
+    from(layout.buildDirectory.dir('verification/navigation/production-probe-classes')) {
+        include 'com/cdp/codpattern/navigationverification/ZombiesNavigationProductionProbe*.class'
+    }
+    from('src/test/resources/navigation-production-probe')
+    finalizedBy 'reobfNavigationProductionProbeJar'
+}
+reobf { navigationProductionProbeJar { } }
+tasks.matching { it.name.startsWith('reobf') }.configureEach {
+    dependsOn ':codpattern-main:classes'
+}
+
 // Use the shared snapshot task with this addon's archive name and version.
 apply from: mainProject.file('gradle/snapshot.gradle')
 
@@ -259,6 +592,48 @@ tasks.register('runZombiesNavigationCompatSuite') {
     group = 'verification'
     dependsOn 'runZombiesNavigationProgressTrackerCompatTest', 'runZombiesMobRecycleProgressCompatTest',
             'runZombiesGroundSpawnPolicyCompatTest', 'runZombiesWaveRuntimeStaticContractCompatTest'
+    dependsOn 'runTraversalMathCompatTest', 'runRouteProgressCompatTest', 'runNavigationPlannerCompatTest',
+            'runNativePathCompatTest', 'runZombiesNavigationTimingCompatTest'
+}
+
+tasks.register('runZombiesNavigationTimingCompatTest', JavaExec) {
+    group = 'verification'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.gametest.ZombiesNavigationTimingCompatTest'
+    dependsOn tasks.named('testClasses')
+}
+
+tasks.register('runTraversalMathCompatTest', JavaExec) {
+    group = 'verification'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.service.navigation.TraversalMathCompatTest'
+    dependsOn tasks.named('testClasses')
+}
+
+tasks.register('runRouteProgressCompatTest', JavaExec) {
+    group = 'verification'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.service.navigation.RouteProgressCompatTest'
+    dependsOn tasks.named('testClasses')
+}
+
+tasks.register('runNavigationPlannerCompatTest', JavaExec) {
+    group = 'verification'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.service.navigation.NavigationPlannerCompatTest'
+    dependsOn tasks.named('testClasses')
+}
+
+tasks.register('runNativePathCompatTest', JavaExec) {
+    group = 'verification'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.service.navigation.NativePathCompatTest'
+    dependsOn tasks.named('testClasses')
 }
 
 tasks.register('runZombiesForceEndCompatSuite', JavaExec) {
@@ -282,6 +657,15 @@ tasks.register('runZombiesMvp123CompatSuite', JavaExec) {
     mainClass = 'com.cdp.codpattern.app.zombies.service.ZombiesMvp123CompatTestSuite'
     dependsOn tasks.named('testClasses')
     dependsOn mainProject.tasks.named('testClasses')
+}
+
+tasks.register('runZombiesNavigationMutationCompatSuite', JavaExec) {
+    group = 'verification'
+    description = 'Run unchanged barrier and purchase regressions for navigation world-change hooks.'
+    workingDir = mainProject.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.service.ZombiesNavigationMutationCompatSuite'
+    dependsOn tasks.named('testClasses')
 }
 
 tasks.register('runZombiesDeployCompatSuite', JavaExec) {

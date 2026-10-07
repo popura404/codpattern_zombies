@@ -147,12 +147,13 @@ public final class ZombiesMobRecycleService {
         if (state.groundStallMonitor == null) {
             state.groundStallMonitor = new GroundStallMonitor(gameTime);
         }
-        boolean stuckTimedOut = target != null && state.groundStallMonitor.timedOut(
+        boolean stuckTimedOut = target != null && gameTime >= progress.planningWaitUntilGameTime()
+                && state.groundStallMonitor.timedOut(
                 gameTime,
                 progress.lastProgressGameTime(),
                 progress.lastEngagementGameTime(),
                 progress.actionGraceUntilGameTime());
-        return new RecycleDecision(noTargetTimedOut || stuckTimedOut, stuckTimedOut);
+        return new RecycleDecision(noTargetTimedOut || stuckTimedOut, stuckTimedOut && progress.geometricFailure());
     }
 
     /** Uses navigation evidence rather than raw displacement, which crowding and loops can renew forever. */
@@ -183,13 +184,14 @@ public final class ZombiesMobRecycleService {
             boolean requeue,
             boolean navigationFailure
     ) {
+        Runnable navigationFeedback = navigationFailure ? ZombiesGroundNavigationService.recycleFeedback(mob) : () -> { };
         ZombiesMobLifecycleService.LifecycleResult lifecycle =
                 lifecycleService.onRecycledForRetry(roomId, mob, waveState);
         if (!lifecycle.unregistered()) {
             return false;
         }
         if (navigationFailure) {
-            ZombiesGroundNavigationService.onRecycled(mob);
+            navigationFeedback.run();
         }
         monitorStates.remove(mob.getUUID());
         if (requeue && mobId != null && !mobId.isBlank()) {
@@ -207,6 +209,9 @@ public final class ZombiesMobRecycleService {
     }
 
     private boolean validTarget(Mob mob, LivingEntity target) {
+        if (ZombiesGroundNavigationService.usesLayered(mob)) {
+            return ZombiesGroundNavigationService.isLayeredTargetEligible(mob, target);
+        }
         if (!(target instanceof ServerPlayer player) || !target.isAlive() || target.isRemoved() || player.isSpectator()) {
             return false;
         }

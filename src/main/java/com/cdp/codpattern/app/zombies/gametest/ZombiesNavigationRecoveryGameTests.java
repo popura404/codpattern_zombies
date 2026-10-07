@@ -1,6 +1,7 @@
 package com.cdp.codpattern.app.zombies.gametest;
 
 import com.cdp.codpattern.app.zombies.service.ZombiesGroundNavigationService;
+import com.cdp.codpattern.app.zombies.service.navigation.LayeredNavigationRuntime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -48,6 +49,8 @@ public final class ZombiesNavigationRecoveryGameTests {
     private static Block halfWall;
     private static Block blockedHalfWall;
     private static Block rotatedThinWall;
+    private static Block mirroredHalfWall;
+    private static Block mirroredThinWall;
 
     private ZombiesNavigationRecoveryGameTests() {
     }
@@ -62,72 +65,84 @@ public final class ZombiesNavigationRecoveryGameTests {
             halfWall = new NavigationWall(false, 8.0D, true);
             blockedHalfWall = new NavigationWall(false, 8.0D, false);
             rotatedThinWall = new NavigationWall(true, 3.0D, true);
+            mirroredHalfWall = new NavigationWall(false, 8.0D, true, true);
+            mirroredThinWall = new NavigationWall(true, 3.0D, true, true);
             helper.register(ResourceLocation.fromNamespaceAndPath("codpattern_zombies", "navigation_test_half_wall"), halfWall);
             helper.register(ResourceLocation.fromNamespaceAndPath("codpattern_zombies", "navigation_test_blocked_wall"),
                     blockedHalfWall);
             // A different namespace prevents compatibility from depending on the addon's block IDs.
             helper.register(ResourceLocation.fromNamespaceAndPath("navigation_compat_fixture", "thin_wall"), rotatedThinWall);
+            helper.register(ResourceLocation.fromNamespaceAndPath("navigation_compat_fixture", "mirrored_half_wall"), mirroredHalfWall);
+            helper.register(ResourceLocation.fromNamespaceAndPath("navigation_compat_fixture", "mirrored_thin_wall"), mirroredThinWall);
         });
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
     public static void stationaryZombieBypassesMisleadingHalfThicknessWall(GameTestHelper helper) {
         run(helper, new WallScenario(false, 8, 12, halfWall, false, false));
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
+    static void runMirroredWall(GameTestHelper helper, boolean rotated) {
+        run(helper, new WallScenario(rotated, 8, 12, rotated ? mirroredThinWall : mirroredHalfWall, false, false, true));
+    }
+
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
     public static void identicalBlockedNodeWallRemainsReachable(GameTestHelper helper) {
         run(helper, new WallScenario(false, 8, 12, blockedHalfWall, false, false));
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
     public static void rotatedNonHalfThicknessWallUsesTheSameRecovery(GameTestHelper helper) {
         run(helper, new WallScenario(true, 8, 12, rotatedThinWall, false, false));
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
     public static void sideMovementContinuesUntilTheLongWallIsActuallyBypassed(GameTestHelper helper) {
         // One short sideways move still leaves the player behind the same continuous obstacle.
         run(helper, new WallScenario(false, 6, 14, halfWall, true, false));
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
     public static void removingFailedWallRestoresPursuitWithoutMovingThePlayer(GameTestHelper helper) {
         // Initially joins both room walls. Removing its middle is the only possible ground passage.
         run(helper, new WallScenario(false, 1, 20, halfWall, false, true));
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ALTERNATIVE_DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ALTERNATIVE_DEADLINE + 10)
     public static void unreachableMainPlayerFallsBackToBottomSlabSurface(GameTestHelper helper) {
         runAlternativeSurface(helper, Blocks.SMOOTH_STONE_SLAB.defaultBlockState()
                 .setValue(SlabBlock.TYPE, SlabType.BOTTOM), 0.5D);
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = ALTERNATIVE_DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = ALTERNATIVE_DEADLINE + 10)
     public static void unreachableMainPlayerFallsBackToClosedBottomTrapdoorSurface(GameTestHelper helper) {
         runAlternativeSurface(helper, Blocks.OAK_TRAPDOOR.defaultBlockState()
                 .setValue(TrapDoorBlock.OPEN, false).setValue(TrapDoorBlock.HALF, Half.BOTTOM), 3.0D / 16.0D);
     }
 
-    @GameTest(template = SERIES_TEMPLATE, batch = BATCH, timeoutTicks = SERIES_DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = SERIES_TEMPLATE, batch = BATCH, timeoutTicks = SERIES_DEADLINE + 10)
     public static void fifthIndependentObstacleStillPermitsRealLocalRecovery(GameTestHelper helper) {
+        ZombiesNavigationTestTiming.begin(helper, "five-obstacle-series", false);
         helper.assertTrue(halfWall != null, "navigation fixture blocks must be registered on the test server");
         // Its declared 24 x 6 x 64 template keeps this room separate from adjacent GameTests.
         buildEmptyRoom(helper, 4, 61);
-        var fixture = new ZombiesNavigationGameTests.Fixture(helper, new Vec3(10.5D, 1.0D, 59.5D));
+        var fixture = new ZombiesNavigationGameTests.Fixture(helper, new Vec3(10.5D, 1.0D, 59.5D),
+                new BlockPos(24, 6, 64));
         try {
             Mob mob = fixture.spawn("zombie", new BlockPos(10, 1, 3));
-            mob.getRandom().setSeed(1701L);
+            mob.getRandom().setSeed(ZombiesNavigationTestReport.SEED);
             ObstacleSeriesRun run = new ObstacleSeriesRun(helper, fixture, mob);
             run.placeNextWall();
             helper.onEachTick(run::observe);
         } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
             fixture.close();
             throw failure;
         }
     }
 
     private static void runAlternativeSurface(GameTestHelper helper, BlockState surface, double height) {
+        ZombiesNavigationTestTiming.begin(helper, height == 0.5D ? "alternative-bottom-slab" : "alternative-bottom-trapdoor", false);
         buildEmptyRoom(helper, 10);
         // Match the existing fallback fixture: the closer upper player has no stair access.
         for (int x = 3; x <= 13; x++) {
@@ -147,7 +162,7 @@ public final class ZombiesNavigationRecoveryGameTests {
         var fixture = new ZombiesNavigationGameTests.Fixture(helper, new Vec3(7.5D, 6.0D, 5.5D));
         try {
             Mob mob = fixture.spawn("zombie", new BlockPos(7, 1, 8));
-            mob.getRandom().setSeed(1701L);
+            mob.getRandom().setSeed(ZombiesNavigationTestReport.SEED);
             helper.assertTrue(mob.getTarget() == fixture.player,
                     "the original room target must be the inaccessible upper player");
             helper.assertTrue(ZombiesGroundNavigationService.getProgress(mob) != null,
@@ -174,14 +189,14 @@ public final class ZombiesNavigationRecoveryGameTests {
                             && mob.distanceToSqr(alternative) <= reach * reach + alternative.getBbWidth()
                             && mob.getSensing().hasLineOfSight(alternative);
                     if (arrived) {
-                        helper.assertTrue(fixture.spawnService.navigationMetrics().recoveries() > 0,
+                        assertRecoveryEvidence(helper, fixture,
                                 "the alternate player must be approached through a real recovery attempt");
                         finished[0] = true;
                         fixture.close();
-                        helper.succeed();
+                        ZombiesNavigationTestTiming.succeed(helper);
                     } else if (helper.getTick() >= ALTERNATIVE_DEADLINE) {
                         var path = mob.getNavigation().getPath();
-                        helper.fail("recovery failed to select and stand on the alternate target's surface; surface="
+                        ZombiesNavigationTestTiming.fail(helper, "recovery failed to select and stand on the alternate target's surface; surface="
                                 + surface + ", position=" + mob.position() + ", expected=" + originalAlternative
                                 + ", selectedAlternative=" + (mob.getTarget() == alternative)
                                 + ", canReach=" + (path == null ? "none" : path.canReach())
@@ -189,28 +204,34 @@ public final class ZombiesNavigationRecoveryGameTests {
                                 + ", metrics=" + fixture.spawnService.navigationMetrics());
                     }
                 } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                     finished[0] = true;
                     fixture.close();
                     throw failure;
                 }
             });
         } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
             fixture.close();
             throw failure;
         }
     }
 
     private static void run(GameTestHelper helper, WallScenario scenario) {
+        ZombiesNavigationTestTiming.begin(helper, scenario.mirrored() ? (scenario.rotated() ? "wall-mirrored-thin" : "wall-mirrored-half")
+                : scenario.removeMiddle() ? "wall-removal" : scenario.requireIntermediateMovement() ? "wall-long"
+                : scenario.block() == blockedHalfWall ? "wall-blocked-node" : scenario.rotated() ? "wall-rotated-thin" : "wall-half", scenario.mirrored());
         helper.assertTrue(scenario.block() != null, "navigation fixture blocks must be registered on the test server");
         buildRoom(helper, scenario);
         var fixture = new ZombiesNavigationGameTests.Fixture(helper, scenario.position(TARGET_ALONG, 11.5D));
         try {
             Mob mob = fixture.spawn("zombie", BlockPos.containing(scenario.position(TARGET_ALONG, 5.5D)));
-            mob.getRandom().setSeed(1701L);
+            mob.getRandom().setSeed(ZombiesNavigationTestReport.SEED);
             RecoveryRun run = new RecoveryRun(helper, scenario, fixture, mob);
             run.assertFixture();
             helper.onEachTick(run::observe);
         } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
             fixture.close();
             throw failure;
         }
@@ -253,6 +274,9 @@ public final class ZombiesNavigationRecoveryGameTests {
         private int wallCenter;
         private long localRoutesAtWallStart;
         private long recoveriesAtWallStart;
+        private long expansionsAtWallStart;
+        private boolean executedManagedSegment;
+        private Vec3 previousPosition;
         private boolean crossedWallEnd;
         private boolean finished;
 
@@ -279,6 +303,10 @@ public final class ZombiesNavigationRecoveryGameTests {
             var metrics = fixture.spawnService.navigationMetrics();
             localRoutesAtWallStart = metrics.localRoutes();
             recoveriesAtWallStart = metrics.recoveries();
+            var runtime = fixture.spawnService.navigationRuntimeMetrics();
+            expansionsAtWallStart = runtime.planning() == null ? 0 : runtime.planning().expansions();
+            executedManagedSegment = false;
+            previousPosition = mob.position();
         }
 
         private int nextRouteColumn(Vec3 relative) {
@@ -309,18 +337,29 @@ public final class ZombiesNavigationRecoveryGameTests {
                 var progress = ZombiesGroundNavigationService.getProgress(mob);
                 helper.assertTrue(progress != null, "the original room recovery controller must remain installed");
                 Vec3 relative = mob.position().subtract(origin);
+                executedManagedSegment |= managedSegmentMoved(mob, previousPosition);
+                previousPosition = mob.position();
+                var runtime = fixture.spawnService.navigationRuntimeMetrics();
+                boolean layered = runtime.planning() != null;
                 if (completedWalls < 5) {
                     double halfWidth = mob.getBbWidth() / 2.0D;
                     boolean outsideWall = relative.x + halfWidth <= wallCenter - 2
                             || relative.x - halfWidth >= wallCenter + 3;
                     crossedWallEnd |= relative.z >= wallPlane && outsideWall;
                     boolean physicallyPassed = relative.z > wallPlane + 0.5D + halfWidth;
-                    if (physicallyPassed && crossedWallEnd && progress.recoveryAttempts() == 0) {
+                    if (physicallyPassed && crossedWallEnd && (layered || progress.recoveryAttempts() == 0)) {
                         var metrics = fixture.spawnService.navigationMetrics();
-                        helper.assertTrue(metrics.recoveries() > recoveriesAtWallStart,
-                                "each obstacle must cause a new recovery attempt; " + describe());
-                        helper.assertTrue(metrics.localRoutes() > localRoutesAtWallStart,
-                                "each obstacle, including the fifth, must execute a local route; " + describe());
+                        if (layered) {
+                            helper.assertTrue(runtime.planning().expansions() > expansionsAtWallStart,
+                                    "each newly placed obstacle must require real graph planning; " + describe());
+                            helper.assertTrue(executedManagedSegment,
+                                    "each obstacle, including the fifth, must physically execute a managed short segment; " + describe());
+                        } else {
+                            helper.assertTrue(metrics.recoveries() > recoveriesAtWallStart,
+                                    "each obstacle must cause a new recovery attempt; " + describe());
+                            helper.assertTrue(metrics.localRoutes() > localRoutesAtWallStart,
+                                    "each obstacle, including the fifth, must execute a local route; " + describe());
+                        }
                         completedWalls++;
                         System.out.println("NAVIGATION_RECOVERY_SERIES completed=" + completedWalls
                                 + " tick=" + helper.getTick() + " position=" + relative + " metrics=" + metrics);
@@ -334,12 +373,13 @@ public final class ZombiesNavigationRecoveryGameTests {
                         && mob.getSensing().hasLineOfSight(fixture.player)) {
                     finished = true;
                     fixture.close();
-                    helper.succeed();
+                    ZombiesNavigationTestTiming.succeed(helper);
                 } else if (helper.getTick() >= SERIES_DEADLINE) {
-                    helper.fail("five independent obstacles exceeded the fixed " + SERIES_DEADLINE
+                    ZombiesNavigationTestTiming.fail(helper, "five independent obstacles exceeded the fixed " + SERIES_DEADLINE
                             + " tick deadline; " + describe());
                 }
             } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                 finished = true;
                 fixture.close();
                 throw failure;
@@ -350,7 +390,8 @@ public final class ZombiesNavigationRecoveryGameTests {
             return "completed=" + completedWalls + ", wallPlane=" + wallPlane + ", wallCenter=" + wallCenter
                     + ", position=" + mob.position().subtract(origin)
                     + ", progress=" + ZombiesGroundNavigationService.getProgress(mob)
-                    + ", metrics=" + fixture.spawnService.navigationMetrics();
+                    + ", metrics=" + fixture.spawnService.navigationMetrics()
+                    + ", execution=" + describeLayered(mob);
         }
     }
 
@@ -366,6 +407,10 @@ public final class ZombiesNavigationRecoveryGameTests {
         private boolean observedIntermediateSideMovement;
         private boolean crossedAtWallEnd;
         private long previousSearches;
+        private Vec3 previousPosition;
+        private boolean executedManagedSegment;
+        private Vec3 positionWhenWallOpened;
+        private boolean advancedAfterWallOpened;
 
         private RecoveryRun(GameTestHelper helper, WallScenario scenario,
                             ZombiesNavigationGameTests.Fixture fixture, Mob mob) {
@@ -375,6 +420,7 @@ public final class ZombiesNavigationRecoveryGameTests {
             this.mob = mob;
             targetPosition = fixture.player.position();
             origin = helper.absoluteVec(Vec3.ZERO);
+            previousPosition = mob.position();
         }
 
         private void assertFixture() {
@@ -396,13 +442,33 @@ public final class ZombiesNavigationRecoveryGameTests {
             }
             try {
                 helper.assertTrue(mob.isAlive() && helper.getLevel().getEntity(mob.getUUID()) == mob,
-                        "the original room zombie must complete the route alive; replacement is not success");
+                        "the original room zombie must complete the route alive; replacement is not success; tick="
+                                + helper.getTick() + ", uuid=" + mob.getUUID() + ", health=" + mob.getHealth()
+                                + ", removed=" + mob.isRemoved() + ", removalReason=" + mob.getRemovalReason()
+                                + ", worldEntity=" + helper.getLevel().getEntity(mob.getUUID())
+                                + ", position=" + mob.position() + ", origin=" + origin);
                 helper.assertTrue(fixture.player.position().distanceToSqr(targetPosition) < 1.0E-8D,
                         "the target must remain stationary throughout recovery");
                 long searches = fixture.spawnService.navigationMetrics().searches();
-                helper.assertTrue(searches - previousSearches <= 2,
-                        "recovery must respect the existing two-search room budget each tick");
+                var runtime = fixture.spawnService.navigationRuntimeMetrics();
+                if (runtime.serverTick() == null) {
+                    helper.assertTrue(searches - previousSearches <= 2,
+                            "recovery must respect the existing two-search room budget each tick");
+                } else {
+                    helper.assertTrue(runtime.serverTick().expansions() <= 4096 && runtime.serverTick().geometry() <= 1024,
+                            "layered recovery must respect the whole-server work budget");
+                }
                 previousSearches = searches;
+                executedManagedSegment |= managedSegmentMoved(mob, previousPosition);
+                previousPosition = mob.position();
+
+                if (wallOpened) {
+                    advancedAfterWallOpened |= mob.position().distanceToSqr(positionWhenWallOpened) >= 0.04D;
+                    if (helper.getTick() >= WALL_REMOVAL_TICK + 100) {
+                        helper.assertTrue(advancedAfterWallOpened,
+                                "the original zombie must resume real movement within 100 ticks of opening the wall");
+                    }
+                }
 
                 Vec3 relative = mob.position().subtract(origin);
                 double along = scenario.along(relative);
@@ -421,7 +487,7 @@ public final class ZombiesNavigationRecoveryGameTests {
                 if (scenario.removeMiddle() && !wallOpened && helper.getTick() >= WALL_REMOVAL_TICK) {
                     helper.assertTrue(normal < WALL_PLANE,
                             "the zombie must not cross the initially closed wall before removal");
-                    helper.assertTrue(fixture.spawnService.navigationMetrics().recoveries() > 0,
+                    assertRecoveryEvidence(helper, fixture,
                             "the wall must have caused a real recovery attempt before it is removed");
                     for (int alongBlock = 8; alongBlock <= 12; alongBlock++) {
                         for (int y = 1; y <= 3; y++) {
@@ -429,6 +495,7 @@ public final class ZombiesNavigationRecoveryGameTests {
                         }
                     }
                     wallOpened = true;
+                    positionWhenWallOpened = mob.position();
                 }
 
                 boolean onPlayerSide = normal > WALL_PLANE + scenario.thickness() + halfWidth;
@@ -443,19 +510,26 @@ public final class ZombiesNavigationRecoveryGameTests {
                                 "the long-wall fixture must include a sideways advance that has not yet bypassed it");
                     }
                     if (scenario.block() != blockedHalfWall) {
-                        helper.assertTrue(fixture.spawnService.navigationMetrics().recoveries() > 0,
+                        assertRecoveryEvidence(helper, fixture,
                                 "misleading wall nodes must exercise the recovery controller");
+                        if (runtime.planning() != null) {
+                            helper.assertTrue(scenario.removeMiddle() ? advancedAfterWallOpened : executedManagedSegment,
+                                    scenario.removeMiddle()
+                                            ? "the original zombie must physically resume pursuit through the opened wall"
+                                            : "the layered controller must physically advance a validated short segment around the wall");
+                        }
                     }
                     finished = true;
                     fixture.close();
-                    helper.succeed();
+                    ZombiesNavigationTestTiming.succeed(helper);
                     return;
                 }
                 if (helper.getTick() >= DEADLINE) {
-                    helper.fail("stationary-target recovery did not reach the far side before its fixed deadline; "
+                    ZombiesNavigationTestTiming.fail(helper, "stationary-target recovery did not reach the far side before its fixed deadline; "
                             + describe(relative));
                 }
             } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                 finished = true;
                 fixture.close();
                 throw failure;
@@ -471,14 +545,45 @@ public final class ZombiesNavigationRecoveryGameTests {
                     + ", end=" + (path == null ? "none" : path.getEndNode())
                     + ", progress=" + ZombiesGroundNavigationService.getProgress(mob)
                     + ", metrics=" + fixture.spawnService.navigationMetrics()
+                    + ", execution=" + describeLayered(mob)
                     + ", goals=" + mob.goalSelector.getRunningGoals()
                     .map(goal -> goal.getGoal().getClass().getSimpleName()).toList();
         }
     }
 
+    private static void assertRecoveryEvidence(GameTestHelper helper,
+            ZombiesNavigationGameTests.Fixture fixture, String reason) {
+        var runtime = fixture.spawnService.navigationRuntimeMetrics();
+        helper.assertTrue(runtime.planning() == null ? fixture.spawnService.navigationMetrics().recoveries() > 0
+                        : runtime.planning().requests() > 0 && runtime.planning().expansions() > 0,
+                reason);
+    }
+
+    private static boolean managedSegmentMoved(Mob mob, Vec3 previous) {
+        var runtime = LayeredNavigationRuntime.of(mob);
+        if (runtime == null || previous == null || mob.position().distanceToSqr(previous) < 1.0E-6D
+                || mob.goalSelector.getRunningGoals().noneMatch(goal -> goal.getGoal().getClass().getSimpleName().equals("Controller"))) {
+            return false;
+        }
+        var path = mob.getNavigation().getPath();
+        String state = runtime.describe(mob);
+        return state.contains("phase=PRECISE,") || state.contains("phase=FOLLOW,")
+                && path != null && path.getNodeCount() <= 2;
+    }
+
+    private static String describeLayered(Mob mob) {
+        var runtime = LayeredNavigationRuntime.of(mob);
+        return runtime == null ? "legacy" : runtime.describe(mob);
+    }
+
     private record WallScenario(boolean rotated, int first, int last, Block block,
-                                boolean requireIntermediateMovement, boolean removeMiddle) {
+                                boolean requireIntermediateMovement, boolean removeMiddle, boolean mirrored) {
+        private WallScenario(boolean rotated, int first, int last, Block block,
+                             boolean requireIntermediateMovement, boolean removeMiddle) {
+            this(rotated, first, last, block, requireIntermediateMovement, removeMiddle, false);
+        }
         private Vec3 position(double along, double normal) {
+            if (mirrored) normal = 21 - normal;
             return rotated ? new Vec3(normal, 1.0D, along) : new Vec3(along, 1.0D, normal);
         }
 
@@ -491,7 +596,8 @@ public final class ZombiesNavigationRecoveryGameTests {
         }
 
         private double normal(Vec3 position) {
-            return rotated ? position.x : position.z;
+            double coordinate = rotated ? position.x : position.z;
+            return mirrored ? 21 - coordinate : coordinate;
         }
 
         private double thickness() {
@@ -504,9 +610,14 @@ public final class ZombiesNavigationRecoveryGameTests {
         private final boolean pathable;
 
         private NavigationWall(boolean rotated, double thickness, boolean pathable) {
+            this(rotated, thickness, pathable, false);
+        }
+
+        private NavigationWall(boolean rotated, double thickness, boolean pathable, boolean mirrored) {
             super(BlockBehaviour.Properties.of().strength(1.0F).noOcclusion());
-            shape = rotated ? Block.box(0, 0, 0, thickness, 16, 16)
-                    : Block.box(0, 0, 0, 16, 16, thickness);
+            double min = mirrored ? 16 - thickness : 0, max = mirrored ? 16 : thickness;
+            shape = rotated ? Block.box(min, 0, 0, max, 16, 16)
+                    : Block.box(0, 0, min, 16, 16, max);
             this.pathable = pathable;
         }
 

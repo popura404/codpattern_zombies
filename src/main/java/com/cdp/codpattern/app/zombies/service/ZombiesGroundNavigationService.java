@@ -1,5 +1,11 @@
 package com.cdp.codpattern.app.zombies.service;
 
+import com.cdp.codpattern.app.zombies.service.navigation.NavigationEngine;
+import com.cdp.codpattern.app.zombies.service.navigation.NavigationContext;
+import com.cdp.codpattern.app.zombies.service.navigation.LayeredNavigationRuntime;
+import com.cdp.codpattern.app.zombies.service.navigation.NavigationPlanner;
+import com.cdp.codpattern.app.zombies.service.navigation.NavigationGraphCache;
+import com.cdp.codpattern.app.zombies.service.navigation.NavigationScheduler;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
@@ -36,6 +42,33 @@ import java.util.function.Supplier;
 
 /** Room-local work limits; entities keep their native combat goals and navigator. */
 public final class ZombiesGroundNavigationService {
+    private final NavigationEngine engine =
+            NavigationEngine.configured();
+    private NavigationContext context;
+    private LayeredNavigationRuntime layered;
+
+    public void configureContext(NavigationContext next) {
+        if (context != null && context.equals(next)) return;
+        if (layered != null) layered.close();
+        context = Objects.requireNonNull(next);
+        layered = null;
+    }
+
+    public static boolean isInstalled(Mob mob) {
+        return observer(mob) != null
+                || LayeredNavigationRuntime.of(mob) != null;
+    }
+
+    public static boolean usesLayered(Mob mob) {
+        return LayeredNavigationRuntime.of(mob) != null;
+    }
+
+    public static boolean isLayeredTargetEligible(Mob mob, LivingEntity target) {
+        var runtime = LayeredNavigationRuntime.of(mob);
+        return runtime != null && runtime.eligible(mob, target);
+    }
+
+    public void cancelMob(UUID id) { if (layered != null) layered.cancelMob(id); }
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final boolean DEBUG = Boolean.getBoolean("codpattern.zombies.navigationDebug");
     static final int STALL_TICKS = 40;
@@ -77,16 +110,23 @@ public final class ZombiesGroundNavigationService {
     }
 
     public void install(Mob mob, double initialFollowRange) {
-        if (!supports(mob) || observer(mob) != null) {
+        if (!supports(mob) || isInstalled(mob)) {
             return;
         }
         PathfinderMob pathfinder = (PathfinderMob) mob;
+        if (engine == NavigationEngine.LAYERED) {
+            if (context == null) throw new IllegalStateException("Layered navigation requires explicit room bounds");
+            if (layered == null) layered = new LayeredNavigationRuntime(context);
+            layered.install(pathfinder);
+            return;
+        }
         State state = new State(pathfinder, initialFollowRange);
         mob.goalSelector.addGoal(0, new ObserverGoal(pathfinder, state));
         mob.goalSelector.addGoal(recoveryPriority(mob), new RecoveryGoal(pathfinder, state));
     }
 
     public void trackSpawn(Mob mob, ZombiesGroundSpawnPolicy policy, String spawnId) {
+        if (layered != null) { layered.trackSpawn(mob, policy, spawnId); return; }
         ObserverGoal observer = observer(mob);
         if (observer != null) {
             observer.state.spawnPolicy = policy;
@@ -95,32 +135,66 @@ public final class ZombiesGroundNavigationService {
     }
 
     public static void onRecycled(Mob mob) {
+        recycleFeedback(mob).run();
+    }
+
+    public static Runnable recycleFeedback(Mob mob) {
+        LayeredNavigationRuntime runtime = LayeredNavigationRuntime.of(mob);
+        if (runtime != null) return runtime.recycleFeedback(mob);
         ObserverGoal observer = observer(mob);
         if (observer != null && observer.state.spawnPolicy != null) {
-            observer.state.spawnPolicy.recordFailure(observer.state.spawnId, mob, mob.level().getGameTime());
+            return () -> observer.state.spawnPolicy.recordFailure(observer.state.spawnId, mob, mob.level().getGameTime());
         }
+        return () -> { };
     }
 
     public static ProgressSnapshot getProgress(Mob mob) {
         if (mob == null || mob.isPassenger()) {
             return null; // Riding uses native movement/reach rules and the existing recycling policy.
         }
+        var runtime = LayeredNavigationRuntime.of(mob);
+        if (runtime != null) return runtime.progress(mob);
         ObserverGoal observer = observer(mob);
         return observer == null ? null : new ProgressSnapshot(observer.state.progress.getLastProgressGameTime(),
                 observer.state.lastEngagement, observer.state.actionGraceUntil, observer.state.attempts);
     }
 
     public record ProgressSnapshot(long lastProgressGameTime, long lastEngagementGameTime,
-                                   long actionGraceUntilGameTime, int recoveryAttempts) { }
+                                   long actionGraceUntilGameTime, int recoveryAttempts,
+                                   long planningWaitUntilGameTime, String planningReason, boolean geometricFailure) {
+        public ProgressSnapshot(long progress, long engagement, long grace, int attempts) {
+            this(progress, engagement, grace, attempts, 0, "LEGACY", true);
+        }
+    }
 
     public record SearchMetrics(long searches, long searchNanos, long recoveries,
                                 long geometryChecks, long localRoutes) { }
 
     public SearchMetrics metrics() {
+        if (layered != null) {
+            var stats = layered.planningStats();
+            return new SearchMetrics(stats.requests(), stats.nanos(), 0, stats.geometry(), stats.cacheHits());
+        }
         return new SearchMetrics(searches, searchNanos, recoveries, geometryChecks, localRoutes);
     }
 
+    public record RuntimeMetrics(String engine,
+            NavigationPlanner.Stats planning,
+            NavigationGraphCache.Stats cache,
+            NavigationScheduler.Metrics serverTick,
+            NavigationScheduler.Timing schedulerTiming,
+            int controllers) { }
+    public RuntimeMetrics runtimeMetrics() {
+        return new RuntimeMetrics(engine.name().toLowerCase(java.util.Locale.ROOT),
+                layered == null ? null : layered.planningStats(), layered == null ? null : layered.cacheStats(),
+                layered == null ? null : layered.schedulerMetrics(), layered == null ? null : layered.schedulerTiming(),
+                layered == null ? 0 : layered.controllerCount());
+    }
+
     public void reset() {
+        if (layered != null) { layered.close(); layered = null; }
+        if (context != null) context = new NavigationContext(context.roomId(), context.level(), context.bounds(),
+                context.validPlayers(), context.ownership(), UUID.randomUUID());
         targetSnapshot = List.of();
         snapshotTick = Long.MIN_VALUE;
         budgetTick = Long.MIN_VALUE;
@@ -362,6 +436,7 @@ public final class ZombiesGroundNavigationService {
         public void tick() {
             long now = mob.level().getGameTime();
             LivingEntity target = mob.getTarget();
+            state.progress.sample(now, mob.getX(), mob.getY(), mob.getZ());
             if (mob.isPassenger()) {
                 state.wasPassenger = true;
             } else if (state.wasPassenger) {

@@ -1,0 +1,272 @@
+{
+  "regression": [
+    {
+      "testName": "zombieusesnearbystairsawayfromelevatedplayer",
+      "performanceGate": false
+    },
+    {
+      "testName": "huskusesnearbystairsawayfromelevatedplayer",
+      "performanceGate": false
+    },
+    {
+      "testName": "witherskeletonusesnearbystairswithenoughheadroom",
+      "performanceGate": false
+    },
+    {
+      "testName": "creeperusesnearbystairsawayfromelevatedplayer",
+      "performanceGate": false
+    },
+    {
+      "testName": "wolfusesnearbystairsawayfromelevatedplayer",
+      "performanceGate": false
+    },
+    {
+      "testName": "silverfishusesnearbystairsawayfromelevatedplayer",
+      "performanceGate": false
+    },
+    {
+      "testName": "vindicatorusesnearbystairsawayfromelevatedplayer",
+      "performanceGate": false
+    },
+    {
+      "testName": "zombieretriesanincompleteroutewhennearbystairsbecomeavailable",
+      "performanceGate": false
+    },
+    {
+      "testName": "creeperstillstartsswellingnearitstarget",
+      "performanceGate": false
+    },
+    {
+      "testName": "creeperbelowcloseplayerdoesnotstayinadefusedswellgoal",
+      "performanceGate": false
+    },
+    {
+      "testName": "wolfretainsitsnativeleapandlanding",
+      "performanceGate": false
+    },
+    {
+      "testName": "wolfrecoveryyieldstoanewnativeleapopportunity",
+      "performanceGate": false
+    },
+    {
+      "testName": "newlyignitedcreepersurvivesthefirstexpiredrecyclescan",
+      "performanceGate": false
+    },
+    {
+      "testName": "closeunreachabletargeteventuallyrequeuestherealroommob",
+      "performanceGate": false
+    },
+    {
+      "testName": "unreachableupperplayerfallsbacktoreachableroomsurvivor",
+      "performanceGate": false
+    },
+    {
+      "testName": "witherskeletonweaponchangeskeeponenativecombatgoal",
+      "performanceGate": false
+    },
+    {
+      "testName": "spawnclearancerejectstallbodieswithoutrejectingsilverfish",
+      "performanceGate": false
+    },
+    {
+      "testName": "installationpreservesnativespeciesgoalsandwolfanger",
+      "performanceGate": false
+    },
+    {
+      "testName": "excludedspeciesandordinaryzombiekeeptheirnavigation",
+      "performanceGate": false
+    },
+    {
+      "testName": "stationaryzombiebypassesmisleadinghalfthicknesswall",
+      "performanceGate": false
+    },
+    {
+      "testName": "identicalblockednodewallremainsreachable",
+      "performanceGate": false
+    },
+    {
+      "testName": "rotatednonhalfthicknesswallusesthesamerecovery",
+      "performanceGate": false
+    },
+    {
+      "testName": "sidemovementcontinuesuntilthelongwallisactuallybypassed",
+      "performanceGate": false
+    },
+    {
+      "testName": "removingfailedwallrestorespursuitwithoutmovingtheplayer",
+      "performanceGate": false
+    },
+    {
+      "testName": "unreachablemainplayerfallsbacktobottomslabsurface",
+      "performanceGate": false
+    },
+    {
+      "testName": "unreachablemainplayerfallsbacktoclosedbottomtrapdoorsurface",
+      "performanceGate": false
+    },
+    {
+      "testName": "fifthindependentobstaclestillpermitsreallocalrecovery",
+      "performanceGate": false
+    },
+    {
+      "testName": "movingblockedplayerdoesnotrenewexhaustedrecovery",
+      "performanceGate": false
+    },
+    {
+      "testName": "openingexitafterexhaustionrestorespursuit",
+      "performanceGate": false
+    },
+    {
+      "testName": "losttargetbetweencanuseandstartdoesnotconsumerecovery",
+      "performanceGate": false
+    },
+    {
+      "testName": "nativemeleestopclearingcreativetargetdoesnotcrashrecovery",
+      "performanceGate": false
+    },
+    {
+      "testName": "spectatortargetbetweencanuseandstartdoesnotconsumerecovery",
+      "performanceGate": false
+    },
+    {
+      "testName": "originalzombiefollowsmovingplayerfortworealcircuits",
+      "performanceGate": true
+    },
+    {
+      "testName": "fixedenclosedplayercannotrenewunproductivecircuitsforever",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiewalksbeyond128blocksaroundcontinuouswall",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiedrops8blocksthenresumeschase",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiedrops32blocksthenresumeschase",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiedrops64blocksthenresumeschase",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombieattwohealthdrops64blocksthenresumeschase",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombieattwohealthleavesslowsoulsandplatformthendropseightblocks",
+      "performanceGate": true
+    },
+    {
+      "testName": "blockeddeparturebeforeleavingselectsanotherrealdrop",
+      "performanceGate": true
+    },
+    {
+      "testName": "losttargetduringfallstilllandsoriginalentity",
+      "performanceGate": true
+    }
+  ],
+  "scaled-routes": [
+    {
+      "testName": "originalzombiecompletessixteenscaleutopology",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiecompletesthirtytwoscaleutopology",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiecompletessixtyfourscaleutopology",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiecompletesonehundredtwentyeightscaleutopology",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiepassesdeadendbranchestoreachtherealexit",
+      "performanceGate": true
+    }
+  ],
+  "drop-matrix": [
+    {
+      "testName": "originalfullhealthzombiedropsthreeblocks",
+      "performanceGate": true
+    },
+    {
+      "testName": "originaltwohealthzombiedropsthreeblocks",
+      "performanceGate": true
+    },
+    {
+      "testName": "originaltwohealthzombiedropseightblocks",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalfullhealthzombiedropssixteenblocks",
+      "performanceGate": true
+    },
+    {
+      "testName": "originaltwohealthzombiedropssixteenblocks",
+      "performanceGate": true
+    },
+    {
+      "testName": "originaltwohealthzombiedropsthirtytwoblocks",
+      "performanceGate": true
+    }
+  ],
+  "drop-context": [
+    {
+      "testName": "waveonefullhealthzombiedropssixtyfourblocksandcontinuespursuit",
+      "performanceGate": true
+    },
+    {
+      "testName": "waveonetwohealthzombiedropssixtyfourblocksandcontinuespursuit",
+      "performanceGate": true
+    },
+    {
+      "testName": "wavetwentyfullhealthzombiedropssixtyfourblocksandcontinuespursuit",
+      "performanceGate": true
+    },
+    {
+      "testName": "wavetwentytwohealthzombiedropssixtyfourblocksandcontinuespursuit",
+      "performanceGate": true
+    }
+  ],
+  "drop-surfaces": [
+    {
+      "testName": "originalzombiefallsthroughoneblockshaftthenpursuesthroughbottomoutlet",
+      "performanceGate": true
+    },
+    {
+      "testName": "originalzombiefirstlandsonhalfslabsthenpursuesontheirfractionalsurface",
+      "performanceGate": true
+    }
+  ],
+  "mirrored-walls": [
+    {
+      "testName": "mirroredhalfthicknesswallpreservesphysicalrecovery",
+      "performanceGate": true
+    },
+    {
+      "testName": "rotatedandmirroredthinwallpreservesphysicalrecovery",
+      "performanceGate": true
+    }
+  ],
+  "doors": [
+    {
+      "testName": "genuinelycoldroomcrossesnewlyopenedoakdoorwithinonehundredticks",
+      "performanceGate": true
+    },
+    {
+      "testName": "roomblockedbyclosedoakdoorrecoverswithinonehundredticksofopening",
+      "performanceGate": true
+    },
+    {
+      "testName": "closingoakdoorstopsexistingroutethenopeningrestorespursuit",
+      "performanceGate": true
+    }
+  ]
+}

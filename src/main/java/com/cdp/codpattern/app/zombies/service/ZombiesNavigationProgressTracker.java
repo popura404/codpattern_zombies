@@ -45,16 +45,28 @@ public final class ZombiesNavigationProgressTracker {
      * it stays in the motion window so path stops cannot erase evidence of an oscillation.
      */
     public boolean observe(long now, double x, double y, double z, boolean followingPath) {
+        if (!sample(now, x, y, z)) return false;
+        if (!followingPath) {
+            setAnchorToCurrentPosition();
+            return false;
+        }
+        return credit(now, x, y, z);
+    }
+
+    /** Samples all real movement, even on frames with no path advancement. */
+    public boolean sample(long now, double x, double y, double z) {
         if (now < lastObservationGameTime || !isFinitePosition(x, y, z)) {
             return false;
         }
         lastObservationGameTime = now;
         setCurrentPosition(x, y, z);
         recordMotion(new MotionSample(now, x, y, z));
-        if (!followingPath) {
-            setAnchorToCurrentPosition();
-            return false;
-        }
+        return true;
+    }
+
+    /** Grants progress independently from sampling; callers must establish route evidence. */
+    public boolean credit(long now, double x, double y, double z) {
+        if (now != lastObservationGameTime || x != currentX || y != currentY || z != currentZ) return false;
 
         double dx = x - anchorX;
         double dy = y - anchorY;

@@ -1,5 +1,7 @@
 package com.cdp.codpattern.app.zombies.service;
 
+import com.cdp.codpattern.app.zombies.service.navigation.NavigationWorldChanges;
+
 import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.zombies.map.object.ZombiesBarrierData;
 import com.cdp.codpattern.common.block.CodPatternBlockRegister;
@@ -146,6 +148,7 @@ public final class ZombiesBarrierBlockRuntimeService {
                 boolean barrierAlreadyPresent = currentState.is(CodPatternBlockRegister.ZOMBIES_PLAYER_BARRIER.get());
                 if (barrierAlreadyPresent
                         || level.setBlock(pos, CodPatternBlockRegister.ZOMBIES_PLAYER_BARRIER.get().defaultBlockState(), Block.UPDATE_ALL)) {
+                    if (!barrierAlreadyPresent) NavigationWorldChanges.blockChanged(level, pos, "room-barrier-placed");
                     placedCells++;
                 }
             }
@@ -264,6 +267,7 @@ public final class ZombiesBarrierBlockRuntimeService {
                 if (isBarrierBlock(level, pos)
                         && !hasOtherRoomCellAt(roomId, barrier.dimension(), pos)
                         && level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)) {
+                    NavigationWorldChanges.blockChanged(level, pos, "room-barrier-cleared");
                     removed++;
                 }
             }
@@ -391,7 +395,10 @@ public final class ZombiesBarrierBlockRuntimeService {
                 level.getChunkAt(key.pos());
                 if (isBarrierBlock(level, key.pos())) {
                     if (level.setBlock(key.pos(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL)
-                            && !isBarrierBlock(level, key.pos())) removed++;
+                            && !isBarrierBlock(level, key.pos())) {
+                        NavigationWorldChanges.blockChanged(level, key.pos(), "room-barrier-cleanup");
+                        removed++;
+                    }
                     else { pending.add(key.toString()); continue; }
                 }
             }

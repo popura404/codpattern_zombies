@@ -24,17 +24,18 @@ public final class ZombiesNavigationRetryGameTests {
     private ZombiesNavigationRetryGameTests() {
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = BLOCKED_DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = BLOCKED_DEADLINE + 10)
     public static void movingBlockedPlayerDoesNotRenewExhaustedRecovery(GameTestHelper helper) {
         run(helper, false);
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = OPEN_DEADLINE + 10)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = OPEN_DEADLINE + 10)
     public static void openingExitAfterExhaustionRestoresPursuit(GameTestHelper helper) {
         run(helper, true);
     }
 
     private static void run(GameTestHelper helper, boolean openExit) {
+        ZombiesNavigationTestTiming.begin(helper, openExit ? "retry-opening" : "retry-blocked", false);
         buildSealedCell(helper);
         var fixture = new ZombiesNavigationGameTests.Fixture(helper, new Vec3(12.5D, 1.0D, 5.5D));
         try {
@@ -45,6 +46,7 @@ public final class ZombiesNavigationRetryGameTests {
             RetryRun run = new RetryRun(helper, fixture, mob, openExit);
             helper.onEachTick(run::observe);
         } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
             fixture.close();
             throw failure;
         }
@@ -77,6 +79,7 @@ public final class ZombiesNavigationRetryGameTests {
         private long progressAtChange;
         private boolean changed;
         private boolean finished;
+        private boolean beganMovingAfterOpen;
 
         private RetryRun(GameTestHelper helper, ZombiesNavigationGameTests.Fixture fixture,
                          Mob mob, boolean openExit) {
@@ -103,10 +106,17 @@ public final class ZombiesNavigationRetryGameTests {
                 var progress = ZombiesGroundNavigationService.getProgress(mob);
                 helper.assertTrue(progress != null, "the recovery observer must remain installed");
                 var metrics = fixture.spawnService.navigationMetrics();
-                helper.assertTrue(metrics.searches() - previousMetrics.searches() <= 2,
-                        "exhaustion and retries must obey the room limit of two extra searches per tick");
-                helper.assertTrue(metrics.geometryChecks() - previousMetrics.geometryChecks() <= 32,
-                        "retry route validation must obey the room collision-check budget");
+                if (ZombiesGroundNavigationService.usesLayered(mob)) {
+                    var runtime = fixture.spawnService.navigationRuntimeMetrics();
+                    helper.assertTrue(metrics.geometryChecks() - previousMetrics.geometryChecks() <= 256
+                                    && runtime.serverTick().expansions() <= 4096 && runtime.serverTick().geometry() <= 1024,
+                            "layered retries must obey both room geometry and server work budgets");
+                } else {
+                    helper.assertTrue(metrics.searches() - previousMetrics.searches() <= 2,
+                            "exhaustion and retries must obey the room limit of two extra searches per tick");
+                    helper.assertTrue(metrics.geometryChecks() - previousMetrics.geometryChecks() <= 32,
+                            "retry route validation must obey the room collision-check budget");
+                }
                 previousMetrics = metrics;
                 if (!changed && helper.getTick() >= CHANGE_TICK) {
                     changeScenario(progress, metrics);
@@ -120,6 +130,7 @@ public final class ZombiesNavigationRetryGameTests {
                     observeBlockedMove(progress, metrics);
                 }
             } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                 finished = true;
                 fixture.close();
                 throw failure;
@@ -128,13 +139,20 @@ public final class ZombiesNavigationRetryGameTests {
 
         private void changeScenario(ZombiesGroundNavigationService.ProgressSnapshot progress,
                                     ZombiesGroundNavigationService.SearchMetrics metrics) {
-            helper.assertTrue(progress.recoveryAttempts() == ATTEMPTS,
+            if (ZombiesGroundNavigationService.usesLayered(mob)) {
+                helper.assertTrue(fixture.spawnService.navigationRuntimeMetrics().planning().expansions() > 0,
+                        "the sealed cell must have undergone real graph exploration");
+                helper.assertTrue(progress.planningWaitUntilGameTime() <= progress.lastProgressGameTime() + 640,
+                        "repeated closed-cell planning must not renew its one waiting allowance");
+            } else {
+                helper.assertTrue(progress.recoveryAttempts() == ATTEMPTS,
                     "the sealed cell must naturally exhaust four attempts before tick " + CHANGE_TICK
                             + "; progress=" + progress + ", metrics=" + metrics);
             helper.assertTrue(metrics.recoveries() > ATTEMPTS,
                     "an exhausted zombie must already have performed a low-frequency recheck; metrics=" + metrics);
             helper.assertTrue(metrics.localRoutes() == 0,
                     "a fully sealed one-block cell must not offer any executable local relay");
+            }
             helper.assertTrue(mob.position().distanceToSqr(origin) < 0.5D,
                     "the zombie must still be physically confined when the scenario changes");
             progressAtChange = progress.lastProgressGameTime();
@@ -154,14 +172,16 @@ public final class ZombiesNavigationRetryGameTests {
 
         private void observeBlockedMove(ZombiesGroundNavigationService.ProgressSnapshot progress,
                                         ZombiesGroundNavigationService.SearchMetrics metrics) {
-            helper.assertTrue(progress.recoveryAttempts() == ATTEMPTS,
+            if (!ZombiesGroundNavigationService.usesLayered(mob)) helper.assertTrue(progress.recoveryAttempts() == ATTEMPTS,
                     "moving an unreachable player must not grant another four recovery attempts; progress=" + progress);
             helper.assertTrue(progress.lastProgressGameTime() == progressAtChange,
                     "target movement and exhausted rechecks must not refresh physical progress; progress=" + progress);
-            helper.assertTrue(metrics.localRoutes() == metricsAtChange.localRoutes(),
+            if (!ZombiesGroundNavigationService.usesLayered(mob)) helper.assertTrue(metrics.localRoutes() == metricsAtChange.localRoutes(),
                     "exhausted rechecks must not start a fresh local-relay stage");
             if (helper.getTick() >= BLOCKED_DEADLINE) {
-                helper.assertTrue(metrics.recoveries() > metricsAtChange.recoveries(),
+                helper.assertTrue(ZombiesGroundNavigationService.usesLayered(mob)
+                                ? metrics.searches() > metricsAtChange.searches()
+                                : metrics.recoveries() > metricsAtChange.recoveries(),
                         "low-frequency target rechecks must continue after the blocked player moves");
                 succeed();
             }
@@ -169,9 +189,12 @@ public final class ZombiesNavigationRetryGameTests {
 
         private void observeOpenedExit(ZombiesGroundNavigationService.ProgressSnapshot progress,
                                        ZombiesGroundNavigationService.SearchMetrics metrics) {
-            helper.assertTrue(metrics.localRoutes() == metricsAtChange.localRoutes(),
+            if (!ZombiesGroundNavigationService.usesLayered(mob)) helper.assertTrue(metrics.localRoutes() == metricsAtChange.localRoutes(),
                     "opening a reachable exit must not grant an exhausted zombie fresh local-relay rounds");
-            if (mob.position().distanceToSqr(origin) < 0.5D) {
+            if (mob.position().distanceToSqr(origin) >= 0.5D) beganMovingAfterOpen = true;
+            if (ZombiesGroundNavigationService.usesLayered(mob) && helper.getTick() >= CHANGE_TICK + 100)
+                helper.assertTrue(beganMovingAfterOpen, "opening a small uncontended cell must start real pursuit within 100 ticks");
+            if (!ZombiesGroundNavigationService.usesLayered(mob) && mob.position().distanceToSqr(origin) < 0.5D) {
                 helper.assertTrue(progress.recoveryAttempts() == ATTEMPTS,
                         "opening a block alone must not clear failures before the zombie physically leaves its cell");
             }
@@ -183,7 +206,7 @@ public final class ZombiesNavigationRetryGameTests {
                         "renewed pursuit must produce real physical progress after the exit opens");
                 succeed();
             } else if (helper.getTick() >= OPEN_DEADLINE) {
-                helper.fail("an exhausted zombie failed to leave the opened cell and reach the stationary player; "
+                ZombiesNavigationTestTiming.fail(helper, "an exhausted zombie failed to leave the opened cell and reach the stationary player; "
                         + "position=" + mob.position() + ", origin=" + origin + ", progress=" + progress
                         + ", metrics=" + metrics);
             }
@@ -192,7 +215,7 @@ public final class ZombiesNavigationRetryGameTests {
         private void succeed() {
             finished = true;
             fixture.close();
-            helper.succeed();
+            ZombiesNavigationTestTiming.succeed(helper);
         }
     }
 }

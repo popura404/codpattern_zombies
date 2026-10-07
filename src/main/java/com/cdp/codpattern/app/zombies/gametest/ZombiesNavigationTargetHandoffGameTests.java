@@ -1,6 +1,7 @@
 package com.cdp.codpattern.app.zombies.gametest;
 
 import com.cdp.codpattern.app.zombies.service.ZombiesGroundNavigationService;
+import com.cdp.codpattern.app.zombies.service.navigation.LayeredNavigationRuntime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -28,22 +29,23 @@ public final class ZombiesNavigationTargetHandoffGameTests {
 
     private ZombiesNavigationTargetHandoffGameTests() { }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 5)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 5)
     public static void lostTargetBetweenCanUseAndStartDoesNotConsumeRecovery(GameTestHelper helper) {
         run(helper, Invalidation.CLEAR_TARGET);
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 5)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 5)
     public static void nativeMeleeStopClearingCreativeTargetDoesNotCrashRecovery(GameTestHelper helper) {
         run(helper, Invalidation.NATIVE_MELEE_CREATIVE);
     }
 
-    @GameTest(template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 5)
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 5)
     public static void spectatorTargetBetweenCanUseAndStartDoesNotConsumeRecovery(GameTestHelper helper) {
         run(helper, Invalidation.SPECTATOR_TARGET);
     }
 
     private static void run(GameTestHelper helper, Invalidation invalidation) {
+        ZombiesNavigationTestTiming.begin(helper, "target-handoff-" + invalidation.name().toLowerCase(java.util.Locale.ROOT), false);
         buildLane(helper);
         var fixture = new ZombiesNavigationGameTests.Fixture(helper, new Vec3(13.5D, 1.0D, 5.5D));
         try {
@@ -51,7 +53,9 @@ public final class ZombiesNavigationTargetHandoffGameTests {
             mob.setNoAi(true);
             mob.setOnGround(true);
             mob.setTarget(fixture.player);
-            Goal recovery = mob.goalSelector.getAvailableGoals().stream().map(goal -> goal.getGoal())
+            LayeredNavigationRuntime runtime = LayeredNavigationRuntime.of(mob);
+            Goal recovery = runtime != null ? runtime.movementGoal(mob)
+                    : mob.goalSelector.getAvailableGoals().stream().map(goal -> goal.getGoal())
                     .filter(goal -> goal.getClass().getSimpleName().equals("RecoveryGoal")).findFirst().orElseThrow();
             MeleeAttackGoal nativeMelee = mob.goalSelector.getAvailableGoals().stream().map(goal -> goal.getGoal())
                     .filter(MeleeAttackGoal.class::isInstance).map(MeleeAttackGoal.class::cast).findFirst().orElseThrow();
@@ -76,6 +80,7 @@ public final class ZombiesNavigationTargetHandoffGameTests {
             var test = new HandoffRun(helper, fixture, mob, recovery, selector, previousOwner, invalidation);
             helper.onEachTick(test::tick);
         } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
             fixture.close();
             throw failure;
         }
@@ -102,6 +107,7 @@ public final class ZombiesNavigationTargetHandoffGameTests {
         private final GoalSelector selector;
         private final YieldingMovementGoal previousOwner;
         private final Invalidation invalidation;
+        private final LayeredNavigationRuntime runtime;
         private boolean handedOff;
         private boolean resumed;
         private boolean finished;
@@ -117,6 +123,7 @@ public final class ZombiesNavigationTargetHandoffGameTests {
             this.selector = selector;
             this.previousOwner = previousOwner;
             this.invalidation = invalidation;
+            this.runtime = LayeredNavigationRuntime.of(mob);
         }
 
         private void tick() {
@@ -139,20 +146,27 @@ public final class ZombiesNavigationTargetHandoffGameTests {
                             && path != null && path.canReach() && !path.isDone()) {
                         helper.assertTrue(mob.getTarget() == fixture.player && fixture.player.isAlive(),
                                 "the original live room survivor must remain the recovered target");
-                        helper.assertTrue(ZombiesGroundNavigationService.getProgress(mob).recoveryAttempts() == 1,
-                                "only the successful retry may consume the first recovery attempt");
+                        if (LayeredNavigationRuntime.of(mob) == null) {
+                            helper.assertTrue(ZombiesGroundNavigationService.getProgress(mob).recoveryAttempts() == 1,
+                                    "only the successful retry may consume the first recovery attempt");
+                        } else {
+                            helper.assertTrue(ZombiesGroundNavigationService.getProgress(mob).recoveryAttempts() == 0
+                                            && fixture.spawnService.navigationRuntimeMetrics().planning().expansions() > 0,
+                                    "a legal native handoff must produce a planned short path without recording an execution failure");
+                        }
                         finished = true;
                         fixture.close();
-                        helper.succeed();
+                        ZombiesNavigationTestTiming.succeed(helper);
                         return;
                     }
                 }
                 if (helper.getTick() >= DEADLINE) {
-                    helper.fail("valid target did not regain an executable recovery route after " + invalidation
+                    ZombiesNavigationTestTiming.fail(helper, "valid target did not regain an executable recovery route after " + invalidation
                             + "; metrics=" + fixture.spawnService.navigationMetrics()
                             + ", progress=" + ZombiesGroundNavigationService.getProgress(mob));
                 }
             } catch (RuntimeException | Error failure) {
+                ZombiesNavigationTestTiming.finish(helper, false);
                 finished = true;
                 fixture.close();
                 throw failure;
@@ -160,12 +174,42 @@ public final class ZombiesNavigationTargetHandoffGameTests {
         }
 
         private void handoff() {
-            helper.assertTrue(recovery.canUse(), "recovery must admit the valid target before the old goal is stopped");
+            helper.assertTrue(recovery.canUse(), "recovery must admit the valid target before the old goal is stopped"
+                    + "; tick=" + helper.getTick() + ", mob=" + mob.getUUID() + ", position=" + mob.position()
+                    + ", alive=" + mob.isAlive() + ", removal=" + mob.getRemovalReason()
+                    + ", worldEntity=" + (helper.getLevel().getEntity(mob.getUUID()) == mob)
+                    + ", onGround=" + mob.onGround() + ", water=" + mob.isInWaterOrBubble() + ", lava=" + mob.isInLava()
+                    + ", target=" + (mob.getTarget() == null ? null : mob.getTarget().getUUID())
+                    + ", roomEligible=" + ZombiesGroundNavigationService.isLayeredTargetEligible(mob, fixture.player)
+                    + ", originalRuntime=" + (runtime == null ? null : runtime.describe(mob))
+                    + ", installedRuntime=" + LayeredNavigationRuntime.of(mob)
+                    + ", controllers=" + (runtime == null ? -1 : runtime.controllerCount())
+                    + ", owns=" + (runtime != null && runtime.context().owns(mob))
+                    + ", registeredRoom=" + com.cdp.codpattern.app.match.runtime.ModeEntityOwnershipRegistry.instance().roomIdOf(mob)
+                    + ", expectedRoom=" + fixture.roomId()
+                    + ", targetAlive=" + fixture.player.isAlive() + ", targetRemoved=" + fixture.player.isRemoved()
+                    + ", targetPosition=" + fixture.player.position()
+                    + ", targetSpectator=" + fixture.player.isSpectator()
+                    + ", bounds=" + (runtime == null ? null : runtime.context().bounds())
+                    + ", progress=" + ZombiesGroundNavigationService.getProgress(mob));
             var before = ZombiesGroundNavigationService.getProgress(mob);
             var metrics = fixture.spawnService.navigationMetrics();
             searchesBefore = metrics.searches();
             selector.tick();
             helper.assertTrue(previousOwner.stopped, "GoalSelector must stop the prior MOVE/LOOK owner during admission");
+            boolean restoresLegalRoomTarget = LayeredNavigationRuntime.of(mob) != null
+                    && invalidation != Invalidation.SPECTATOR_TARGET;
+            if (restoresLegalRoomTarget) {
+                helper.assertTrue(mob.getTarget() == fixture.player
+                                && ZombiesGroundNavigationService.isLayeredTargetEligible(mob, fixture.player)
+                                && recovery.canContinueToUse(),
+                        "a native stop may clear the reference, but an eligible room target must be restored on takeover");
+                helper.assertTrue(ZombiesGroundNavigationService.getProgress(mob).recoveryAttempts() == before.recoveryAttempts(),
+                        "restoring a still-eligible target must not record a failed attempt");
+                fixture.player.setGameMode(GameType.SURVIVAL);
+                handedOff = true;
+                return;
+            }
             if (invalidation == Invalidation.SPECTATOR_TARGET) {
                 helper.assertTrue(mob.getTarget() == fixture.player && fixture.player.isSpectator(),
                         "the handoff must invalidate the target without clearing its entity reference");

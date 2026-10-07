@@ -2,7 +2,7 @@
 
 > 编写日期：2026-10-06。适用基线：本仓库 Minecraft 1.20.1 / Forge 47.4.0 / Java 17。
 >
-> 状态：已按用户简化范围完成本次交付（2026-10-07），见第 11.4 节。原完整发布门槛仍有未通过及未验收项；只有代码与验证都完成才勾选工作项。新引擎目前仍为显式选择，默认保留 `legacy`。
+> 状态：已按用户简化范围完成本次交付（2026-10-07），见第 11.4 节。随后按用户要求将默认引擎切换为 `layered`，保留显式 `legacy` 回退。下文交付记录中的默认值描述为切换前的历史状态；原完整发布门槛仍有未通过及未验收项，本次默认值切换不改变这些验证结论。
 >
 > 已确认选择：完整通用改造；不要求地图作者布置路点；主动下落不设置统一高度上限，以地图有效范围、真实通道、落点及后续路线可行为准。
 >
@@ -650,7 +650,7 @@ P0 → P1 → P2 → P3 → P4 → P5 → P6
 
 ### 12.1 选择引擎
 
-当前默认是旧引擎。需要试运行新实现时，在服务端 Java 启动参数（`-jar` 或参数文件之前）添加：
+当前默认使用 `layered`，无需额外启动参数；Gradle 导航测试和报告也使用相同默认值。需要显式指定时，在服务端 Java 启动参数（`-jar` 或参数文件之前）添加：
 
 ```text
 -Dcodpattern.zombies.navigationEngine=layered
@@ -689,6 +689,8 @@ P0 → P1 → P2 → P3 → P4 → P5 → P6
 
 负载默认保留 `after-deadline` 压力模式，玩家在 950 tick 期限后开始移动；该模式的 32/64 怪已发现静止拥堵回收，见 11.1。新增移动参考显式添加 `-PnavigationLoadTargetMotion=after-first-arrival`，并使用独立结果目录。它在第一只原实体满足到达条件后连续移动玩家；双方采用同一事件规则，记录实际开始时刻，不能称为逐 tick 相同输入。此属性仅能用于负载或多房间组，不能用于主功能测试。
 
+测试精简后，独立弓转近战测试已删除，主回归保留武器切换的 Goal 注册检查；32/64 中间尺度绕路用例已删除。镜像薄墙的两个用例及原性能门槛并入主回归，移除独立测试组入口。此前各轮测试数量和结果仍为历史记录。
+
 补充验证入口（每项独立进程、独立目录；存在入口不代表已经通过）：
 
 | Gradle 测试组属性 | 内容 |
@@ -697,7 +699,7 @@ P0 → P1 → P2 → P3 → P4 → P5 → P6
 | `-PnavigationArrival` | 实际半砖脚点跨 tile、头部碰撞变化后的分帧证明与完成缓存复验 |
 | `-PnavigationDropSurfaces` | 窄井和半砖落点的原实体续追 |
 | `-PnavigationDropContext -PnavigationDifficulty=easy` | 波次 1/20、满血/2 点生命；难度分别换为 `normal`、`hard` 单独运行 |
-| `-PnavigationScaledRoutes` / `-PnavigationMirroredWalls` | 16/32/64/128 级 U 路线和盲支路 / 镜像薄墙 |
+| `-PnavigationScaledRoutes` | 16/128 级 U 路线和盲支路；镜像薄墙已并入 `-PnavigationGameTests` 主回归 |
 | `-PnavigationQualification` / `-PnavigationChunks` | 目标死亡、离房、真实切维度 / 实际卸载事件、缺失区块等待和重载续追 |
 | `-PnavigationDoors` / `-PnavigationRaid` | 玩家开关完整木门 / 已恢复控制的卫道士进入真实 Raid 后原生开门 |
 | `-PnavigationLifecycle` / `-PnavigationRoomLifecycle` | 拒绝入世界及停止清理 / 地图强制结束、删除重建、最终波次结束 |

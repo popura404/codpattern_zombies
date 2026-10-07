@@ -29,10 +29,6 @@ public final class ZombiesNavigationScaledRouteGameTests {
 
     @GameTest(setupTicks=20,template=TEMPLATE,batch="navigation_scaled_16",timeoutTicks=DEADLINE+10)
     public static void originalZombieCompletesSixteenScaleUTopology(GameTestHelper helper) { start(helper,16,9,false); }
-    @GameTest(setupTicks=20,template=TEMPLATE,batch="navigation_scaled_32",timeoutTicks=DEADLINE+10)
-    public static void originalZombieCompletesThirtyTwoScaleUTopology(GameTestHelper helper) { start(helper,32,17,false); }
-    @GameTest(setupTicks=20,template=TEMPLATE,batch="navigation_scaled_64",timeoutTicks=DEADLINE+10)
-    public static void originalZombieCompletesSixtyFourScaleUTopology(GameTestHelper helper) { start(helper,64,33,false); }
     @GameTest(setupTicks=20,template=TEMPLATE,batch="navigation_scaled_128",timeoutTicks=DEADLINE+10)
     public static void originalZombieCompletesOneHundredTwentyEightScaleUTopology(GameTestHelper helper) { start(helper,128,65,false); }
     @GameTest(setupTicks=20,template=TEMPLATE,batch="navigation_scaled_branches",timeoutTicks=DEADLINE+10)

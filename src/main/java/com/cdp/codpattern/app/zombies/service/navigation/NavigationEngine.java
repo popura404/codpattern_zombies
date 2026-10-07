@@ -2,12 +2,12 @@ package com.cdp.codpattern.app.zombies.service.navigation;
 
 import java.util.Locale;
 
-/** Read once by each room service. Promotion requires the recorded release gates. */
+/** Read once by each room service; legacy remains available as an explicit fallback. */
 public enum NavigationEngine {
     LEGACY, LAYERED;
 
     public static NavigationEngine configured() {
-        String value = System.getProperty("codpattern.zombies.navigationEngine", "legacy");
+        String value = System.getProperty("codpattern.zombies.navigationEngine", "layered");
         return switch (value.toLowerCase(Locale.ROOT)) {
             case "legacy" -> LEGACY;
             case "layered" -> LAYERED;

@@ -82,7 +82,17 @@ public final class ZombiesNavigationRecoveryGameTests {
         run(helper, new WallScenario(false, 8, 12, halfWall, false, false));
     }
 
-    static void runMirroredWall(GameTestHelper helper, boolean rotated) {
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
+    public static void mirroredHalfThicknessWallPreservesPhysicalRecovery(GameTestHelper helper) {
+        runMirroredWall(helper, false);
+    }
+
+    @GameTest(setupTicks = 20, template = TEMPLATE, batch = BATCH, timeoutTicks = DEADLINE + 10)
+    public static void rotatedAndMirroredThinWallPreservesPhysicalRecovery(GameTestHelper helper) {
+        runMirroredWall(helper, true);
+    }
+
+    private static void runMirroredWall(GameTestHelper helper, boolean rotated) {
         run(helper, new WallScenario(rotated, 8, 12, rotated ? mirroredThinWall : mirroredHalfWall, false, false, true));
     }
 

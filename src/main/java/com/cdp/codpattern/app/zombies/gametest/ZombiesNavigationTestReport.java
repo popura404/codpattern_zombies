@@ -12,7 +12,7 @@ import java.util.Map;
 /** Machine-readable observations; absence of a measurement is never represented as zero. */
 public final class ZombiesNavigationTestReport {
     public static final long SEED = Long.getLong("codpattern.zombies.navigationSeed", 1701L);
-    public static final String ENGINE = System.getProperty("codpattern.zombies.navigationEngine", "legacy");
+    public static final String ENGINE = System.getProperty("codpattern.zombies.navigationEngine", "layered");
 
     private ZombiesNavigationTestReport() { }
 

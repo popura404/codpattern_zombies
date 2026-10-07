@@ -58,26 +58,22 @@ if (navigationChunkStartsMissing && navigationChunkTargetMovesMissing) {
 def navigationDoors = project.hasProperty('navigationDoors')
 def navigationRaid = project.hasProperty('navigationRaid')
 def navigationScaledRoutes = project.hasProperty('navigationScaledRoutes')
-def navigationMirroredWalls = project.hasProperty('navigationMirroredWalls')
-def navigationWeapon = project.hasProperty('navigationWeapon')
 def navigationArrival = project.hasProperty('navigationArrival')
 def navigationDiagnostic = navigationReference || navigationDropMatrix || navigationDropChanges || navigationDropShapes || navigationLifecycle
         || navigationDropSurfaces || navigationDropContext || navigationRoomLifecycle
         || navigationQualification || navigationChunks || navigationDoors || navigationRaid || navigationScaledRoutes
-        || navigationMirroredWalls
-        || navigationWeapon || navigationArrival
+        || navigationArrival
 def navigationVerification = navigationRegression || navigationDiagnostic || navigationMultiRoomLoad || navigationLoadSize != null
 def selectedTestGroups = [backpackGameTests, barrierGroupRulesGameTests, navigationLoadSize != null,
                           navigationMultiRoomLoad, navigationRegression, navigationReference, navigationDropMatrix, navigationDropChanges, navigationDropShapes, navigationLifecycle,
                           navigationDropSurfaces, navigationDropContext, navigationRoomLifecycle,
                           navigationQualification, navigationChunks, navigationDoors, navigationRaid, navigationScaledRoutes,
-                          navigationMirroredWalls,
-                          navigationWeapon, navigationArrival,
+                          navigationArrival,
                           project.hasProperty('forceEndGameTests')]
 if (selectedTestGroups.count { it } > 1) {
     throw new GradleException('Choose exactly one GameTest namespace group')
 }
-def navigationEngine = project.hasProperty('navigationEngine') ? findProperty('navigationEngine').toString() : 'legacy'
+def navigationEngine = project.hasProperty('navigationEngine') ? findProperty('navigationEngine').toString() : 'layered'
 if (!(navigationEngine in ['legacy', 'layered'])) {
     throw new GradleException('navigationEngine must be legacy or layered')
 }
@@ -95,8 +91,6 @@ try {
     throw new GradleException('navigationSeed must be a signed 64-bit integer')
 }
 def navigationScenario = navigationArrival ? 'arrival'
-        : navigationWeapon ? 'weapon'
-        : navigationMirroredWalls ? 'mirrored-walls'
         : navigationScaledRoutes ? 'scaled-routes'
         : navigationRaid ? 'raid'
         : navigationDoors ? 'doors'
@@ -114,8 +108,6 @@ def navigationScenario = navigationArrival ? 'arrival'
         : navigationMultiRoomLoad ? 'multi'
         : navigationLoadSize ?: 'regression'
 def navigationHolder = navigationArrival ? 'codpattern_navigation_arrival'
-        : navigationWeapon ? 'codpattern_navigation_weapon'
-        : navigationMirroredWalls ? 'codpattern_navigation_mirrored_walls'
         : navigationScaledRoutes ? 'codpattern_navigation_scaled_routes'
         : navigationRaid ? 'codpattern_navigation_raid'
         : navigationDoors ? 'codpattern_navigation_doors'

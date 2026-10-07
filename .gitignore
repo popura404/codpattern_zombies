@@ -7,3 +7,8 @@ logs/
 crash-reports/
 src/generated/resources/
 demo/
+scripts/
+
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]

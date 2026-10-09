@@ -3,9 +3,13 @@ package com.cdp.codpattern.app.zombies.service.navigation;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.core.BlockPos;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -47,7 +51,333 @@ public final class NavigationPlannerCompatTest {
         repairWaitsForChunksAndRejectsChangedEvidence();
         repeatedRepairsHaveNoReservationAncestry();
         verifiedSuffixCannotOutliveEvictedVersionMetadata();
-        System.out.println("NavigationPlannerCompatTest: 33 checks passed");
+        ascentPreferenceRetainsARequiredDescentPastAHigherDeadEnd();
+        ascentPreferenceExploresLessOfAWideLowerFloor();
+        provenCoarseRouteDoesNotOpenDetailedGeometry();
+        deferredDetailsCompleteMissingConnectionsBeforeDeclaringUnreachable();
+        blockedDetailedBranchDoesNotStarveAnotherExit();
+        reopenedCoarseNodePropagatesItsImprovedDistance();
+        System.out.println("NavigationPlannerCompatTest: 39 checks passed");
+    }
+    private static void provenCoarseRouteDoesNotOpenDetailedGeometry() {
+        for (int work : new int[]{1, 64}) {
+            NavigationGraphCache cache = new NavigationGraphCache();
+            Map<SurfaceNode, List<TraversalEdge>> graph = new HashMap<>();
+            SurfaceNode start = node(cache, 0, 0), previous = start;
+            for (int i = 1; i <= 48; i++) {
+                SurfaceNode next = node(cache, i, i / 4.0);
+                connect(graph, edge(cache, previous, next, TraversalEdge.Action.STEP));
+                previous = next;
+            }
+            AtomicInteger opened = new AtomicInteger(), closed = new AtomicInteger();
+            NavigationPlanner.Search search = new NavigationPlanner.Search(start, previous.feet(), UUID.randomUUID(),
+                    PROFILE, cache, new NavigationPlanner.NeighborSource() {
+                        @Override public NavigationPlanner.NeighborScan open(SurfaceNode from) {
+                            opened.incrementAndGet();
+                            return stagedScan(graph.getOrDefault(from, List.of()), false, closed);
+                        }
+                        @Override public NavigationPlanner.NeighborScan openDetailed(SurfaceNode from) {
+                            throw new AssertionError("a fully proven coarse route must not inspect irrelevant fractional geometry");
+                        }
+                    }, NavigationPlanner.RecordPool.bounded(128));
+            try {
+                run(search, work, 5000);
+                require(search.result().status() == PlanningResult.Status.READY && search.result().plan().edges().size() == 48,
+                        "proven coarse edges must form a complete executable route at either work budget");
+                require(cache.edges(start, PROFILE) == null,
+                        "a non-exhaustive coarse pass must never enter the complete adjacency cache");
+                require(opened.get() == closed.get() && search.recordCount() == 0,
+                        "READY must close all coarse scans and release records even with many queued detailed nodes");
+            } finally {
+                search.close();
+                require(cache.stats().transientEntries() == 0,
+                        "READY and cancellation must release every queued-detail reservation and route payload");
+            }
+        }
+    }
+    private static void deferredDetailsCompleteMissingConnectionsBeforeDeclaringUnreachable() {
+        for (boolean connected : new boolean[]{true, false}) {
+            NavigationGraphCache cache = new NavigationGraphCache();
+            SurfaceNode start = node(cache, 0, 0), fraction = node(cache, .2, .5), goal = node(cache, 2, 8);
+            TraversalEdge precise = edge(cache, start, fraction, TraversalEdge.Action.PRECISE_MOVE);
+            TraversalEdge finish = edge(cache, fraction, goal, TraversalEdge.Action.STEP);
+            AtomicInteger details = new AtomicInteger();
+            NavigationPlanner.Search search = new NavigationPlanner.Search(start, goal.feet(), UUID.randomUUID(), PROFILE,
+                    cache, new NavigationPlanner.NeighborSource() {
+                        @Override public NavigationPlanner.NeighborScan open(SurfaceNode from) {
+                            return stagedScan(from.equals(fraction) ? List.of(finish) : List.of(),
+                                    from.equals(fraction), null);
+                        }
+                        @Override public NavigationPlanner.NeighborScan openDetailed(SurfaceNode from) {
+                            details.incrementAndGet();
+                            return graphScan(connected ? List.of(precise) : List.of());
+                        }
+                    }, NavigationPlanner.RecordPool.bounded(32));
+            try {
+                search.advance(budget(1, 1));
+                require(search.result().status() == PlanningResult.Status.PENDING && cache.edges(start, PROFILE) == null,
+                        "an empty coarse pass is outstanding work, not disconnection or cached empty adjacency");
+                run(search, 1, 200);
+                require(search.result().status() == (connected ? PlanningResult.Status.READY : PlanningResult.Status.UNREACHABLE)
+                                && details.get() == 1,
+                        "only the complete detailed pass may finish the route or conclude disconnection");
+                require(cache.edges(start, PROFILE).equals(connected ? List.of(precise) : List.of()),
+                        "the detailed pass must publish its whole proven adjacency");
+                if (connected) require(search.result().plan().edges().equals(List.of(precise, finish)),
+                        "the same search must retain and reconstruct the fractional-only connection");
+            } finally {
+                search.close();
+                require(cache.stats().transientEntries() == 0, "detailed success and exhaustion both release all capacity");
+            }
+        }
+    }
+    private static void blockedDetailedBranchDoesNotStarveAnotherExit() {
+        for (TraversalValidator.ScanStatus blocked : List.of(TraversalValidator.ScanStatus.WAITING_CHUNK,
+                TraversalValidator.ScanStatus.RESOURCE_LIMITED)) {
+            NavigationGraphCache cache = new NavigationGraphCache();
+            SurfaceNode start = node(cache, 0, 0), unknown = node(cache, 1, 0), alternate = node(cache, -1, 0), goal = node(cache, 2, 8);
+            List<TraversalEdge> first = List.of(edge(cache, start, unknown, TraversalEdge.Action.WALK),
+                    edge(cache, start, alternate, TraversalEdge.Action.WALK));
+            TraversalEdge escape = edge(cache, alternate, goal, TraversalEdge.Action.STEP);
+            AtomicInteger opened = new AtomicInteger(), closed = new AtomicInteger();
+            NavigationPlanner.Search search = new NavigationPlanner.Search(start, goal.feet(), UUID.randomUUID(), PROFILE,
+                    cache, new NavigationPlanner.NeighborSource() {
+                        @Override public NavigationPlanner.NeighborScan open(SurfaceNode from) {
+                            return stagedScan(from.equals(start) ? first : List.of(), from.equals(start), null);
+                        }
+                        @Override public NavigationPlanner.NeighborScan openDetailed(SurfaceNode from) {
+                            if (from.equals(unknown)) {
+                                opened.incrementAndGet();
+                                return new NavigationPlanner.NeighborScan() {
+                                    @Override public TraversalValidator.NeighborBatch advance(int units, long deadline) {
+                                        return new TraversalValidator.NeighborBatch(List.of(), blocked, 1);
+                                    }
+                                    @Override public void close() { closed.incrementAndGet(); }
+                                };
+                            }
+                            require(from.equals(alternate) && opened.get() > 0 && closed.get() == opened.get(),
+                                    "a blocked detailed cursor must release its geometry before another deferred exit runs");
+                            return graphScan(List.of(escape));
+                        }
+                    }, NavigationPlanner.RecordPool.bounded(32));
+            try {
+                run(search, 2, 200);
+                require(search.result().status() == PlanningResult.Status.READY && search.result().plan().edges().contains(escape),
+                        "unknown chunks or resource pressure on one detailed branch cannot hide another proven exit");
+                require(cache.edges(unknown, PROFILE) == null,
+                        "waiting detailed scans must not cache an incomplete empty adjacency");
+            } finally {
+                search.close();
+                require(cache.stats().transientEntries() == 0, "blocked detail metadata is released when the route wins");
+            }
+        }
+    }
+    private static void reopenedCoarseNodePropagatesItsImprovedDistance() {
+        for (int work : new int[]{1, 64}) {
+            NavigationGraphCache cache = new NavigationGraphCache();
+            SurfaceNode start = node(cache, 0, 0), high = node(cache, 90, 8), low = node(cache, 0, 0, 1);
+            SurfaceNode join = node(cache, 95, 8), goal = node(cache, 100, 8);
+            TraversalEdge expensive = pricedEdge(cache, start, high, 100), toLow = edge(cache, start, low, TraversalEdge.Action.WALK);
+            TraversalEdge improved = edge(cache, low, high, TraversalEdge.Action.STEP), viaHigh = edge(cache, high, join, TraversalEdge.Action.WALK);
+            TraversalEdge competing = pricedEdge(cache, low, join, 101), finish = edge(cache, join, goal, TraversalEdge.Action.WALK);
+            AtomicInteger highScans = new AtomicInteger();
+            NavigationPlanner.Search search = new NavigationPlanner.Search(start, goal.feet(), UUID.randomUUID(), PROFILE,
+                    cache, new NavigationPlanner.NeighborSource() {
+                        @Override public NavigationPlanner.NeighborScan open(SurfaceNode from) {
+                            if (from.equals(start)) return graphScan(List.of(expensive, toLow));
+                            if (from.equals(low)) return graphScan(List.of(improved, competing));
+                            if (from.equals(high)) {
+                                highScans.incrementAndGet();
+                                return stagedScan(List.of(viaHigh), false, null);
+                            }
+                            return stagedScan(List.of(), false, null);
+                        }
+                        @Override public NavigationPlanner.NeighborScan openDetailed(SurfaceNode from) {
+                            return graphScan(from.equals(high) ? List.of(viaHigh) : List.of(finish));
+                        }
+                    }, NavigationPlanner.RecordPool.bounded(32));
+            try {
+                run(search, work, 1000);
+                require(search.result().status() == PlanningResult.Status.READY && highScans.get() >= 2,
+                        "a closed coarse node reached more cheaply must re-propagate its proved native connections");
+                require(search.result().plan().edges().equals(List.of(toLow, improved, viaHigh, finish)),
+                        "the cheaper reopened route must displace the competing downstream predecessor");
+            } finally {
+                search.close();
+                require(cache.stats().transientEntries() == 0, "reopening cannot duplicate deferred-node reservations");
+            }
+        }
+    }
+    private static NavigationPlanner.NeighborScan stagedScan(List<TraversalEdge> edges, boolean exhaustive, AtomicInteger closed) {
+        NavigationPlanner.NeighborScan delegate = graphScan(edges);
+        return new NavigationPlanner.NeighborScan() {
+            @Override public TraversalValidator.NeighborBatch advance(int units, long deadline) {
+                return delegate.advance(units, deadline);
+            }
+            @Override public boolean exhaustive() { return exhaustive; }
+            @Override public void close() { if (closed != null) closed.incrementAndGet(); }
+        };
+    }
+    private static TraversalEdge pricedEdge(NavigationGraphCache cache, SurfaceNode from, SurfaceNode to, double cost) {
+        TraversalEdge edge = edge(cache, from, to, TraversalEdge.Action.WALK);
+        return new TraversalEdge(from, to, edge.action(), edge.controlPoints(), cost, edge.dependencies());
+    }
+    private static void ascentPreferenceRetainsARequiredDescentPastAHigherDeadEnd() {
+        for (int work : new int[]{1, 16, 64}) {
+            NavigationGraphCache cache = new NavigationGraphCache();
+            Map<SurfaceNode, List<TraversalEdge>> graph = new HashMap<>();
+            SurfaceNode start = node(cache, 0, 4, 0), low = node(cache, 0, 0, 1);
+            SurfaceNode previous = start;
+            for (int i = 1; i <= 8; i++) {
+                SurfaceNode next = node(cache, i, 4 + i, 0);
+                connect(graph, edge(cache, previous, next, TraversalEdge.Action.STEP));
+                previous = next;
+            }
+            TraversalEdge descent = edge(cache, start, low, TraversalEdge.Action.DROP);
+            connect(graph, descent);
+            previous = low;
+            for (int x = -1; x >= -10; x--) {
+                SurfaceNode next = node(cache, x, 0, 1);
+                connect(graph, edge(cache, previous, next, TraversalEdge.Action.WALK));
+                previous = next;
+            }
+            for (int y = 1; y <= 12; y++) {
+                SurfaceNode next = node(cache, -10, y, 1 + y);
+                connect(graph, edge(cache, previous, next, TraversalEdge.Action.STEP));
+                previous = next;
+            }
+            for (int x = -9; x <= 0; x++) {
+                SurfaceNode next = node(cache, x, 12, 13);
+                connect(graph, edge(cache, previous, next, TraversalEdge.Action.WALK));
+                previous = next;
+            }
+            for (int z = 12; z >= 4; z--) {
+                SurfaceNode next = node(cache, 0, 12, z);
+                connect(graph, edge(cache, previous, next, TraversalEdge.Action.WALK));
+                previous = next;
+            }
+            SurfaceNode destination = previous;
+            AtomicBoolean highDeadEndExplored = new AtomicBoolean();
+            NavigationPlanner.Search search = new NavigationPlanner.Search(start, destination.feet(), UUID.randomUUID(),
+                    PROFILE, cache, from -> {
+                        if (from.feet().x > 0) highDeadEndExplored.set(true);
+                        return graphScan(graph.getOrDefault(from, List.of()));
+                    }, NavigationPlanner.RecordPool.bounded(256));
+            try {
+                for (int tick = 1; tick <= 10000 && !search.finished(); tick++) {
+                    var slice = budget(work, tick);
+                    search.advance(slice);
+                    require(slice.expansionsUsed() <= work && slice.geometryUsed() <= work,
+                            "ascent preference must retain both per-slice work limits");
+                }
+                require(search.result().status() == PlanningResult.Status.READY && highDeadEndExplored.get(),
+                        "an enticing higher dead end must not hide the only route, which first descends");
+                List<TraversalEdge> route = search.result().plan().edges();
+                require(route.contains(descent) && route.get(route.size() - 1).to().equals(destination)
+                                && route.stream().allMatch(e -> graph.getOrDefault(e.from(), List.of()).contains(e)),
+                        "the result must keep the proven directed drop and every original forward edge");
+                require(search.recordCount() == 0, "completion must release ascent search records");
+            } finally {
+                search.close();
+                require(cache.stats().transientEntries() == 0, "each work budget must return all transient capacity");
+            }
+            NavigationGraphCache reverseCache = new NavigationGraphCache();
+            SurfaceNode reverseStart = node(reverseCache, 0, 0, 1), reverseTarget = node(reverseCache, 0, 4, 0);
+            TraversalEdge onlyDrop = edge(reverseCache, reverseTarget, reverseStart, TraversalEdge.Action.DROP);
+            NavigationPlanner.Search reverseDrop = search(reverseCache, reverseStart, reverseTarget,
+                    Map.of(reverseTarget, List.of(onlyDrop)), 16);
+            try {
+                run(reverseDrop, work, 100);
+                require(reverseDrop.result().status() == PlanningResult.Status.UNREACHABLE,
+                        "an upper target cannot turn a downward-only drop into an invented climb");
+            } finally {
+                reverseDrop.close();
+                require(reverseCache.stats().transientEntries() == 0, "failed directed ascent must also release capacity");
+            }
+        }
+    }
+    private static void ascentPreferenceExploresLessOfAWideLowerFloor() {
+        NavigationGraphCache cache = new NavigationGraphCache();
+        Map<SurfaceNode, List<TraversalEdge>> graph = new HashMap<>();
+        Map<Vec3, SurfaceNode> lower = new HashMap<>();
+        for (int x = -24; x <= 24; x++) for (int z = -12; z <= 32; z++) {
+            if (x == 0 && z >= 19 && z <= 30) continue; // Solid staircase occupies these lower cells.
+            SurfaceNode node = node(cache, x, 0, z);
+            lower.put(node.feet(), node);
+        }
+        int[][] directions = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+        for (SurfaceNode from : lower.values()) for (int[] direction : directions) {
+            SurfaceNode to = lower.get(from.feet().add(direction[0], 0, direction[1]));
+            if (to == null) continue;
+            if (direction[0] != 0 && direction[1] != 0
+                    && (!lower.containsKey(from.feet().add(direction[0], 0, 0))
+                            || !lower.containsKey(from.feet().add(0, 0, direction[1])))) continue;
+            connect(graph, edge(cache, from, to, TraversalEdge.Action.WALK));
+        }
+        SurfaceNode previous = lower.get(new Vec3(0, 0, 18));
+        for (int y = 1; y <= 12; y++) {
+            SurfaceNode next = node(cache, 0, y, 18 + y);
+            connect(graph, edge(cache, previous, next, TraversalEdge.Action.STEP));
+            previous = next;
+        }
+        for (int z = 29; z >= 0; z--) {
+            SurfaceNode next = node(cache, 0, 12, z);
+            connect(graph, edge(cache, previous, next, TraversalEdge.Action.WALK));
+            previous = next;
+        }
+        SurfaceNode start = lower.get(Vec3.ZERO), destination = previous;
+        int unweightedExpansions = unweightedExpansions(graph, start, destination);
+        AtomicInteger opened = new AtomicInteger();
+        NavigationPlanner.Search search = new NavigationPlanner.Search(start, destination.feet(), UUID.randomUUID(),
+                PROFILE, cache, from -> {
+                    opened.incrementAndGet();
+                    return graphScan(graph.getOrDefault(from, List.of()));
+                }, NavigationPlanner.RecordPool.bounded(NavigationTuning.DEFAULT.searchRecords()));
+        try {
+            run(search, 64, 20000);
+            require(search.result().status() == PlanningResult.Status.READY,
+                    "a wide lower floor must connect to the distant upper target through its staircase");
+            require(search.result().plan().edges().stream().anyMatch(e -> e.action() == TraversalEdge.Action.STEP),
+                    "the accelerated search must retain the real staircase in its executable route");
+            require(opened.get() < unweightedExpansions,
+                    "prioritizing discovered ascent must scan fewer nodes than Euclidean A* on the same graph; guided="
+                            + opened.get() + ", unweighted=" + unweightedExpansions);
+        } finally {
+            search.close();
+            require(cache.stats().transientEntries() == 0, "the accelerated wide-floor search releases its retained route");
+        }
+    }
+    /** Independent comparison counts complete outgoing expansions; it supplies no edges to production search. */
+    private static int unweightedExpansions(Map<SurfaceNode, List<TraversalEdge>> graph,
+            SurfaceNode start, SurfaceNode destination) {
+        record Entry(SurfaceNode node, double distance, double score, long order) { }
+        PriorityQueue<Entry> frontier = new PriorityQueue<>(Comparator.comparingDouble(Entry::score)
+                .thenComparingLong(Entry::order));
+        Map<SurfaceNode, Double> distances = new HashMap<>();
+        Set<SurfaceNode> closed = new HashSet<>();
+        long order = 0;
+        distances.put(start, 0.0);
+        frontier.add(new Entry(start, 0, start.feet().distanceTo(destination.feet()), order++));
+        int expansions = 0;
+        while (!frontier.isEmpty()) {
+            Entry current = frontier.remove();
+            if (closed.contains(current.node()) || Double.compare(current.distance(), distances.get(current.node())) != 0) continue;
+            if (current.node().equals(destination)) return expansions;
+            closed.add(current.node());
+            expansions++;
+            for (TraversalEdge edge : graph.getOrDefault(current.node(), List.of())) {
+                double distance = current.distance() + edge.cost();
+                if (distance >= distances.getOrDefault(edge.to(), Double.POSITIVE_INFINITY)) continue;
+                distances.put(edge.to(), distance);
+                closed.remove(edge.to());
+                frontier.add(new Entry(edge.to(), distance,
+                        distance + edge.to().feet().distanceTo(destination.feet()), order++));
+            }
+        }
+        throw new AssertionError("the independent wide-floor graph must be reachable");
+    }
+    private static void connect(Map<SurfaceNode, List<TraversalEdge>> graph, TraversalEdge edge) {
+        graph.computeIfAbsent(edge.from(), ignored -> new ArrayList<>()).add(edge);
     }
     private static void longRouteHasNoRadiusOrLengthCutoff() {
         List<TraversalEdge> small = longRoute(1), large = longRoute(64);
@@ -713,7 +1043,10 @@ public final class NavigationPlannerCompatTest {
         };
     }
     private static SurfaceNode node(NavigationGraphCache cache, double x, double y) {
-        Vec3 feet = new Vec3(x, y, 0); return new SurfaceNode(feet, cache.version(NavigationGraphCache.TileKey.at(feet)));
+        return node(cache, x, y, 0);
+    }
+    private static SurfaceNode node(NavigationGraphCache cache, double x, double y, double z) {
+        Vec3 feet = new Vec3(x, y, z); return new SurfaceNode(feet, cache.version(NavigationGraphCache.TileKey.at(feet)));
     }
     private static TraversalEdge edge(NavigationGraphCache cache, SurfaceNode a, SurfaceNode b, TraversalEdge.Action action) {
         Map<NavigationGraphCache.TileKey, Long> versions = new HashMap<>();

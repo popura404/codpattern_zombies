@@ -1,6 +1,7 @@
 package com.cdp.codpattern.app.zombies.service.navigation;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Mob;
@@ -9,6 +10,8 @@ import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.level.pathfinder.BlockPathTypes;
 import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.StairBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.EntityCollisionContext;
@@ -38,11 +41,19 @@ public final class TraversalValidator {
     // Keep the full entity/profile key, but avoid rereading overlapping shaft layers solely
     // because the hypothetical feet moved down one block. All subclasses retain feetY.
     private static final double CONTEXT_INDEPENDENT_FEET = Double.NEGATIVE_INFINITY;
+    // Raw vanilla state snapshots have no projected-feet dependency. This separate
+    // key never supplies CachedCell/path-type evidence to the general shape scan.
+    private static final double FLAT_PROOF_STATE = Double.POSITIVE_INFINITY;
     private static final int MAX_LOCAL_BOXES = 1024;
     private static final int MAX_CANDIDATES = 1024;
     private static final int[][] DIRECTIONS = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
     private final NavigationContext context;
     private final NavigationGraphCache cache;
+    private long fastNeighborScans;
+    private long simplifiedStairScans;
+
+    public long fastNeighborScans() { return fastNeighborScans; }
+    public long simplifiedStairScans() { return simplifiedStairScans; }
 
     public enum Verdict { CLEAR, BLOCKED, WAITING_CHUNK, UNKNOWN, STALE, NATIVE_INTERACTION }
     public enum ScanStatus { PENDING, COMPLETE, WAITING_CHUNK, RESOURCE_LIMITED }
@@ -457,7 +468,12 @@ public final class TraversalValidator {
     }
 
     public NeighborCursor beginNeighbours(Mob mob, SurfaceNode from, MovementProfile profile, long geometryVersion) {
-        return new NeighborCursor(mob, from, profile);
+        return new NeighborCursor(mob, from, profile, true);
+    }
+
+    /** A first pass may defer fractional exits; its result must never be cached as complete adjacency. */
+    public NeighborCursor beginCoarseNeighbours(Mob mob, SurfaceNode from, MovementProfile profile, long geometryVersion) {
+        return new NeighborCursor(mob, from, profile, false);
     }
 
     public ConnectionCursor beginConnection(Mob mob,SurfaceNode from,Vec3 destination,MovementProfile profile) {
@@ -517,6 +533,26 @@ public final class TraversalValidator {
         int used = 0;
         while (used < workUnits && System.nanoTime() < deadlineNanos && !cursor.done) {
             used++;
+            if (cursor.flat != null && !cursor.flat.failed) {
+                FlatProof flat = cursor.flat;
+                if (!flat.proved) {
+                    flat.advance();
+                    if (flat.waiting) return new NeighborBatch(ready, ScanStatus.WAITING_CHUNK, used);
+                    if (flat.limited) return new NeighborBatch(ready, ScanStatus.RESOURCE_LIMITED, used);
+                    continue;
+                }
+                if (flat.outputIndex < DIRECTIONS.length) {
+                    int[] direction = DIRECTIONS[flat.outputIndex];
+                    Vec3 from = cursor.from.feet();
+                    Vec3 to = new Vec3(Mth.floor(from.x)+direction[0]+0.5,Math.rint(from.y),
+                            Mth.floor(from.z)+direction[1]+0.5);
+                    TraversalEdge edge = new TraversalEdge(cursor.from,node(to),TraversalEdge.Action.WALK,
+                            List.of(from,to),from.distanceTo(to),flat.dependencies);
+                    if (!cursor.outputs.retain(edge)) return new NeighborBatch(ready,ScanStatus.RESOURCE_LIMITED,used);
+                    ready.add(edge); flat.outputIndex++;
+                } else cursor.done = true;
+                continue;
+            }
             if (!cursor.local.done) {
                 cursor.local.advance();
                 if (cursor.local.waiting) return new NeighborBatch(ready, ScanStatus.WAITING_CHUNK, used);
@@ -535,6 +571,14 @@ public final class TraversalValidator {
                                     Mth.floor(cursor.from.feet().z)+direction[1]+0.5);
                             if (overlapsHorizontal(bodyAt(cursor.profile,feet),box)
                                     && !cursor.nativeCandidates.contains(feet)) additions.add(feet);
+                        }
+                        if (!nativePoint(cursor.from.feet())) {
+                            // On a stair's lower half, the centre at the current feet Y can
+                            // be inside the riser. Include the same cell's higher support.
+                            Vec3 centre=new Vec3(Mth.floor(cursor.from.feet().x)+0.5,box.maxY,
+                                    Mth.floor(cursor.from.feet().z)+0.5);
+                            if (overlapsHorizontal(bodyAt(cursor.profile,centre),box)
+                                    && !cursor.nativeCandidates.contains(centre)) additions.add(centre);
                         }
                     }
                     if (cursor.nativeCandidates.size()+additions.size()>MAX_CANDIDATES) {
@@ -565,11 +609,17 @@ public final class TraversalValidator {
                 if (edge!=null) {
                     if (!cursor.outputs.retain(edge)) return new NeighborBatch(ready,ScanStatus.RESOURCE_LIMITED,used);
                     ready.add(edge);
+                    cursor.recordNativeExit(feet);
                 }
                 cursor.nativeIndex++;
                 continue;
             }
             if (!cursor.generated) {
+                if (!cursor.includeDetail && cursor.local.partialHorizontal && !cursor.canSimplifyStairs()) {
+                    cursor.exhaustive=false;
+                    cursor.done=true;
+                    continue;
+                }
                 generateCandidateBatch(cursor);
                 if (cursor.limited || cursor.capacityLimited) return new NeighborBatch(ready, ScanStatus.RESOURCE_LIMITED, used);
                 continue;
@@ -614,38 +664,132 @@ public final class TraversalValidator {
         private final SurfaceNode from;
         private final MovementProfile profile;
         private final ShapeScan local;
+        private final FlatProof flat;
+        private final boolean includeDetail;
+        private boolean exhaustive=true;
         private final List<Vec3> candidates = new ArrayList<>();
         private final Set<Vec3> nativeCandidates=new LinkedHashSet<>();
         private final List<Vec3> nativePending=new ArrayList<>();
         private final Set<Vec3> candidateSet = new LinkedHashSet<>();
         private final List<Vec3> departures = new ArrayList<>();
-        private int candidateIndex, dropIndex, directionIndex,nativeBoxIndex,nativeIndex;
-        private boolean generated, limited, done,nativeGenerated;
+        private int candidateIndex, dropIndex, directionIndex,nativeBoxIndex,nativeIndex,currentHeightNativeExits;
+        private boolean generated, limited, done,nativeGenerated,centredExit,simplifiedStairsCounted;
         private DropCursor drop;
         private CandidateColumn column;
         private final NavigationGraphCache.TransientLease lease=cache.transientLease();
         private final EdgeOutputs outputs = new EdgeOutputs();
         private boolean capacityLimited;
+        public boolean exhaustive() { return exhaustive; }
         @Override public void close() {
-            local.close(); if (drop!=null) drop.close(); lease.close(); outputs.close();
+            local.close(); if (flat!=null) flat.close(); if (drop!=null) drop.close(); lease.close(); outputs.close();
             candidates.clear(); nativeCandidates.clear(); nativePending.clear(); candidateSet.clear(); departures.clear();
             column=null;
         }
         private boolean reserve(int entries) {
             if (lease.reserve(entries)) return true; capacityLimited=true; return false;
         }
+        private void recordNativeExit(Vec3 feet) {
+            if (Math.abs(feet.y-from.feet().y)>EPSILON) return;
+            int dx=Mth.floor(feet.x)-Mth.floor(from.feet().x);
+            int dz=Mth.floor(feet.z)-Mth.floor(from.feet().z);
+            if (dx==0 && dz==0) { centredExit=true; return; }
+            for (int i=0;i<DIRECTIONS.length;i++)
+                if (dx==DIRECTIONS[i][0] && dz==DIRECTIONS[i][1]) {
+                    currentHeightNativeExits|=1<<i; return;
+                }
+        }
+        private boolean canSimplifyStairs() {
+            return local.partialHorizontal && local.onlyCoplanarStairPartials && !local.shapeAboveFeet
+                    && local.hazards.isEmpty() && currentHeightNativeExits==(1<<DIRECTIONS.length)-1
+                    && (nativePoint(from.feet()) || centredExit);
+        }
         public boolean transferEdge(TraversalEdge edge, NavigationGraphCache.TransientLease destination) {
             return outputs.transfer(edge, destination);
         }
-        private NeighborCursor(Mob mob, SurfaceNode from, MovementProfile profile) {
+        private NeighborCursor(Mob mob, SurfaceNode from, MovementProfile profile, boolean includeDetail) {
             this.mob = mob;
             this.from = from;
             this.profile = profile;
+            this.includeDetail = includeDetail;
             double radius = 1.5 + profile.width() / 2;
             Vec3 p = from.feet();
             local = new ShapeScan(mob, new AABB(p.x-radius, p.y-1.01, p.z-radius,
                     p.x+radius, p.y+profile.height()+Math.max(1.25,profile.stepHeight()), p.z+radius),p.y,true,profile);
+            flat = nativePoint(p) && Math.abs(p.y-Math.rint(p.y))<EPSILON && profile.width()<=1
+                    && profile.height()<=3 && profile.stepHeight()<=1.25 ? new FlatProof(from,profile,local) : null;
         }
+    }
+
+    /** Proves ordinary open stone floor using the complete original scan's read halo. */
+    private final class FlatProof implements AutoCloseable {
+        private final SurfaceNode from;
+        private final MovementProfile profile;
+        private final ShapeScan bounds;
+        private final int floorY,clearThroughY;
+        private final Map<NavigationGraphCache.TileKey,Long> dependencies = new HashMap<>();
+        private final NavigationGraphCache.TransientLease lease = cache.transientLease();
+        private int x,y,z,outputIndex;
+        private boolean failed,proved,waiting,limited;
+
+        FlatProof(SurfaceNode from,MovementProfile profile,ShapeScan bounds) {
+            this.from=from; this.profile=profile; this.bounds=bounds;
+            floorY=(int)Math.rint(from.feet().y)-1;
+            clearThroughY=Math.max(Mth.ceil(from.feet().y+profile.height()),
+                    Mth.ceil(from.feet().y+profile.stepHeight()));
+            x=bounds.minX; y=bounds.minY; z=bounds.minZ;
+            // All eight outputs and the straight sweeps stay inside this rectangle.
+            AABB swept=bodyAt(profile,from.feet()).inflate(1,0,1);
+            failed=floorY<context.level().getMinBuildHeight() || !inside(swept);
+        }
+        void advance() {
+            waiting=false; limited=false;
+            int reads=0,cells=0;
+            while (!failed && !proved && reads<BLOCK_BATCH && cells<CACHED_CELL_BATCH) {
+                if (y>bounds.maxY) {
+                    // A multi-slice proof cannot publish mixed revisions after a block event.
+                    if (!cache.valid(dependencies) || !cache.valid(from.tile(),from.version())) {
+                        fail(); return;
+                    }
+                    proved=true; fastNeighborScans++; return;
+                }
+                BlockPos pos=new BlockPos(x,y,z);
+                if (!loaded(new AABB(pos).inflate(1))) { waiting=true; return; }
+                NavigationGraphCache.TileKey tile=NavigationGraphCache.TileKey.at(pos);
+                long version=cache.version(tile);
+                if (version<0) { limited=true; return; }
+                if (!dependencies.containsKey(tile)) {
+                    if (!lease.reserve(1)) { limited=true; return; }
+                    dependencies.put(tile,version);
+                }
+                BlockState state=(BlockState)cache.geometryCell(profile,FLAT_PROOF_STATE,pos);
+                if (state==null) {
+                    state=context.level().getBlockState(pos); reads++;
+                    if (plainStone(state) || plainAir(state))
+                        cache.putGeometryCell(profile,FLAT_PROOF_STATE,pos,state);
+                }
+                cells++;
+                boolean stone=plainStone(state),air=plainAir(state);
+                // A strict whitelist also excludes Forge path hooks and collision
+                // contexts on custom blocks. Check FIRE tags even on these states.
+                if ((!stone && !air) || WalkNodeEvaluator.isBurningBlock(state)
+                        || !state.getFluidState().isEmpty()
+                        || y==floorY && !stone || y>floorY && y<=clearThroughY && !air) {
+                    fail(); return;
+                }
+                if (++x>bounds.maxX) { x=bounds.minX; if (++z>bounds.maxZ) { z=bounds.minZ; y++; } }
+            }
+        }
+        private boolean plainStone(BlockState state) {
+            return state==Blocks.STONE.defaultBlockState()
+                    && state.getBlock().getClass()==net.minecraft.world.level.block.Block.class;
+        }
+        private boolean plainAir(BlockState state) {
+            return state.getBlock().getClass()==net.minecraft.world.level.block.AirBlock.class
+                    && (state==Blocks.AIR.defaultBlockState() || state==Blocks.CAVE_AIR.defaultBlockState()
+                            || state==Blocks.VOID_AIR.defaultBlockState());
+        }
+        private void fail() { failed=true; close(); }
+        @Override public void close() { lease.close(); dependencies.clear(); }
     }
 
     /** Output memory stays charged while crossing the geometry/search boundary. */
@@ -750,9 +894,22 @@ public final class TraversalValidator {
     private void generateCandidateBatch(NeighborCursor cursor) {
         Vec3 origin = cursor.from.feet();
         double half = cursor.profile.width()/2;
-        // With no fractional horizontal shape boundary, grid-centred surfaces are complete.
-        // Keep edge departures, but avoid regenerating all of the native candidates just emitted.
-        if (nativePoint(origin) && !cursor.local.partialHorizontal) {
+        // Whole-cell horizontal shapes need only the centres already tested above,
+        // including the current cell when acquisition began off-centre. Carrying an
+        // arbitrary acquisition/stair offset into every adjacent empty cell creates
+        // parallel copies of the same open floor and repeats the column scans for
+        // each copy. Exact sweeps and support checks still prove every connection
+        // from the actual off-centre origin to its centred destination.
+        // A stair support touching the soles is not itself a body obstruction.
+        // However, its partial top can require an off-centre route around a gap.
+        // Omit fractional candidates only after every adjacent centre (and the
+        // current centre for an off-centre origin) already has a proven connection.
+        // Keep all original shapes for those support/sweep proofs and execution.
+        boolean simplifyStairs=cursor.canSimplifyStairs();
+        if (simplifyStairs && !cursor.simplifiedStairsCounted) {
+            simplifiedStairScans++; cursor.simplifiedStairsCounted=true;
+        }
+        if (!cursor.local.partialHorizontal || simplifyStairs) {
             if (cursor.directionIndex<4) {
                 if (maybeDeparture(cursor,DIRECTIONS[cursor.directionIndex])) cursor.directionIndex++;
             }
@@ -891,19 +1048,38 @@ public final class TraversalValidator {
                     || !clearSweep(aboveEnd,to,profile,scan)) return null;
             // Reserve the headroom above the traversed support as well as the three control segments.
             if (!clearSweep(new Vec3(start.x,to.y,start.z),to,profile,scan)) return null;
-            if ((!executionStep && !nativePoint(start)) || !nativePoint(to)) return null;
-            action = TraversalEdge.Action.STEP;
+            action = stepAction(mob,start,to,profile,scan,executionStep);
+            if (action == null) return null;
             controls = List.of(start,raised,aboveEnd,to);
         } else if (dy < 0 && dy >= -1-EPSILON) {
             Vec3 aboveEnd = new Vec3(to.x,start.y,to.z);
             if (!clearSweep(start,aboveEnd,profile,scan) || !clearSweep(aboveEnd,to,profile,scan)) return null;
-            if ((!executionStep && !nativePoint(start)) || !nativePoint(to)) return null;
-            action = TraversalEdge.Action.STEP;
+            action = stepAction(mob,start,to,profile,scan,executionStep);
+            if (action == null) return null;
             controls = List.of(start,aboveEnd,to);
         } else return null;
         double setupCost=action==TraversalEdge.Action.STEP?0.5:
                 action==TraversalEdge.Action.PRECISE_MOVE?0.35:action==TraversalEdge.Action.NATIVE_INTERACTION?1:0;
         return new TraversalEdge(from,node(to),action,controls,start.distanceTo(to)+setupCost,scan.dependencies);
+    }
+
+    @Nullable
+    private static TraversalEdge.Action stepAction(Mob mob,Vec3 from,Vec3 to,MovementProfile profile,
+            ShapeScan scan,boolean executionStep) {
+        if ((executionStep || nativePoint(from)) && nativePoint(to)) return TraversalEdge.Action.STEP;
+        // A native Path rounds X/Z to cell centres, which can place its first node
+        // inside a stair. Small supported steps instead use the exact MoveControl
+        // destination and the entity's ordinary movement/collision handling.
+        if (Math.abs(to.y-from.y)>mob.maxUpStep()+EPSILON) return null;
+        List<TraversalMath.Interval> support=new ArrayList<>();
+        double half=profile.width()/2-EPSILON;
+        for (AABB box : scan.boxes) {
+            if (box.maxY<Math.min(from.y,to.y)-EPSILON || box.maxY>Math.max(from.y,to.y)+EPSILON) continue;
+            var interval=TraversalMath.overlap(from.x,from.z,to.x-from.x,to.z-from.z,
+                    box.minX-half,box.maxX+half,box.minZ-half,box.maxZ+half);
+            if (interval!=null) support.add(interval);
+        }
+        return TraversalMath.supportedPrefix(support)>=1-EPSILON ? TraversalEdge.Action.PRECISE_MOVE : null;
     }
 
     private final class DropCursor implements AutoCloseable {
@@ -980,7 +1156,7 @@ public final class TraversalValidator {
         return clearSweep(from,to,envelope,scan);
     }
 
-    private record CachedCell(List<AABB> boxes,BlockPathTypes type,boolean fluid) { }
+    private record CachedCell(List<AABB> boxes,BlockPathTypes type,boolean fluid,boolean ordinaryStair) { }
 
     /** A work unit reads eight world cells or 128 memoized cells, processing at most sixteen boxes. */
     private final class ShapeScan implements AutoCloseable {
@@ -999,6 +1175,8 @@ public final class TraversalValidator {
         int x,y,z,boxIndex;
         List<AABB> pending = List.of();
         boolean done,waiting,limited,hardLimited,pendingDoor,partialHorizontal;
+        boolean pendingOrdinaryStair,shapeAboveFeet;
+        boolean onlyCoplanarStairPartials=true;
         boolean jumpMotionChecks,jumpMotionBlocked;
         private final NavigationGraphCache.TransientLease lease=cache.transientLease();
         private boolean reserve(int entries) {
@@ -1045,9 +1223,13 @@ public final class TraversalValidator {
                     boxIndex++; shapes++;
                     if (included) {
                         fingerprint=hashBox(fingerprint,box);
+                        if (box.maxY>feetY+EPSILON) shapeAboveFeet=true;
                         if (box.maxY>=feetY-EPSILON && box.minY<area.maxY
-                                && (!wholeAxis(box.minX,box.maxX) || !wholeAxis(box.minZ,box.maxZ)))
+                                && (!wholeAxis(box.minX,box.maxX) || !wholeAxis(box.minZ,box.maxZ))) {
                             partialHorizontal=true;
+                            if (!pendingOrdinaryStair || Math.abs(box.maxY-feetY)>EPSILON)
+                                onlyCoplanarStairPartials=false;
+                        }
                         if (pendingDoor) fingerprint=(fingerprint^0x646f6f72L)*0x100000001b3L;
                         if (retainGeometry) { boxes.add(box); if (pendingDoor) doors.add(box); }
                     }
@@ -1078,7 +1260,9 @@ public final class TraversalValidator {
                     // The third-party callback itself is indivisible; reject its oversized result
                     // before retaining it across a scheduler slice.
                     if (shapeBoxes.size()>MAX_LOCAL_BOXES) { hardLimited=limited=true; return; }
-                    cell=new CachedCell(shapeBoxes,type,!state.getFluidState().isEmpty());
+                    boolean ordinaryStair=state.getBlock().getClass()==StairBlock.class
+                            && BuiltInRegistries.BLOCK.getKey(state.getBlock()).getNamespace().equals("minecraft");
+                    cell=new CachedCell(shapeBoxes,type,!state.getFluidState().isEmpty(),ordinaryStair);
                     if (cacheProfile!=null && shapeBoxes.size()<=SHAPE_BATCH
                             && state.getBlock().getClass().getName().startsWith("net.minecraft.world.level.block.")) {
                         Class<?> blockClass=state.getBlock().getClass();
@@ -1093,6 +1277,7 @@ public final class TraversalValidator {
                 cells++;
                 BlockPathTypes type=cell.type();
                 pendingDoor=doorAbility && type==BlockPathTypes.DOOR_WOOD_CLOSED;
+                pendingOrdinaryStair=cell.ordinaryStair();
                 if (hazard) {
                     AABB hazardBox=new AABB(pos);
                     if (retainGeometry) hazards.add(hazardBox);

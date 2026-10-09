@@ -88,7 +88,132 @@ public final class RouteProgressCompatTest {
         require(slow.historySize()<=256,"structural history is bounded");
         nativePathReplacementCannotRewardReturningToAnOldEndpoint();
         exhaustedCandidateRoundCannotRevivePlanningAllowance();
+        productiveSearchHasAFiniteIndependentLease();
+        unchangedOrExpiredSearchCannotRenewItsLease();
+        replacementSearchAndTargetChangesCannotRenewTheLease();
+        inactiveSearchCannotBankDiscoveredNodes();
+        retiredSearchNeedsRealProgressBeforeAnotherLease();
+        readyRouteRetainsOnlyItsEarnedSearchLease();
         System.out.println("RouteProgressCompatTest: passed");
+    }
+    private static void productiveSearchHasAFiniteIndependentLease() {
+        RouteProgress progress = new RouteProgress(0,0,0,0);
+        progress.waiting(1);
+        progress.searchActivity(1,1,0,true);
+        for (int tick=20;tick<=4000;tick+=20) {
+            progress.searchActivity(tick,1,tick/20L*16,true);
+            require(progress.planningWaitUntil()<=3200,
+                    "even infinitely many newly discovered nodes cannot exceed the fixed search deadline");
+            if (tick==800) require(progress.planningWaitUntil()>800,
+                    "a continuously advancing cold search may outlive the ordinary planning allowance");
+        }
+        require(progress.planningWaitUntil()==3200 && progress.waitingUntil()==640
+                        && progress.lastRoute()==0 && progress.lastCombat()==0,
+                "search activity must preserve the original wait and actual movement/combat clocks");
+    }
+    private static void unchangedOrExpiredSearchCannotRenewItsLease() {
+        RouteProgress progress = new RouteProgress(0,0,0,0);
+        progress.waiting(1);
+        progress.searchActivity(1,1,0,true);
+        progress.searchActivity(600,1,16,true);
+        require(progress.planningWaitUntil()==760,"new graph records earn only a short search lease");
+        for (int tick=601;tick<=1000;tick++) progress.searchActivity(tick,1,16,true);
+        require(progress.planningWaitUntil()==760,
+                "no new records, including during final route reconstruction, cannot renew the lease");
+        progress.searchActivity(1001,1,32,true);
+        require(progress.planningWaitUntil()==760,"new discoveries cannot revive an expired search lease");
+
+        RouteProgress expired = new RouteProgress(0,0,0,0);
+        expired.waiting(1);
+        expired.searchActivity(640,2,0,true);
+        expired.searchActivity(650,2,1000,true);
+        require(expired.planningWaitUntil()==640,
+                "an already expired original allowance cannot be rescued by a late first search observation");
+    }
+    private static void replacementSearchAndTargetChangesCannotRenewTheLease() {
+        RouteProgress progress = new RouteProgress(0,0,0,0);
+        progress.waiting(1);
+        progress.searchActivity(1,1,0,true);
+        progress.searchActivity(600,1,16,true);
+        for (int tick=620;tick<=1000;tick+=20) {
+            progress.target("player-"+tick,tick,0,0);
+            progress.waiting(tick);
+            progress.searchActivity(tick,tick,1000+tick,true);
+        }
+        require(progress.planningWaitUntil()==760 && progress.lastRoute()==0,
+                "restarts, alternate targets and target motion cannot replace the bound search or extend its deadline");
+    }
+    private static void inactiveSearchCannotBankDiscoveredNodes() {
+        RouteProgress progress = new RouteProgress(0,0,0,0);
+        progress.waiting(1);
+        progress.searchActivity(1,1,0,true);
+        progress.searchActivity(600,1,16,false);
+        progress.searchActivity(620,1,16,true);
+        require(progress.planningWaitUntil()==640,
+                "chunk/resource waiting cannot earn a lease, even after returning to active with the same count");
+        progress.searchActivity(625,1,24,true);
+        progress.searchActivity(630,1,24,false);
+        progress.searchActivity(639,1,32,true);
+        require(progress.planningWaitUntil()==640,
+                "an inactive interval discards a partial batch rather than banking its old discoveries");
+        progress.searchActivity(640,1,64,true);
+        require(progress.planningWaitUntil()==640,"inactivity cannot be hidden by discoveries at the expired deadline");
+    }
+    private static void retiredSearchNeedsRealProgressBeforeAnotherLease() {
+        RouteProgress progress = new RouteProgress(0,0,0,0);
+        progress.waiting(1);
+        progress.searchActivity(1,1,0,true);
+        progress.searchActivity(600,1,16,true);
+        progress.retireWaiting();
+        progress.waiting(620);
+        progress.searchActivity(620,1,32,true);
+        progress.searchActivity(630,2,100,true);
+        require(progress.planningWaitUntil()==0,"conclusive exhaustion retires both waiting allowances");
+
+        progress.sample(1000,1,0,0);
+        require(progress.advance(1000,"new-route",1,1,0,0),"the new lease requires real directed route movement");
+        progress.waiting(1001);
+        progress.searchActivity(1001,2,100,true);
+        progress.searchActivity(1600,2,116,true);
+        require(progress.lastRoute()==1000 && progress.waitingUntil()==1640 && progress.planningWaitUntil()==1760,
+                "real movement permits a new search with a fresh, separate finite lease");
+
+        progress.retireWaiting();
+        progress.engagement(2000);
+        progress.waiting(2001);
+        progress.searchActivity(2001,3,0,true);
+        progress.searchActivity(2600,3,16,true);
+        require(progress.lastCombat()==2000 && progress.waitingUntil()==2640 && progress.planningWaitUntil()==2760,
+                "real combat likewise restores one new search allowance");
+    }
+    private static void readyRouteRetainsOnlyItsEarnedSearchLease() {
+        RouteProgress progress = new RouteProgress(0,0,0,0);
+        progress.waiting(1);
+        require(progress.planningWaitUntil(true)==640 && progress.planningWaitUntil(false)==0,
+                "READY alone must not inherit the ordinary planning allowance");
+        progress.searchActivity(1,1,0,true);
+        progress.searchActivity(600,1,16,true);
+        // A cold route is now READY and its first edge is CLEAR, but physics has
+        // not moved the entity before this tick's recycler takes its snapshot.
+        progress.searchActivity(640,1,16,false);
+        require(progress.planningWaitUntil(false)==760 && progress.lastRoute()==0,
+                "READY handoff retains the already-earned lease without pretending the monster moved");
+        progress.searchActivity(759,1,16,false);
+        require(progress.planningWaitUntil(false)==760,"READY does not renew the retained lease");
+        progress.searchActivity(760,1,32,true);
+        require(progress.planningWaitUntil(false)==760,"the retained READY lease cannot revive at expiry");
+
+        progress.sample(780,1,0,0);
+        require(progress.advance(780,"first-ready-edge",1,1,0,0),"the first real route movement must be credited");
+        require(progress.planningWaitUntil(false)==0 && progress.planningWaitUntil(true)==0,
+                "real route movement clears both the handoff lease and old planning allowance");
+        progress.waiting(781);
+        progress.searchActivity(781,2,0,true);
+        progress.searchActivity(1380,2,16,true);
+        require(progress.planningWaitUntil(false)==1540,"a later cold search can earn its own handoff lease");
+        progress.retireWaiting();
+        require(progress.planningWaitUntil(false)==0 && progress.planningWaitUntil(true)==0,
+                "conclusive exhaustion also clears any lease retained through READY");
     }
     private static void exhaustedCandidateRoundCannotRevivePlanningAllowance() {
         RouteProgress progress = new RouteProgress(5739,0,0,0);

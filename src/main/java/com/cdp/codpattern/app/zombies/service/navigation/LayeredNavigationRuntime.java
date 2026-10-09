@@ -70,7 +70,7 @@ public final class LayeredNavigationRuntime {
         boolean waiting = c.validationWaiting || c.result.status() == PlanningResult.Status.PENDING
                 || c.result.status() == PlanningResult.Status.WAITING_CHUNK;
         return new ZombiesGroundNavigationService.ProgressSnapshot(c.progress.lastRoute(), c.progress.lastCombat(),
-                c.state.graceUntil, c.failures, waiting ? c.progress.waitingUntil() : 0,
+                c.state.graceUntil, c.failures, c.progress.planningWaitUntil(waiting),
                 c.validationWaiting ? "VALIDATION" : c.result.reason().name(),
                 !waiting && c.result.status() == PlanningResult.Status.UNREACHABLE);
     }
@@ -280,6 +280,8 @@ public final class LayeredNavigationRuntime {
             }
             if (state.edge() != null) sampleRoute(now);
             else if (eligible(mob, target) && !special) sampleNativeRoute(now);
+            NavigationPlanner.SearchProgress search = planner.searchProgress(mob.getUUID());
+            if (search != null) progress.searchActivity(now, search.generation(), search.discoveredNodes(), search.active());
             if (DEBUG && Math.floorMod(now + mob.getId(), 20) == 0)
                 LOGGER.info("Zombies navigation room={} mob={} target={} position={} {}", context.roomId().encode(),
                         mob.getUUID(), target == null ? null : target.getUUID(), mob.position(), describe(mob));

@@ -33,13 +33,16 @@ public final class NavigationPlanner implements AutoCloseable {
     private int searchRecords;
     private boolean closed;
     private long requests, expansions, geometry, nanos, chunkWaits, resourceWaits;
+    private long nextSearchGeneration;
     private long repairAttempts, repairSucceeded, repairFallbacks, reusedSuffixEdges;
     public record RepairStats(long attempts, long succeeded, long fallbacks, long reusedEdges) { }
     public RepairStats repairStats() { return new RepairStats(repairAttempts, repairSucceeded, repairFallbacks, reusedSuffixEdges); }
     public record Stats(long requests, long expansions, long geometry, long nanos, long cacheHits,
-            long chunkWaits, long resourceWaits, int activeRequests, int searchRecords) { }
+            long chunkWaits, long resourceWaits, int activeRequests, int searchRecords, long fastNeighborScans,
+            long simplifiedStairScans) { }
     public Stats stats() { return new Stats(requests, expansions, geometry, nanos, cache.cacheHits(),
-            chunkWaits, resourceWaits, jobs.size(), searchRecords); }
+            chunkWaits, resourceWaits, jobs.size(), searchRecords, validator.fastNeighborScans(),
+            validator.simplifiedStairScans()); }
 
     public NavigationPlanner(NavigationContext context) { this(context, NavigationTuning.DEFAULT); }
     public NavigationPlanner(NavigationContext context, NavigationTuning tuning) {
@@ -56,6 +59,18 @@ public final class NavigationPlanner implements AutoCloseable {
     public TraversalValidator validator() { return validator; }
     public int requestCount() { return jobs.size(); }
     public int searchRecordCount() { return searchRecords; }
+    /** New graph records, not retries or charged work units, establish ongoing search activity. */
+    public record SearchProgress(long generation, long discoveredNodes, boolean active) { }
+    public SearchProgress searchProgress(UUID mobId) {
+        Job job = jobs.get(mobId);
+        if (job == null || job.search == null) return null;
+        Search search = job.search;
+        PlanningResult current = search.result();
+        boolean active = job.activated && !job.cancelled && !search.finished() && !search.evidenceExpired
+                && current.status() == PlanningResult.Status.PENDING
+                && (current.reason() == PlanningResult.Reason.BUILD || current.reason() == PlanningResult.Reason.BUDGET);
+        return new SearchProgress(search.generation, search.discoveredNodes, active);
+    }
     public String describe(UUID mobId) {
         Job job = jobs.get(mobId);
         if (job == null) return "request=none";
@@ -65,8 +80,9 @@ public final class NavigationPlanner implements AutoCloseable {
         Search search = job.search;
         PendingDescription pending = search.pendingDescription();
         return destination + ", snapshot=" + search.target + ", completionFrozen=" + search.goalFrozen
+                + ", generation=" + search.generation + ", discovered=" + search.discoveredNodes
                 + ", records=" + search.records.size() + ", frontier=" + search.frontier.size()
-                + ", scans=" + search.pending.size() + ", deferred=" + search.deferred.size()
+                + ", scans=" + search.pending.size() + ", details=" + search.details.size() + ", deferred=" + search.deferred.size()
                 + ", scan=" + pending + ", refining=" + (search.reconstructionCursor != null);
     }
     private record PendingDescription(Vec3 feet, TraversalValidator.ScanStatus status, boolean terminal) { }
@@ -373,18 +389,28 @@ public final class NavigationPlanner implements AutoCloseable {
                     initial = PlanningResult.pending(PlanningResult.Reason.BUILD);
                     destinationCursor = null; nextLocateTick = budget.serverTick() + 10; return;
                 }
-                search = new Search(startNode, destination.feet(), targetId, profile, cache, node -> {
-                    TraversalValidator.NeighborCursor cursor = validator.beginNeighbours(mob, node, profile, node.version());
-                    return new NeighborScan() {
-                        @Override public TraversalValidator.NeighborBatch advance(int units, long deadline) {
-                            return validator.advance(cursor, units, deadline);
-                        }
-                        @Override public void close() { cursor.close(); }
-                        @Override public boolean transfersMemory() { return true; }
-                        @Override public boolean transferEdge(TraversalEdge edge, NavigationGraphCache.TransientLease destination) {
-                            return cursor.transferEdge(edge, destination);
-                        }
-                    };
+                boolean preferCoarse = destination.feet().y - startNode.feet().y > 3.0;
+                search = new Search(startNode, destination.feet(), targetId, profile, cache, new NeighborSource() {
+                    @Override public NeighborScan open(SurfaceNode node) {
+                        return adapt(preferCoarse ? validator.beginCoarseNeighbours(mob, node, profile, node.version())
+                                : validator.beginNeighbours(mob, node, profile, node.version()));
+                    }
+                    @Override public NeighborScan openDetailed(SurfaceNode node) {
+                        return adapt(validator.beginNeighbours(mob, node, profile, node.version()));
+                    }
+                    private NeighborScan adapt(TraversalValidator.NeighborCursor cursor) {
+                        return new NeighborScan() {
+                            @Override public TraversalValidator.NeighborBatch advance(int units, long deadline) {
+                                return validator.advance(cursor, units, deadline);
+                            }
+                            @Override public boolean exhaustive() { return cursor.exhaustive(); }
+                            @Override public void close() { cursor.close(); }
+                            @Override public boolean transfersMemory() { return true; }
+                            @Override public boolean transferEdge(TraversalEdge edge, NavigationGraphCache.TransientLease destination) {
+                                return cursor.transferEdge(edge, destination);
+                            }
+                        };
+                    }
                 }, new RecordPool() {
                     @Override public boolean acquire() {
                         if (searchRecords >= tuning.searchRecords()) return false;
@@ -404,6 +430,7 @@ public final class NavigationPlanner implements AutoCloseable {
                         }
                     };
                 });
+                search.generation = ++nextSearchGeneration;
                 if (repair != null) {
                     repairEdges = repair.size(); search.withSuffix(repair, tuning.sliceExpansions() * 4);
                 } else if (NavigationGraphCache.TileKey.at(destination.feet()).equals(NavigationGraphCache.TileKey.at(target))
@@ -585,9 +612,15 @@ public final class NavigationPlanner implements AutoCloseable {
         }
     }
 
-    @FunctionalInterface public interface NeighborSource { NeighborScan open(SurfaceNode node); }
+    @FunctionalInterface public interface NeighborSource {
+        NeighborScan open(SurfaceNode node);
+        /** Detailed scans must complete exhaustively and re-emit the whole adjacency, not only extra edges. */
+        default NeighborScan openDetailed(SurfaceNode node) { return open(node); }
+    }
     @FunctionalInterface public interface NeighborScan extends AutoCloseable {
         TraversalValidator.NeighborBatch advance(int geometryUnits, long deadlineNanos);
+        /** Meaningful when COMPLETE: false leaves an outstanding detailed scan for this node. */
+        default boolean exhaustive() { return true; }
         default boolean transfersMemory() { return false; }
         default boolean transferEdge(TraversalEdge edge, NavigationGraphCache.TransientLease destination) { return false; }
         /** Unleased pure-graph sources declare a conservative retained-output bound per work unit. */
@@ -613,23 +646,32 @@ public final class NavigationPlanner implements AutoCloseable {
             double distance = Double.POSITIVE_INFINITY;
             List<TraversalEdge> predecessor;
             boolean closed;
+            boolean detailQueued, detailComplete;
+            long detailRetryTick;
+            TraversalValidator.ScanStatus detailStatus = TraversalValidator.ScanStatus.PENDING;
         }
         private static final class Pending {
             final SurfaceNode node;
             final NeighborScan scan;
             final boolean terminal;
+            final boolean detailed;
             Vec3 terminalTarget;
             final List<TraversalEdge> edges = new ArrayList<>();
             final Set<TraversalEdge> seen = new HashSet<>();
             long retryTick;
+            int replayIndex = -1;
             TraversalValidator.ScanStatus status = TraversalValidator.ScanStatus.PENDING;
             Pending(SurfaceNode node, NeighborScan scan) { this(node, scan, false); }
-            Pending(SurfaceNode node, NeighborScan scan, boolean terminal) { this.node = node; this.scan = scan; this.terminal = terminal; }
+            Pending(SurfaceNode node, NeighborScan scan, boolean terminal) { this(node, scan, terminal, false); }
+            Pending(SurfaceNode node, NeighborScan scan, boolean terminal, boolean detailed) {
+                this.node = node; this.scan = scan; this.terminal = terminal; this.detailed = detailed;
+            }
         }
         private final SurfaceNode start;
         private Vec3 target;
         private Vec3 latestTarget;
         private final Vec3 heuristicAnchor;
+        private final boolean preferAscent;
         private final UUID targetId;
         private final MovementProfile profile;
         private final NavigationGraphCache cache;
@@ -651,11 +693,15 @@ public final class NavigationPlanner implements AutoCloseable {
         private final Map<SurfaceNode, QueueEntry> queued = new HashMap<>();
         private final ArrayDeque<Pending> pending = new ArrayDeque<>();
         private final Map<SurfaceNode, Pending> pendingByNode = new HashMap<>();
+        // Each entry owns the former Pending's one reservation; no geometry or adjacency is retained here.
+        private final ArrayDeque<SurfaceNode> details = new ArrayDeque<>();
+        private int detailChunkWaits, detailResourceWaits;
         private final Map<SurfaceNode, Vec3> goalChecked = new HashMap<>();
         private final ArrayDeque<TraversalEdge> deferred = new ArrayDeque<>();
         private final Set<TraversalEdge> temporarilyExcluded = new HashSet<>();
         private PlanningResult result = PlanningResult.pending(PlanningResult.Reason.BUILD);
         private long order;
+        private long generation, discoveredNodes;
         private boolean initialized, closed, goalFrozen, tailTurn, evidenceExpired;
         private TailRefresh tailRefresh;
         private boolean tailDirty, tailResourceLimited;
@@ -690,6 +736,7 @@ public final class NavigationPlanner implements AutoCloseable {
             this.start = start; this.target = target; this.targetId = targetId; this.profile = profile;
             this.latestTarget = target;
             this.heuristicAnchor = target;
+            this.preferAscent = target.y - start.feet().y > 3.0;
             this.cache = cache; this.source = source; this.pool = pool;
             memory = cache.transientLease();
             routeMemory = cache.transientLease();
@@ -772,6 +819,7 @@ public final class NavigationPlanner implements AutoCloseable {
                 releaseEdge(deferred.removeFirst());
             }
             int scanAttempts = pending.size();
+            int detailAttempts = details.size();
             while (budget.hasTime()) {
                 if (!frontier.isEmpty() && atTarget(frontier.first().node()) && budget.takeExpansion()) {
                     QueueEntry end = frontier.pollFirst(); queued.remove(end.node());
@@ -780,13 +828,25 @@ public final class NavigationPlanner implements AutoCloseable {
                     result = PlanningResult.pending(PlanningResult.Reason.BUILD);
                     advanceCompletion(budget); return;
                 }
-                if (!pending.isEmpty() && scanAttempts-- > 0 && budget.geometryRemaining() > 0) {
+                if (!pending.isEmpty() && scanAttempts > 0 && budget.geometryRemaining() > 0) {
+                    scanAttempts--;
                     Pending expansion = pending.removeFirst();
                     if (expansion.terminal && !target.equals(expansion.terminalTarget)) {
                         if (!budget.takeExpansion()) {
                             pending.addFirst(expansion); result = PlanningResult.pending(PlanningResult.Reason.BUDGET); return;
                         }
                         discardPending(expansion); continue;
+                    }
+                    while (expansion.replayIndex >= 0 && expansion.replayIndex < expansion.edges.size()) {
+                        if (!budget.takeExpansion()) {
+                            pending.addFirst(expansion); result = PlanningResult.pending(PlanningResult.Reason.BUDGET); return;
+                        }
+                        TraversalEdge edge = expansion.edges.get(expansion.replayIndex++);
+                        if (!relax(edge)) defer(edge);
+                    }
+                    expansion.replayIndex = -1;
+                    if (!deferred.isEmpty()) {
+                        pending.addFirst(expansion); result = PlanningResult.pending(PlanningResult.Reason.RESOURCE_LIMITED); return;
                     }
                     if (expansion.retryTick > budget.serverTick()) { pending.addLast(expansion); continue; }
                     int reservation = expansion.scan.transfersMemory() ? 0 : expansion.scan.maxUnleasedEdgeEntries();
@@ -817,11 +877,28 @@ public final class NavigationPlanner implements AutoCloseable {
                     }
                     expansion.status = batch.status();
                     if (batch.status() == TraversalValidator.ScanStatus.COMPLETE) {
-                        expansion.scan.close(); memory.release(1);
-                        if (!expansion.terminal) pendingByNode.remove(expansion.node);
-                        // Cache pressure does not change the scanned node's reachability evidence.
-                        if (!expansion.terminal) cache.putEdges(expansion.node, profile, expansion.edges);
-                        for (TraversalEdge edge : expansion.edges) releaseEdge(edge);
+                        boolean exhaustive = expansion.scan.exhaustive();
+                        if (!exhaustive && (expansion.terminal || expansion.detailed))
+                            throw new IllegalStateException("Terminal and detailed scans must be exhaustive");
+                        if (!exhaustive) {
+                            queueDetails(expansion, 0, TraversalValidator.ScanStatus.PENDING);
+                            detailAttempts++;
+                        } else {
+                            expansion.scan.close(); memory.release(1);
+                            if (!expansion.terminal) {
+                                pendingByNode.remove(expansion.node);
+                                records.get(expansion.node).detailComplete = true;
+                                // Only a full adjacency can be shared with another search.
+                                cache.putEdges(expansion.node, profile, expansion.edges);
+                            }
+                            for (TraversalEdge edge : expansion.edges) releaseEdge(edge);
+                        }
+                    } else if (expansion.detailed && (batch.status() == TraversalValidator.ScanStatus.WAITING_CHUNK
+                            || batch.status() == TraversalValidator.ScanStatus.RESOURCE_LIMITED)) {
+                        // A blocked detailed branch must neither hold all partial geometry
+                        // nor starve detailed exits in other already-discovered regions.
+                        queueDetails(expansion, budget.serverTick()
+                                + (batch.status() == TraversalValidator.ScanStatus.WAITING_CHUNK ? 10 : 1), batch.status());
                     } else {
                         expansion.retryTick = budget.serverTick()
                                 + (batch.status() == TraversalValidator.ScanStatus.WAITING_CHUNK ? 10
@@ -860,6 +937,7 @@ public final class NavigationPlanner implements AutoCloseable {
                         relaxPortal(path);
                     List<TraversalEdge> cached = cache.edges(next.node(), profile);
                     if (cached != null) {
+                        record.detailComplete = true;
                         if (!retainEdges(cached)) { reopenForMemory(next, record); return; }
                         for (TraversalEdge edge : cached) {
                             if (!relax(edge)) defer(edge);
@@ -868,27 +946,76 @@ public final class NavigationPlanner implements AutoCloseable {
                     } else {
                         if (!pendingByNode.containsKey(next.node())) {
                             if (!memory.reserve(1)) { reopenForMemory(next, record); return; }
-                            Pending expansion = new Pending(next.node(), source.open(next.node()));
+                            boolean detailed = record.detailComplete;
+                            record.detailComplete = false;
+                            Pending expansion = new Pending(next.node(), detailed
+                                    ? source.openDetailed(next.node()) : source.open(next.node()), false, detailed);
                             pending.addLast(expansion); pendingByNode.put(next.node(), expansion); scanAttempts++;
+                        } else {
+                            // The node's g improved while its streamed adjacency was open.
+                            // Re-propagate earlier outputs in budgeted slices as well.
+                            pendingByNode.get(next.node()).replayIndex = 0;
                         }
                     }
                     budget.recordUnit(NavigationScheduler.UnitKind.SEARCH, unitStarted);
                     if (!deferred.isEmpty()) { result = PlanningResult.pending(PlanningResult.Reason.RESOURCE_LIMITED); return; }
                     continue;
                 }
+                if (frontier.isEmpty() && !details.isEmpty() && detailAttempts > 0 && budget.takeExpansion()) {
+                    detailAttempts--;
+                    SurfaceNode node = details.removeFirst();
+                    Record record = records.get(node);
+                    if (!record.detailComplete && (record.detailRetryTick > budget.serverTick()
+                            || pendingByNode.containsKey(node))) {
+                        details.addLast(node); continue;
+                    }
+                    removeDetailState(record);
+                    if (record.detailComplete) { memory.release(1); continue; }
+                    Pending expansion = new Pending(node, source.openDetailed(node), false, true);
+                    pending.addLast(expansion); pendingByNode.put(node, expansion); scanAttempts++;
+                    continue;
+                }
                 break;
             }
-            if (frontier.isEmpty() && pending.isEmpty() && deferred.isEmpty() && temporarilyExcluded.isEmpty()
+            if (frontier.isEmpty() && pending.isEmpty() && details.isEmpty() && deferred.isEmpty() && temporarilyExcluded.isEmpty()
                     && tailRefresh == null && !tailDirty) {
                 if (suffix != null) abandonRepair();
                 else { result = PlanningResult.unreachable(); releaseRecords(); }
-            } else if (frontier.isEmpty() && pending.stream().anyMatch(p -> p.status == TraversalValidator.ScanStatus.WAITING_CHUNK)) {
+            } else if (frontier.isEmpty() && (detailChunkWaits > 0
+                    || pending.stream().anyMatch(p -> p.status == TraversalValidator.ScanStatus.WAITING_CHUNK))) {
                 result = PlanningResult.waitingChunk();
-            } else if (tailResourceLimited || pending.stream().anyMatch(p -> p.status == TraversalValidator.ScanStatus.RESOURCE_LIMITED)) {
+            } else if (tailResourceLimited || detailResourceWaits > 0
+                    || pending.stream().anyMatch(p -> p.status == TraversalValidator.ScanStatus.RESOURCE_LIMITED)) {
                 result = PlanningResult.pending(PlanningResult.Reason.RESOURCE_LIMITED);
             } else {
-                result = PlanningResult.pending(pending.isEmpty() ? PlanningResult.Reason.BUDGET : PlanningResult.Reason.BUILD);
+                result = PlanningResult.pending(pending.isEmpty() && details.isEmpty()
+                        ? PlanningResult.Reason.BUDGET : PlanningResult.Reason.BUILD);
             }
+        }
+        private void queueDetails(Pending expansion, long retryTick, TraversalValidator.ScanStatus status) {
+            expansion.scan.close();
+            pendingByNode.remove(expansion.node);
+            for (TraversalEdge edge : expansion.edges) releaseEdge(edge);
+            Record record = records.get(expansion.node);
+            if (record.detailComplete) { memory.release(1); return; }
+            if (record.detailQueued) {
+                // A reopened coarse scan can supersede an earlier deferred retry.
+                removeDetailState(record);
+                record.detailQueued = true; record.detailRetryTick = retryTick; record.detailStatus = status;
+                if (status == TraversalValidator.ScanStatus.WAITING_CHUNK) detailChunkWaits++;
+                if (status == TraversalValidator.ScanStatus.RESOURCE_LIMITED) detailResourceWaits++;
+                memory.release(1); return;
+            }
+            record.detailQueued = true; record.detailRetryTick = retryTick; record.detailStatus = status;
+            if (status == TraversalValidator.ScanStatus.WAITING_CHUNK) detailChunkWaits++;
+            if (status == TraversalValidator.ScanStatus.RESOURCE_LIMITED) detailResourceWaits++;
+            details.addLast(expansion.node);
+        }
+        private void removeDetailState(Record record) {
+            record.detailQueued = false;
+            if (record.detailStatus == TraversalValidator.ScanStatus.WAITING_CHUNK) detailChunkWaits--;
+            if (record.detailStatus == TraversalValidator.ScanStatus.RESOURCE_LIMITED) detailResourceWaits--;
+            record.detailStatus = TraversalValidator.ScanStatus.PENDING; record.detailRetryTick = 0;
         }
         private boolean acquireRecord() {
             // The record, its tile index entry and an amortized tile bucket are retained together.
@@ -897,6 +1024,9 @@ public final class NavigationPlanner implements AutoCloseable {
             memory.release(3); return false;
         }
         private void putRecord(SurfaceNode node, Record record) {
+            // Exclude the initial standing node. Every later insertion comes from a
+            // validated edge/portal; reopening an existing record earns nothing.
+            if (!records.isEmpty()) discoveredNodes++;
             records.put(node, record);
             recordsByTile.computeIfAbsent(node.tile(), ignored -> new ArrayList<>()).add(node);
         }
@@ -1021,10 +1151,16 @@ public final class NavigationPlanner implements AutoCloseable {
         private void enqueue(SurfaceNode node, double distance) {
             QueueEntry previous = queued.remove(node);
             if (previous != null) frontier.remove(previous);
-            // With a moved goal, subtracting anchor.distanceTo(target) makes this a
-            // consistent lower bound by the triangle inequality. That global constant
-            // does not affect ordering, so retargeting preserves this frontier intact.
-            double heuristic = node.feet().distanceTo(heuristicAnchor);
+            // A distant upper floor usually requires first walking away from its
+            // horizontal projection. Once an ascent is discovered, prefer continuing
+            // towards that floor over exhaustively filling the lower open floor.
+            // This orders proven connections; it neither removes detours (including
+            // initial descents) nor promises a shortest route. Keep the anchor and
+            // mode fixed so compatible retargeting never needs to rebuild the queue.
+            Vec3 offset = node.feet().subtract(heuristicAnchor);
+            double heuristic = preferAscent
+                    ? Math.hypot(offset.x, offset.z) + 8.0 * Math.abs(offset.y)
+                    : offset.length();
             QueueEntry entry = new QueueEntry(node, distance, distance + heuristic, order++);
             frontier.add(entry); queued.put(node, entry);
         }
@@ -1158,6 +1294,7 @@ public final class NavigationPlanner implements AutoCloseable {
             memory.close(); retainedEdges.clear();
             records.clear(); recordsByTile.clear(); tailRefresh = null; tailDirty = false;
             frontier.clear(); queued.clear(); pending.clear(); pendingByNode.clear(); goalChecked.clear(); deferred.clear(); temporarilyExcluded.clear();
+            details.clear(); detailChunkWaits = detailResourceWaits = 0;
         }
         private void clearCompletionState() {
             reconstructionCursor = null; reconstructionEnd = null; reconstructionPredecessor = null; refinedEdges = null;

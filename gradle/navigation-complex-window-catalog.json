@@ -245,6 +245,12 @@
       "performanceGate": true
     }
   ],
+  "stairs": [
+    {
+      "testName": "originalzombieclimbsdistantstairspastlowstepstofixedupperplayer",
+      "performanceGate": false
+    }
+  ],
   "doors": [
     {
       "testName": "genuinelycoldroomcrossesnewlyopenedoakdoorwithinonehundredticks",

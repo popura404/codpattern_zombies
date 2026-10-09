@@ -8,11 +8,15 @@ import java.util.Objects;
 
 /** Independent movement, route, combat and finite waiting clocks; no world access. */
 public final class RouteProgress {
+    private static final long SEARCH_LEASE_TICKS = 160;
+    private static final long SEARCH_HARD_LIMIT_TICKS = 3200;
+    private static final long SEARCH_NODE_BATCH = 16;
     private final ZombiesNavigationProgressTracker motion;
     private final ArrayDeque<String> history = new ArrayDeque<>();
     private final ArrayDeque<String> portals = new ArrayDeque<>();
     private final LinkedHashMap<String, Double> furthest = new LinkedHashMap<>();
     private long lastRoute, lastCombat, waitingUntil;
+    private long searchGeneration, observedSearchNodes, creditedSearchNodes, searchWaitingUntil;
     private String targetContext;
     private double targetX, targetY, targetZ;
     private boolean targetObserved, loop, waitingSpent;
@@ -76,21 +80,55 @@ public final class RouteProgress {
     }
 
     public void engagement(long now) { lastCombat = now; useful(now); }
-    private void useful(long now) { lastRoute = now; waitingSpent = false; waitingUntil = 0; }
+    private void useful(long now) {
+        lastRoute = now; waitingSpent = false; waitingUntil = 0;
+        clearSearchActivity();
+    }
     public void waiting(long now) {
         if (!waitingSpent) {
             waitingUntil = Math.max(lastRoute, lastCombat) + 640;
             waitingSpent = true;
         }
     }
+    /** A short bounded lease for one continuously advancing search, never route progress. */
+    public void searchActivity(long now, long generation, long discoveredNodes, boolean active) {
+        if (generation <= 0 || discoveredNodes < 0 || !waitingSpent || waitingUntil == 0
+                || now < Math.max(lastRoute, lastCombat) || now >= planningWaitUntil()) return;
+        if (searchGeneration == 0) {
+            searchGeneration = generation;
+            observedSearchNodes = creditedSearchNodes = discoveredNodes;
+            return;
+        }
+        // Restarts, target changes and replacement jobs cannot buy a new allowance.
+        if (generation != searchGeneration || discoveredNodes < observedSearchNodes) return;
+        if (!active) {
+            observedSearchNodes = creditedSearchNodes = discoveredNodes;
+            return;
+        }
+        if (discoveredNodes == observedSearchNodes) return;
+        observedSearchNodes = discoveredNodes;
+        if (discoveredNodes - creditedSearchNodes < SEARCH_NODE_BATCH) return;
+        creditedSearchNodes = discoveredNodes;
+        long hardDeadline = Math.max(lastRoute, lastCombat) + SEARCH_HARD_LIMIT_TICKS;
+        searchWaitingUntil = Math.max(searchWaitingUntil, Math.min(hardDeadline, now + SEARCH_LEASE_TICKS));
+    }
+    private void clearSearchActivity() {
+        searchGeneration = observedSearchNodes = creditedSearchNodes = searchWaitingUntil = 0;
+    }
     /** A conclusive exhausted target round ends its allowance; rechecking alone cannot reopen it. */
     public void retireWaiting() {
         waitingUntil = 0;
         waitingSpent = true;
+        clearSearchActivity();
     }
     public long lastRoute() { return lastRoute; }
     public long lastCombat() { return lastCombat; }
     public long waitingUntil() { return waitingUntil; }
+    public long planningWaitUntil() { return planningWaitUntil(true); }
+    /** Keep only the earned lease through READY/validation handoff until real movement or expiry. */
+    public long planningWaitUntil(boolean waitingForPlanning) {
+        return Math.max(waitingForPlanning ? waitingUntil : 0, searchWaitingUntil);
+    }
     public boolean loopDetected() { return loop; }
     public int historySize() { return history.size() + portals.size(); }
     private static double square(double n) { return n*n; }

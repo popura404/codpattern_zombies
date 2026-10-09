@@ -56,6 +56,8 @@ public final class TraversalValidator {
     private long readBatches,chunkChecks,reusedChunkChecks,tileVersionChecks,reusedTileVersions;
     private final long[] scanWorkUnits = new long[ScanPhase.values().length];
     private long blockReads,shapeQueries,geometryCacheHits,flatStateCacheHits;
+    private long yuushyaFlatProofCells,ordinarySolidCacheWrites,ordinarySolidCacheHits,yuushyaSolidCacheHits;
+    private long yuushyaShapeReads,yuushyaShapeBatchHits;
 
     private enum ScanPhase {
         LOCATE("locate"), CONNECTION("connection"), FLAT_PROOF("flatProof"), FLAT_EDGES("flatEdges"),
@@ -72,15 +74,21 @@ public final class TraversalValidator {
      * one phase, including retries and completion bookkeeping. Read counters also include
      * synchronous scans; they count only this class's direct world/shape calls and successful
      * cell-cache lookups, not reads performed internally by Minecraft or block callbacks.
+     * yuushyaShapeReads/yuushyaShapeBatchHits count only FlatProof and ordinary-solid cache
+     * rechecks; initial full ShapeScan queries remain in shapeQueries, not these two counters.
      */
     public record ScanStats(Map<String,Long> workUnits,long blockReads,long shapeQueries,
-            long geometryCacheHits,long flatStateCacheHits) {
+            long geometryCacheHits,long flatStateCacheHits,long yuushyaFlatProofCells,
+            long ordinarySolidCacheWrites,long ordinarySolidCacheHits,long yuushyaSolidCacheHits,
+            long yuushyaShapeReads,long yuushyaShapeBatchHits) {
         public ScanStats { workUnits = Collections.unmodifiableMap(new LinkedHashMap<>(workUnits)); }
     }
     public ScanStats scanStats() {
         Map<String,Long> workUnits = new LinkedHashMap<>();
         for (ScanPhase phase : ScanPhase.values()) workUnits.put(phase.key,scanWorkUnits[phase.ordinal()]);
-        return new ScanStats(workUnits,blockReads,shapeQueries,geometryCacheHits,flatStateCacheHits);
+        return new ScanStats(workUnits,blockReads,shapeQueries,geometryCacheHits,flatStateCacheHits,
+                yuushyaFlatProofCells,ordinarySolidCacheWrites,ordinarySolidCacheHits,yuushyaSolidCacheHits,
+                yuushyaShapeReads,yuushyaShapeBatchHits);
     }
     private void recordScanWork(ScanPhase phase) { scanWorkUnits[phase.ordinal()]++; }
 
@@ -771,7 +779,7 @@ public final class TraversalValidator {
         }
     }
 
-    /** Proves ordinary open stone floor using the complete original scan's read halo. */
+    /** Proves ordinary open full-cube floor using the complete original scan's read halo. */
     private final class FlatProof implements AutoCloseable {
         private final SurfaceNode from;
         private final MovementProfile profile;
@@ -821,7 +829,10 @@ public final class TraversalValidator {
                 } else flatStateCacheHits++;
                 cells++;
                 boolean air=plainAir(state);
-                boolean solid=!air && OrdinaryBlockClassifier.isOrdinarySolid(state,context.level(),pos);
+                OrdinaryBlockClassifier.BehaviorKind kind=air ? OrdinaryBlockClassifier.BehaviorKind.UNSUPPORTED
+                        : readSlice.ordinarySolidKind(state,pos);
+                boolean solid=kind!=OrdinaryBlockClassifier.BehaviorKind.UNSUPPORTED;
+                if (kind==OrdinaryBlockClassifier.BehaviorKind.YUUSHYA_STATE_SHAPE) yuushyaFlatProofCells++;
                 if (!cachedState && (solid || air))
                     cache.putGeometryCell(profile,FLAT_PROOF_STATE,pos,state);
                 // Only behavior-proven full cubes qualify as floor support. Unknown
@@ -1209,6 +1220,8 @@ public final class TraversalValidator {
     }
 
     private record CachedCell(List<AABB> boxes,BlockPathTypes type,boolean fluid,boolean ordinaryStair) { }
+    /** New ordinary-solid entries recheck state tags and audited geometry on every cache hit. */
+    private record OrdinarySolidCell(BlockState state,OrdinaryBlockClassifier.BehaviorKind kind,CachedCell cell) { }
 
     /** A work unit reads eight world cells or 128 memoized cells, processing at most sixteen boxes. */
     private final class ShapeScan implements AutoCloseable {
@@ -1299,9 +1312,14 @@ public final class TraversalValidator {
                     if (!reserve(1)) return;
                     dependencies.put(tile,version);
                 }
-                CachedCell cell=cacheProfile==null?null:(CachedCell)cache.geometryCell(cacheProfile,CONTEXT_INDEPENDENT_FEET,pos);
-                if (cell==null && cacheProfile!=null) cell=(CachedCell)cache.geometryCell(cacheProfile,feetY,pos);
+                Object independentCached=cacheProfile==null?null:cache.geometryCell(cacheProfile,CONTEXT_INDEPENDENT_FEET,pos);
+                CachedCell cell=cachedCell(independentCached,pos,readSlice);
+                if (cell==null && cacheProfile!=null && !(independentCached instanceof OrdinarySolidCell))
+                    cell=cachedCell(cache.geometryCell(cacheProfile,feetY,pos),pos,readSlice);
                 if (cell==null) {
+                    // A fresh general scan may invoke an unknown mod's callbacks. Never
+                    // reuse an earlier Yuushya observation across those calls.
+                    readSlice.clearOrdinaryShapes();
                     blockReads++;
                     var state=context.level().getBlockState(pos);
                     if (jumpMotionChecks && new AABB(pos).intersects(area)
@@ -1318,12 +1336,18 @@ public final class TraversalValidator {
                     boolean ordinaryStair=state.getBlock().getClass()==StairBlock.class
                             && BuiltInRegistries.BLOCK.getKey(state.getBlock()).getNamespace().equals("minecraft");
                     cell=new CachedCell(shapeBoxes,type,!state.getFluidState().isEmpty(),ordinaryStair);
-                    if (cacheProfile!=null && shapeBoxes.size()<=SHAPE_BATCH
-                            && state.getBlock().getClass().getName().startsWith("net.minecraft.world.level.block.")) {
+                    if (cacheProfile!=null && shapeBoxes.size()<=SHAPE_BATCH) {
                         Class<?> blockClass=state.getBlock().getClass();
-                        boolean independent=blockClass==net.minecraft.world.level.block.Block.class
-                                || blockClass==net.minecraft.world.level.block.AirBlock.class;
-                        cache.putGeometryCell(cacheProfile,independent?CONTEXT_INDEPENDENT_FEET:feetY,pos,cell);
+                        if (blockClass.getName().startsWith("net.minecraft.world.level.block.")) {
+                            boolean independent=blockClass==net.minecraft.world.level.block.Block.class
+                                    || blockClass==net.minecraft.world.level.block.AirBlock.class;
+                            cache.putGeometryCell(cacheProfile,independent?CONTEXT_INDEPENDENT_FEET:feetY,pos,cell);
+                        } else if (type==BlockPathTypes.BLOCKED) {
+                            OrdinaryBlockClassifier.BehaviorKind kind=OrdinaryBlockClassifier.ordinarySolidKind(state,shape);
+                            if (kind!=OrdinaryBlockClassifier.BehaviorKind.UNSUPPORTED
+                                    && cache.putGeometryCell(cacheProfile,CONTEXT_INDEPENDENT_FEET,pos,
+                                    new OrdinarySolidCell(state,kind,cell))) ordinarySolidCacheWrites++;
+                        }
                     }
                     blocks++;
                 } else geometryCacheHits++;
@@ -1345,6 +1369,18 @@ public final class TraversalValidator {
             if (y>maxY && boxIndex>=pending.size()) {
                 lease.release(pending.size()); pending=List.of(); boxIndex=0; done=true;
             }
+        }
+        private CachedCell cachedCell(Object cached,BlockPos pos,ReadSlice readSlice) {
+            if (cached instanceof OrdinarySolidCell solid) {
+                // Cache age and tile invalidation were already checked by geometryCell().
+                // Do not refresh observedTick here. A reloaded danger tag or changed actual
+                // Yuushya shape must fall through to a fresh world read and full shape scan.
+                if (readSlice.ordinarySolidKind(solid.state(),pos)!=solid.kind()) return null;
+                ordinarySolidCacheHits++;
+                if (solid.kind()==OrdinaryBlockClassifier.BehaviorKind.YUUSHYA_STATE_SHAPE) yuushyaSolidCacheHits++;
+                return solid.cell();
+            }
+            return cached instanceof CachedCell cell ? cell : null;
         }
     }
 
@@ -1476,8 +1512,24 @@ public final class TraversalValidator {
         private long chunkRevision=cache.revision();
         private NavigationGraphCache.TileKey tile;
         private long tileVersion,tileRevision;
+        private final OrdinaryBlockClassifier.Batch ordinaryBlocks=new OrdinaryBlockClassifier.Batch();
+        private long ordinaryRevision=cache.revision();
 
         private ReadSlice() { readBatches++; }
+
+        private void clearOrdinaryShapes() { ordinaryBlocks.clear(); }
+
+        private OrdinaryBlockClassifier.BehaviorKind ordinarySolidKind(BlockState state,BlockPos pos) {
+            if (ordinaryRevision!=cache.revision()) {
+                ordinaryBlocks.clear();
+                ordinaryRevision=cache.revision();
+            }
+            long reads=ordinaryBlocks.shapeReads(),hits=ordinaryBlocks.shapeBatchHits();
+            OrdinaryBlockClassifier.BehaviorKind kind=ordinaryBlocks.classify(state,context.level(),pos);
+            yuushyaShapeReads+=ordinaryBlocks.shapeReads()-reads;
+            yuushyaShapeBatchHits+=ordinaryBlocks.shapeBatchHits()-hits;
+            return kind;
+        }
 
         private boolean loaded(BlockPos position) {
             if (chunkRevision!=cache.revision()) {

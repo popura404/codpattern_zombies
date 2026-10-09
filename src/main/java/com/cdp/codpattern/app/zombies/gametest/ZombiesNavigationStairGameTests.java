@@ -13,6 +13,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
@@ -25,14 +26,18 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.pathfinder.BlockPathTypes;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
+import net.minecraftforge.fml.ModList;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -44,6 +49,8 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class ZombiesNavigationStairGameTests {
     private ZombiesNavigationStairGameTests() { }
+    private static final boolean YUUSHYA_TRIAL = Boolean.getBoolean("codpattern.zombies.navigationYuushya");
+    private static final boolean YUUSHYA_BASELINE = Boolean.getBoolean("codpattern.zombies.navigationYuushyaBaseline");
 
     @GameTest(template = "zombies_navigation", batch = "navigation_stair_geometry", timeoutTicks = 400)
     public static void lowerHalfOfEastFacingStairHasAnAscendingExit(GameTestHelper helper) {
@@ -412,7 +419,116 @@ public final class ZombiesNavigationStairGameTests {
         }
         helper.assertTrue(!Blocks.GLASS.defaultBlockState().canOcclude(),
                 "the accepted glass state must exercise the non-occluding full-collision-cube boundary");
+        if (YUUSHYA_TRIAL) verifyYuushyaStates(helper, pos);
         helper.succeed();
+    }
+
+    private static Block yuushyaFullCube() { return yuushyaBlock("white_worn_concrete"); }
+
+    private static Block yuushyaBlock(String path) {
+        ResourceLocation id = new ResourceLocation("yuushya", path);
+        if (!YUUSHYA_TRIAL || !ForgeRegistries.BLOCKS.containsKey(id)) {
+            throw new AssertionError("The optional trial requires a genuinely registered Yuushya block: " + id);
+        }
+        return java.util.Objects.requireNonNull(ForgeRegistries.BLOCKS.getValue(id));
+    }
+
+    private static java.util.Map<String, Object> yuushyaReport() {
+        java.util.Map<String, Object> report = new java.util.LinkedHashMap<>();
+        report.put("baselineExpectations", YUUSHYA_BASELINE);
+        report.put("version", ModList.get().getModContainerById("yuushya").orElseThrow()
+                .getModInfo().getVersion().toString());
+        report.put("factoryClass", yuushyaFullCube().getClass().getName());
+        report.put("codeSource", yuushyaFullCube().getClass().getProtectionDomain().getCodeSource().getLocation().toString());
+        report.put("fullCubeBlock", ForgeRegistries.BLOCKS.getKey(yuushyaFullCube()).toString());
+        return report;
+    }
+
+    private static BlockState propertyValue(BlockState state, String name, String value) {
+        Property<?> property = state.getBlock().getStateDefinition().getProperty(name);
+        if (property == null) throw new AssertionError("Actual registered state lacks expected property " + name + ": " + state);
+        return propertyValue(state, property, value);
+    }
+
+    private static <T extends Comparable<T>> BlockState propertyValue(BlockState state, Property<T> property, String value) {
+        return state.setValue(property, property.getValue(value).orElseThrow(() ->
+                new AssertionError("Actual registered property lacks expected value " + value + ": " + state)));
+    }
+
+    private static VoxelShape yuushyaShape(GameTestHelper helper, BlockState state, BlockPos pos) {
+        return state.getCollisionShape(helper.getLevel(), pos, CollisionContext.empty());
+    }
+
+    private static void recordYuushyaState(GameTestHelper helper, BlockState state, BlockPos pos, boolean expected,
+                                           List<java.util.Map<String, Object>> observations) {
+        boolean classified = OrdinaryBlockClassifier.isOrdinarySolid(state, helper.getLevel(), pos);
+        helper.assertTrue(classified == expected,
+                "actual Yuushya state must retain its expected ordinary-cube classification: " + state + ", got=" + classified);
+        observations.add(java.util.Map.of("state", state.toString(), "class", state.getBlock().getClass().getName(),
+                "fluid", state.getFluidState().toString(), "ordinary", classified,
+                "collisionBoxes", yuushyaShape(helper, state, pos).toAabbs().stream().map(Object::toString).toList()));
+    }
+
+    private static void verifyYuushyaStates(GameTestHelper helper, BlockPos pos) {
+        List<java.util.Map<String, Object>> observations = new ArrayList<>();
+        helper.assertTrue("2.2.3".equals(yuushyaReport().get("version")),
+                "this integration comparison must run the pinned real Yuushya 2.2.3 release");
+        for (String facing : List.of("north", "east", "south", "west")) {
+            BlockState cube = propertyValue(yuushyaFullCube().defaultBlockState(), "facing", facing);
+            helper.assertTrue(Block.isShapeFullBlock(yuushyaShape(helper, cube, pos)),
+                    "each recorded direction of the real factory cube must have a full collision shape: " + cube);
+            recordYuushyaState(helper, cube, pos, !YUUSHYA_BASELINE, observations);
+            BlockState dryCrate = propertyValue(propertyValue(yuushyaBlock("crate").defaultBlockState(),
+                    "facing", facing), "waterlogged", "false");
+            helper.assertTrue(Block.isShapeFullBlock(yuushyaShape(helper, dryCrate, pos)),
+                    "the fluid-state comparison must start with a real complete cube");
+            recordYuushyaState(helper, dryCrate, pos, !YUUSHYA_BASELINE, observations);
+            BlockState wetCrate = propertyValue(dryCrate, "waterlogged", "true");
+            helper.assertTrue(!wetCrate.getFluidState().isEmpty(), "the wet crate must expose actual fluid");
+            recordYuushyaState(helper, wetCrate, pos, false, observations);
+        }
+        for (String type : List.of("bottom", "top")) {
+            BlockState half = propertyValue(yuushyaBlock("slab_yellow_wool").defaultBlockState(), "type", type);
+            VoxelShape shape = yuushyaShape(helper, half, pos);
+            helper.assertTrue(!shape.isEmpty() && Math.abs(shape.bounds().getYsize() - 0.5) < 1.0E-8,
+                    "the actual half-block counterexample must retain half-height geometry: " + half);
+            recordYuushyaState(helper, half, pos, false, observations);
+        }
+        BlockState tall = yuushyaBlock("recycle_bin_2").defaultBlockState();
+        helper.assertTrue(Math.abs(yuushyaShape(helper, tall, pos).max(Direction.Axis.Y) - 1.5) < 1.0E-8,
+                "the tall counterexample must really extend 1.5 blocks high");
+        recordYuushyaState(helper, tall, pos, false, observations);
+        BlockState painting = yuushyaBlock("painting_0").defaultBlockState();
+        helper.assertTrue(yuushyaShape(helper, painting, pos).isEmpty(),
+                "the non-colliding decorative counterexample must really have empty collision");
+        recordYuushyaState(helper, painting, pos, false, observations);
+        BlockState furniture = yuushyaBlock("oak_foldable_table").defaultBlockState();
+        for (String facing : List.of("north", "east", "south", "west")) {
+            for (String form : List.of("0", "1")) {
+                BlockState variant = propertyValue(propertyValue(furniture, "facing", facing), "form", form);
+                helper.assertTrue(Block.isShapeFullBlock(yuushyaShape(helper, variant, pos)) == form.equals("0"),
+                        "the actual folded/unfolded furniture states must differ in whether collision fills a cube");
+                recordYuushyaState(helper, variant, pos, form.equals("0") && !YUUSHYA_BASELINE, observations);
+            }
+        }
+        VoxelShape north = yuushyaShape(helper, propertyValue(propertyValue(furniture, "facing", "north"), "form", "1"), pos);
+        VoxelShape east = yuushyaShape(helper, propertyValue(propertyValue(furniture, "facing", "east"), "form", "1"), pos);
+        helper.assertTrue(Shapes.joinIsNotEmpty(north, east, BooleanOp.NOT_SAME),
+                "the directional furniture counterexample must have genuinely different collision geometry");
+        java.util.Map<String, Object> report = yuushyaReport();
+        report.put("states", observations);
+        ZombiesNavigationTestReport.write("yuushya-state-classification", report);
+    }
+
+    private static long scanCounter(TraversalValidator.ScanStats stats, String name) {
+        try {
+            return ((Number) stats.getClass().getMethod(name).invoke(stats)).longValue();
+        } catch (NoSuchMethodException absentInBaseline) {
+            if (YUUSHYA_BASELINE) return 0;
+            throw new AssertionError("The candidate is missing its required scan counter " + name, absentInBaseline);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError("Unable to read scan counter " + name, failure);
+        }
     }
 
     @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 100)
@@ -542,12 +658,12 @@ public final class ZombiesNavigationStairGameTests {
 
     private enum FlatScenario {
         CLEAR, BRICKS, COBBLESTONE, GLASS, LOG, ORE, PLANKS, ICE,
-        STAIR_SUPPORT, CORNER, DANGER, MUTATION, MID_SCAN_MUTATION;
+        STAIR_SUPPORT, CORNER, DANGER, MUTATION, MID_SCAN_MUTATION, YUUSHYA_FURNITURE;
 
         Block floor() {
             return switch (this) {
                 case BRICKS -> Blocks.STONE_BRICKS;
-                case COBBLESTONE -> Blocks.COBBLESTONE;
+                case COBBLESTONE -> YUUSHYA_TRIAL ? yuushyaFullCube() : Blocks.COBBLESTONE;
                 case GLASS -> Blocks.GLASS;
                 case LOG -> Blocks.OAK_LOG;
                 case ORE -> Blocks.IRON_ORE;
@@ -558,6 +674,7 @@ public final class ZombiesNavigationStairGameTests {
         }
 
         boolean fastProofExpected() {
+            if (YUUSHYA_TRIAL && YUUSHYA_BASELINE && this == COBBLESTONE) return false;
             return switch (this) {
                 case CLEAR, BRICKS, COBBLESTONE, GLASS, LOG, ORE, PLANKS, MUTATION -> true;
                 default -> false;
@@ -566,6 +683,17 @@ public final class ZombiesNavigationStairGameTests {
     }
 
     private static void flatGeometry(GameTestHelper helper, FlatScenario scenario) {
+        FlatGeometryRun run = buildFlatGeometry(helper, scenario);
+        try {
+            helper.onEachTick(run::observe);
+        } catch (RuntimeException | Error failure) {
+            run.release();
+            run.cache.reset();
+            throw failure;
+        }
+    }
+
+    private static FlatGeometryRun buildFlatGeometry(GameTestHelper helper, FlatScenario scenario) {
         // A broad integer-height floor and empty body/halo volume provide the ordinary
         // flat-terrain case. Each counterexample changes only the relevant geometry.
         for (int x = 3; x <= 18; x++) for (int z = 3; z <= 18; z++) for (int y = 0; y <= 8; y++) {
@@ -577,23 +705,20 @@ public final class ZombiesNavigationStairGameTests {
                     .setValue(StairBlock.FACING, Direction.EAST));
         } else if (scenario == FlatScenario.CORNER) {
             for (int y = 3; y <= 5; y++) {
-                helper.setBlock(new BlockPos(9, y, 8), Blocks.STONE);
-                helper.setBlock(new BlockPos(8, y, 9), Blocks.STONE);
+                helper.setBlock(new BlockPos(9, y, 8), YUUSHYA_TRIAL ? yuushyaFullCube() : Blocks.STONE);
+                helper.setBlock(new BlockPos(8, y, 9), YUUSHYA_TRIAL ? yuushyaFullCube() : Blocks.STONE);
             }
         } else if (scenario == FlatScenario.DANGER) {
             helper.setBlock(new BlockPos(10, 2, 8), Blocks.SAND);
             helper.setBlock(new BlockPos(10, 3, 8), Blocks.CACTUS);
             helper.setBlock(new BlockPos(6, 2, 8), Blocks.NETHERRACK);
             helper.setBlock(new BlockPos(6, 3, 8), Blocks.FIRE);
+        } else if (scenario == FlatScenario.YUUSHYA_FURNITURE) {
+            helper.setBlock(new BlockPos(9, 3, 8), yuushyaBlock("recycle_bin_2"));
+            helper.setBlock(new BlockPos(8, 3, 9), propertyValue(propertyValue(
+                    yuushyaBlock("oak_foldable_table").defaultBlockState(), "form", "1"), "facing", "north"));
         }
-        FlatGeometryRun run = new FlatGeometryRun(helper, scenario);
-        try {
-            helper.onEachTick(run::observe);
-        } catch (RuntimeException | Error failure) {
-            run.release();
-            run.cache.reset();
-            throw failure;
-        }
+        return new FlatGeometryRun(helper, scenario);
     }
 
     private static final class FlatGeometryRun {
@@ -605,9 +730,13 @@ public final class ZombiesNavigationStairGameTests {
         final Vec3 feet;
         Mob mob;
         MovementProfile profile;
+        SurfaceNode from;
         TraversalValidator validator;
         TraversalValidator.NeighborCursor neighbours;
         TraversalValidator.ValidationCursor validation;
+        FlatGeometryRun followUp;
+        TraversalValidator.ScanStats firstPassScanStats;
+        int scanPasses = 1;
         boolean finished, changedDuringScan;
 
         FlatGeometryRun(GameTestHelper helper, FlatScenario scenario) {
@@ -628,7 +757,7 @@ public final class ZombiesNavigationStairGameTests {
                         helper.absoluteVec(new Vec3(23, 12, 23))), List::of, candidate -> candidate == mob, UUID.randomUUID());
                 validator = new TraversalValidator(context, cache);
                 profile = MovementProfile.from(mob);
-                SurfaceNode from = supportedStart(helper, validator, mob, feet, profile, cache,
+                from = supportedStart(helper, validator, mob, feet, profile, cache,
                         "the flat proof must begin at its real supported grid centre");
                 if (scenario == FlatScenario.CORNER) {
                     Vec3 diagonal = helper.absoluteVec(new Vec3(9.5, 3, 9.5));
@@ -645,7 +774,10 @@ public final class ZombiesNavigationStairGameTests {
         }
 
         void observe() {
-            if (finished) return;
+            if (finished) {
+                if (followUp != null) followUp.observe();
+                return;
+            }
             try {
                 helper.assertTrue(mob.position().distanceToSqr(feet) < 1.0E-8,
                         "proving flat movement must not relocate the actual entity");
@@ -695,6 +827,31 @@ public final class ZombiesNavigationStairGameTests {
                         Vec3 forbidden = feet.add(1, 0, 1);
                         helper.assertTrue(edges.stream().noneMatch(edge -> edge.to().feet().distanceToSqr(forbidden) < 1.0E-8),
                                 "a clear diagonal endpoint must not allow the zombie body to cut through two solid corners");
+                        helper.assertTrue(edges.size() == 3,
+                                "the two corner walls must leave exactly the three unobstructed walking exits");
+                        for (Vec3 offset : List.of(new Vec3(-1, 0, 0), new Vec3(0, 0, -1), new Vec3(-1, 0, -1))) {
+                            helper.assertTrue(edges.stream().anyMatch(edge -> edge.action() == TraversalEdge.Action.WALK
+                                            && edge.to().feet().distanceToSqr(feet.add(offset)) < 1.0E-8),
+                                    "cached wall geometry must preserve each unobstructed exit: " + offset);
+                        }
+                        if (YUUSHYA_TRIAL && scanPasses == 1) {
+                            firstPassScanStats = validator.scanStats();
+                            neighbours.close();
+                            neighbours = null;
+                            helper.assertTrue(cache.stats().transientEntries() == 0,
+                                    "the first wall scan must release its cursor geometry before the repeat query");
+                            edges.clear();
+                            neighbours = validator.beginNeighbours(mob, from, profile, from.version());
+                            scanPasses++;
+                            return;
+                        }
+                        if (YUUSHYA_TRIAL) {
+                            long repeatHits = scanCounter(validator.scanStats(), "yuushyaSolidCacheHits")
+                                    - scanCounter(firstPassScanStats, "yuushyaSolidCacheHits");
+                            helper.assertTrue(YUUSHYA_BASELINE ? repeatHits == 0 : repeatHits > 0,
+                                    "the second query of the same real cube walls must reflect the implementation's cache support; "
+                                            + "baseline=" + YUUSHYA_BASELINE + ", repeatHits=" + repeatHits);
+                        }
                     }
                     case MID_SCAN_MUTATION -> {
                         helper.assertTrue(changedDuringScan && edges.stream().noneMatch(edge ->
@@ -709,6 +866,14 @@ public final class ZombiesNavigationStairGameTests {
                         helper.assertTrue(edges.stream().noneMatch(edge -> edge.to().feet().distanceToSqr(east) < 1.0E-8
                                         || edge.to().feet().distanceToSqr(west) < 1.0E-8),
                                 "fire/cactus beside the empty destination must prevent walking through its danger halo");
+                    }
+                    case YUUSHYA_FURNITURE -> {
+                        Vec3 east = feet.add(1, 0, 0), south = feet.add(0, 0, 1), west = feet.add(-1, 0, 0);
+                        helper.assertTrue(edges.stream().noneMatch(edge -> edge.to().feet().distanceToSqr(east) < 1.0E-8
+                                        || edge.to().feet().distanceToSqr(south) < 1.0E-8),
+                                "real 1.5-high furniture and a thin folded table must block the body sweep");
+                        helper.assertTrue(edges.stream().anyMatch(edge -> edge.to().feet().distanceToSqr(west) < 1.0E-8),
+                                "nearby special furniture must retain the unobstructed exit on its opposite side");
                     }
                     case MUTATION -> {
                         Vec3 end = feet.add(1, 0, 0);
@@ -733,10 +898,28 @@ public final class ZombiesNavigationStairGameTests {
 
         void succeed() {
             finished = true;
+            if (YUUSHYA_TRIAL) {
+                java.util.Map<String, Object> report = yuushyaReport();
+                report.put("flatScenario", scenario.name());
+                report.put("floor", ForgeRegistries.BLOCKS.getKey(scenario.floor()).toString());
+                report.put("edges", edges.size());
+                report.put("fastNeighborScans", validator.fastNeighborScans());
+                report.put("scanStats", validator.scanStats());
+                report.put("scanPasses", scanPasses);
+                report.put("firstPassScanStats", firstPassScanStats);
+                report.put("repeatScanStats", scanDifference(validator.scanStats(), firstPassScanStats));
+                ZombiesNavigationTestReport.write("yuushya-flat-" + scenario.name().toLowerCase(java.util.Locale.ROOT), report);
+            }
             release();
             helper.assertTrue(cache.stats().transientEntries() == 0,
                     "completed flat planning and validation cursors must release every transient geometry reference");
             cache.reset();
+            if (YUUSHYA_TRIAL && scenario == FlatScenario.ICE) {
+                // Keep the ordinary namespace at 27 tests while the optional integration run
+                // also exercises a fresh real-world furniture scene after the ice control.
+                followUp = buildFlatGeometry(helper, FlatScenario.YUUSHYA_FURNITURE);
+                return;
+            }
             helper.succeed();
         }
 
@@ -830,6 +1013,7 @@ public final class ZombiesNavigationStairGameTests {
         case "stone" -> Blocks.STONE;
         case "stone-bricks" -> Blocks.STONE_BRICKS;
         case "cobblestone" -> Blocks.COBBLESTONE;
+        case "yuushya" -> yuushyaFullCube();
         default -> throw new IllegalArgumentException("Unknown navigationStairFloor: " + STAIR_FLOOR_MATERIAL);
     };
 
@@ -837,8 +1021,8 @@ public final class ZombiesNavigationStairGameTests {
     public static void originalZombieClimbsDistantStairsPastLowStepsToFixedUpperPlayer(GameTestHelper helper) {
         ZombiesNavigationTestTiming.begin(helper, "distant-stairs-low-approach", false);
         var floorState = STAIR_FLOOR_BLOCK.defaultBlockState();
-        helper.assertTrue(STAIR_FLOOR_BLOCK.getClass() == Block.class
-                        && Block.isShapeFullBlock(floorState.getCollisionShape(helper.getLevel(), helper.absolutePos(BlockPos.ZERO)))
+        helper.assertTrue(Block.isShapeFullBlock(floorState.getCollisionShape(helper.getLevel(),
+                        helper.absolutePos(BlockPos.ZERO), CollisionContext.empty()))
                         && floorState.getFluidState().isEmpty() && STAIR_FLOOR_BLOCK.getSpeedFactor() == 1.0F,
                 "the material comparison requires an ordinary full-block floor with no fluid or movement slowdown");
         // The open lower floor is wide enough that searching all nearby positions below the
@@ -1047,6 +1231,8 @@ public final class ZombiesNavigationStairGameTests {
             report.put("end", point(mob.position().subtract(origin)));
             report.put("floorSeparation", 14);
             report.put("stairFloorMaterial", STAIR_FLOOR_MATERIAL);
+            report.put("stairFloorBlock", ForgeRegistries.BLOCKS.getKey(STAIR_FLOOR_BLOCK).toString());
+            if (YUUSHYA_TRIAL) report.put("yuushyaTrial", yuushyaReport());
             report.put("stairFloorMaterialScope", "distant scene only: lower floor, upper platforms, raised lower floor, and solid supports beneath both stair runs; walls, roof and all stone stairs remain unchanged");
             report.put("realStairBlocks", true);
             report.put("climbedLowSteps", climbedLowSteps);
@@ -1106,15 +1292,27 @@ public final class ZombiesNavigationStairGameTests {
         return stats.workUnits().values().stream().mapToLong(Long::longValue).sum();
     }
 
-    private static TraversalValidator.ScanStats scanDifference(TraversalValidator.ScanStats end,
-                                                                TraversalValidator.ScanStats start) {
+    private static java.util.Map<String, Object> scanDifference(TraversalValidator.ScanStats end,
+                                                               TraversalValidator.ScanStats start) {
         if (end == null || start == null) return null;
         java.util.Map<String, Long> workUnits = new java.util.LinkedHashMap<>();
         end.workUnits().forEach((stage, units) -> workUnits.put(stage, units - start.workUnits().getOrDefault(stage, 0L)));
         start.workUnits().forEach((stage, units) -> workUnits.putIfAbsent(stage, -units));
-        return new TraversalValidator.ScanStats(workUnits, end.blockReads() - start.blockReads(),
-                end.shapeQueries() - start.shapeQueries(), end.geometryCacheHits() - start.geometryCacheHits(),
-                end.flatStateCacheHits() - start.flatStateCacheHits());
+        java.util.Map<String, Object> difference = new java.util.LinkedHashMap<>();
+        difference.put("workUnits", workUnits);
+        // The identical fixture can run against the pre-adapter implementation. Discover
+        // added counters at runtime so baseline and candidate keep their own real measurements.
+        for (var component : end.getClass().getRecordComponents()) {
+            if (component.getType() != long.class) continue;
+            try {
+                long finalValue = ((Number) component.getAccessor().invoke(end)).longValue();
+                long initialValue = ((Number) component.getAccessor().invoke(start)).longValue();
+                difference.put(component.getName(), finalValue - initialValue);
+            } catch (ReflectiveOperationException failure) {
+                throw new AssertionError("Unable to compare scan statistics", failure);
+            }
+        }
+        return difference;
     }
 
     private static List<Double> point(Vec3 value) { return List.of(value.x, value.y, value.z); }

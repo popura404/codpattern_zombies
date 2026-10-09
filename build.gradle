@@ -60,10 +60,21 @@ def navigationScaledRoutes = project.hasProperty('navigationScaledRoutes')
 def navigationArrival = project.hasProperty('navigationArrival')
 def navigationRetarget = project.hasProperty('navigationRetarget')
 def navigationStairs = project.hasProperty('navigationStairs')
+def navigationYuushya = project.hasProperty('navigationYuushya')
+def navigationYuushyaBaseline = project.hasProperty('navigationYuushyaBaseline')
+if (navigationYuushya && !navigationStairs) {
+    throw new GradleException('navigationYuushya requires navigationStairs')
+}
+if (navigationYuushyaBaseline && !navigationYuushya) {
+    throw new GradleException('navigationYuushyaBaseline requires navigationYuushya')
+}
 def navigationStairFloor = project.hasProperty('navigationStairFloor')
         ? findProperty('navigationStairFloor').toString() : 'stone'
-if (!(navigationStairFloor in ['stone', 'stone-bricks', 'cobblestone'])) {
-    throw new GradleException('navigationStairFloor must be stone, stone-bricks, or cobblestone')
+if (!(navigationStairFloor in ['stone', 'stone-bricks', 'cobblestone', 'yuushya'])) {
+    throw new GradleException('navigationStairFloor must be stone, stone-bricks, cobblestone, or yuushya')
+}
+if (navigationStairFloor == 'yuushya' && !navigationYuushya) {
+    throw new GradleException('navigationStairFloor=yuushya requires navigationYuushya')
 }
 if (project.hasProperty('navigationStairFloor') && !navigationStairs) {
     throw new GradleException('navigationStairFloor requires navigationStairs')
@@ -197,6 +208,8 @@ minecraft {
             property 'codpattern.zombies.navigationDifficulty', navigationDifficulty
             property 'codpattern.zombies.navigationLoadTargetMotion', navigationLoadTargetMotion
             property 'codpattern.zombies.navigationStairFloor', navigationStairFloor
+            property 'codpattern.zombies.navigationYuushya', navigationYuushya.toString()
+            property 'codpattern.zombies.navigationYuushyaBaseline', navigationYuushyaBaseline.toString()
             property 'codpattern.zombies.navigationChunkStartsMissing', navigationChunkStartsMissing.toString()
             property 'codpattern.zombies.navigationChunkTargetMovesMissing', navigationChunkTargetMovesMissing.toString()
             property 'codpattern.zombies.navigationResultsDirectory', navigationResultsDirectory.absolutePath
@@ -329,6 +342,7 @@ tasks.matching { it.name == 'runGameTestServer' }.configureEach {
                           navigationDebugEnabled: project.hasProperty('navigationDebug'),
                           targetMotionPolicy: navigationLoadTargetMotion,
                           stairFloorMaterial: navigationStairs ? navigationStairFloor : null,
+                          yuushyaTrial: navigationYuushya, yuushyaBaseline: navigationYuushyaBaseline,
                           jfrEnabled: project.hasProperty('navigationJfr')]
             new File(navigationResultsDirectory, 'launch-environment.json').setText(
                     groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(launch)), 'UTF-8')
@@ -393,6 +407,7 @@ tasks.register('archiveNavigationGameTestResult') {
                       chunkTargetMovesMissing: navigationChunkTargetMovesMissing,
                       targetMotionPolicy: navigationLoadTargetMotion,
                       stairFloorMaterial: navigationStairs ? navigationStairFloor : null,
+                      yuushyaTrial: navigationYuushya, yuushyaBaseline: navigationYuushyaBaseline,
                       worldDifficulty: navigationDifficulty,
                       expectedTests: expected, executedTests: executed, passedTests: executed == null ? null : executed - failed,
                       failedTests: failed, failureNames: failureNames, processExitCode: processExit,
@@ -451,6 +466,10 @@ repositories {
 }
 
 dependencies {
+    if (navigationYuushya) {
+        runtimeOnly fg.deobf('maven.modrinth:yuushya-townscape:3geNR8Br')
+        runtimeOnly fg.deobf('maven.modrinth:architectury-api:1MKTLiiG')
+    }
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     implementation fg.deobf('curse.maven:timeless-and-classics-zero-1028108:6654541-sources-6654543')
     compileOnly fg.deobf('maven.modrinth:lr-tactical:0.3.0')

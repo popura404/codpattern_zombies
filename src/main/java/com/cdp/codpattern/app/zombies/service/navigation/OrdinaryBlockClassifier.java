@@ -15,15 +15,17 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.pathfinder.BlockPathTypes;
 import net.minecraft.world.level.pathfinder.PathComputationType;
 import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
-import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraftforge.common.extensions.IForgeBlock;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.util.ObfuscationReflectionHelper;
 import org.slf4j.Logger;
 
 import java.lang.reflect.Method;
+import java.security.CodeSource;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -33,21 +35,26 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * collision/path/contact overrides retain the shape-based traversal validator.
  */
 public final class OrdinaryBlockClassifier {
+    public enum BehaviorKind { UNSUPPORTED, DEFAULT, YUUSHYA_STATE_SHAPE }
+    private static final String YUUSHYA_FACTORY = "com.yuushya.block.YuushyaBlockFactory$";
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final AtomicBoolean REPORTED_LOOKUP_FAILURE = new AtomicBoolean();
     private static final List<Method> ORDINARY_METHODS = ordinaryMethods();
-    private static final ClassValue<Boolean> ORDINARY_BEHAVIOR = new ClassValue<>() {
-        @Override protected Boolean computeValue(Class<?> type) {
-            if (ORDINARY_METHODS.isEmpty()) return false;
+    private static final ClassValue<BehaviorKind> ORDINARY_BEHAVIOR = new ClassValue<>() {
+        @Override protected BehaviorKind computeValue(Class<?> type) {
+            if (ORDINARY_METHODS.isEmpty()) return BehaviorKind.UNSUPPORTED;
             try {
+                boolean yuushya = isAuditedYuushyaType(type);
                 for (Method ordinary : ORDINARY_METHODS) {
                     Method actual = type.getMethod(ordinary.getName(), ordinary.getParameterTypes());
-                    if (actual.getDeclaringClass() != ordinary.getDeclaringClass()) return false;
+                    if (actual.getDeclaringClass() != ordinary.getDeclaringClass()
+                            && !(yuushya && isAuditedYuushyaOverride(type, ordinary, actual)))
+                        return BehaviorKind.UNSUPPORTED;
                 }
-                return true;
+                return yuushya ? BehaviorKind.YUUSHYA_STATE_SHAPE : BehaviorKind.DEFAULT;
             } catch (ReflectiveOperationException | RuntimeException failure) {
                 reportLookupFailure(failure);
-                return false;
+                return BehaviorKind.UNSUPPORTED;
             }
         }
     };
@@ -56,24 +63,131 @@ public final class OrdinaryBlockClassifier {
 
     /** Class-only proof; callers still need {@link #isOrdinarySolid} for a usable floor state. */
     public static boolean hasOrdinaryBehavior(Class<? extends Block> blockClass) {
+        return behaviorKind(blockClass) != BehaviorKind.UNSUPPORTED;
+    }
+
+    public static BehaviorKind behaviorKind(Class<? extends Block> blockClass) {
         return ORDINARY_BEHAVIOR.get(blockClass);
     }
 
     public static boolean isOrdinarySolid(BlockState state, BlockGetter level, BlockPos pos) {
-        // Custom BlockState implementations could bypass the proven Block methods.
-        if (state.getClass() != BlockState.class || state.isAir()) return false;
-        Block block = state.getBlock();
-        if (!ORDINARY_BEHAVIOR.get(block.getClass()) || block.hasDynamicShape()
-                || state.hasOffsetFunction() || !state.getFluidState().isEmpty()
-                || block.getFriction() != 0.6F || block.getSpeedFactor() != 1.0F
-                || block.getJumpFactor() != 1.0F || hasSpecialPathTags(state)) return false;
+        return ordinarySolidKind(state, level, pos) != BehaviorKind.UNSUPPORTED;
+    }
 
-        // Default getShape/getCollisionShape are context independent. This overload reuses
-        // Minecraft's per-state cache; no world shape callback or shape-list allocation is
-        // needed for accepted states. Compare the exact volume, not merely its bounding box.
-        VoxelShape shape = state.getCollisionShape(level, pos);
-        return shape == Shapes.block()
-                || !Shapes.joinIsNotEmpty(shape, Shapes.block(), BooleanOp.NOT_SAME);
+    public static BehaviorKind ordinarySolidKind(BlockState state, BlockGetter level, BlockPos pos) {
+        BehaviorKind kind = eligibleStateKind(state);
+        if (kind == BehaviorKind.UNSUPPORTED) return kind;
+        return exactUnitCube(actualShape(state, level, pos, kind)) ? kind : BehaviorKind.UNSUPPORTED;
+    }
+
+    private static VoxelShape actualShape(BlockState state, BlockGetter level, BlockPos pos, BehaviorKind kind) {
+        // Yuushya initializes its state-indexed shapes after some vanilla state caches have
+        // been built. Invoke the audited method, not the no-context state-cache overload.
+        return kind == BehaviorKind.YUUSHYA_STATE_SHAPE
+                ? state.getCollisionShape(level, pos, CollisionContext.empty())
+                : state.getCollisionShape(level, pos);
+    }
+
+    /** One synchronous advance call only; never retain this evidence across a yield. */
+    static final class Batch {
+        private BlockState lastYuushyaState;
+        private VoxelShape lastActualShape;
+        private long shapeReads,shapeBatchHits;
+
+        long shapeReads() { return shapeReads; }
+        long shapeBatchHits() { return shapeBatchHits; }
+
+        BehaviorKind classify(BlockState state, BlockGetter level, BlockPos pos) {
+            // Position-independent geometry is the only reused result. Current tags, fluid
+            // and movement properties are still checked for every cell, including hits.
+            BehaviorKind kind = eligibleStateKind(state);
+            if (kind == BehaviorKind.UNSUPPORTED) {
+                clear();
+                return kind;
+            }
+            VoxelShape shape;
+            if (kind == BehaviorKind.YUUSHYA_STATE_SHAPE) {
+                if (state != lastYuushyaState) {
+                    VoxelShape observed = actualShape(state, level, pos, kind);
+                    shapeReads++;
+                    lastYuushyaState = state;
+                    lastActualShape = observed;
+                } else shapeBatchHits++;
+                shape = lastActualShape;
+            } else {
+                shape = actualShape(state, level, pos, kind);
+            }
+            return exactUnitCube(shape) ? kind : BehaviorKind.UNSUPPORTED;
+        }
+
+        void clear() {
+            lastYuushyaState = null;
+            lastActualShape = null;
+        }
+    }
+
+    /** Reuses the actual shape already acquired by ShapeScan; unknown behavior still fails. */
+    static BehaviorKind ordinarySolidKind(BlockState state, VoxelShape actualShape) {
+        BehaviorKind kind = eligibleStateKind(state);
+        return kind != BehaviorKind.UNSUPPORTED && exactUnitCube(actualShape)
+                ? kind : BehaviorKind.UNSUPPORTED;
+    }
+
+    private static BehaviorKind eligibleStateKind(BlockState state) {
+        // Custom BlockState implementations could bypass the proven Block methods.
+        if (state.getClass() != BlockState.class || state.isAir()) return BehaviorKind.UNSUPPORTED;
+        Block block = state.getBlock();
+        BehaviorKind kind = behaviorKind(block.getClass());
+        if (kind == BehaviorKind.UNSUPPORTED || block.hasDynamicShape() || state.hasOffsetFunction()
+                || !state.getFluidState().isEmpty()
+                || block.getFriction() != 0.6F || block.getSpeedFactor() != 1.0F
+                || block.getJumpFactor() != 1.0F || hasSpecialPathTags(state)) return BehaviorKind.UNSUPPORTED;
+        // The audited override depends only on WATERLOGGED, but read it directly as well:
+        // a pre-registration vanilla cache must not turn a waterlogged state into dry support.
+        if (kind == BehaviorKind.YUUSHYA_STATE_SHAPE && !block.getFluidState(state).isEmpty())
+            return BehaviorKind.UNSUPPORTED;
+        return kind;
+    }
+
+    private static boolean exactUnitCube(VoxelShape shape) {
+        // Vanilla's bounded weak-identity cache uses the same exact NOT_SAME volume test.
+        return shape == Shapes.block() || Block.isShapeFullBlock(shape);
+    }
+
+    private static boolean isAuditedYuushyaType(Class<?> type) {
+        String name = type.getName();
+        if (!name.equals(YUUSHYA_FACTORY + "BlockWithClassTypeNormal")
+                && !name.equals(YUUSHYA_FACTORY + "BlockWithClassTypeWaterLogged")) return false;
+        ModList mods = ModList.get();
+        if (mods == null) return false;
+        var container = mods.getModContainerById("yuushya");
+        if (container.isEmpty()
+                || !container.get().getModInfo().getVersion().toString().equals("2.2.3")) return false;
+        Object mod = container.get().getMod();
+        // An equal class name from another jar is not the reviewed Yuushya implementation.
+        return mod != null && type.getClassLoader() == mod.getClass().getClassLoader()
+                && sameCodeSource(type, mod.getClass());
+    }
+
+    private static boolean isAuditedYuushyaOverride(Class<?> type, Method ordinary, Method actual) {
+        Class<?> declaring = actual.getDeclaringClass();
+        if (!declaring.getName().equals(YUUSHYA_FACTORY + "BlockWithClassType")
+                || !sameCodeSource(type, declaring)) return false;
+        // In the reviewed 2.2.3 factory, only these two four-argument shape methods and the
+        // state-only fluid method may differ. Path/contact/movement methods keep every guard.
+        Class<?>[] parameters = ordinary.getParameterTypes();
+        return ordinary.getReturnType() == VoxelShape.class && parameters.length == 4
+                && parameters[0] == BlockState.class && parameters[1] == BlockGetter.class
+                && parameters[2] == BlockPos.class && parameters[3] == CollisionContext.class
+                || ordinary.getReturnType() == FluidState.class && parameters.length == 1
+                && parameters[0] == BlockState.class;
+    }
+
+    private static boolean sameCodeSource(Class<?> first, Class<?> second) {
+        CodeSource firstSource = first.getProtectionDomain().getCodeSource();
+        CodeSource secondSource = second.getProtectionDomain().getCodeSource();
+        return firstSource != null && secondSource != null && firstSource.getLocation() != null
+                && firstSource.getLocation().equals(secondSource.getLocation());
     }
 
     static boolean hasSpecialPathTags(BlockState state) {

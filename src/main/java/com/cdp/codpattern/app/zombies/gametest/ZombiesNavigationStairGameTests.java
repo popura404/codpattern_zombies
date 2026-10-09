@@ -355,6 +355,16 @@ public final class ZombiesNavigationStairGameTests {
     }
 
     @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
+    public static void brickFloorRetainsAllExitsThroughGeneralShapeScanning(GameTestHelper helper) {
+        flatGeometry(helper, FlatScenario.BRICKS);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
+    public static void wallChangedBetweenGeometrySlicesCannotPublishAFlatShortcut(GameTestHelper helper) {
+        flatGeometry(helper, FlatScenario.MID_SCAN_MUTATION);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
     public static void connectedStairTopDoesNotDuplicateTheAdjacentFlatFloor(GameTestHelper helper) {
         flatGeometry(helper, FlatScenario.STAIR_SUPPORT);
     }
@@ -374,13 +384,14 @@ public final class ZombiesNavigationStairGameTests {
         flatGeometry(helper, FlatScenario.MUTATION);
     }
 
-    private enum FlatScenario { CLEAR, STAIR_SUPPORT, CORNER, DANGER, MUTATION }
+    private enum FlatScenario { CLEAR, BRICKS, STAIR_SUPPORT, CORNER, DANGER, MUTATION, MID_SCAN_MUTATION }
 
     private static void flatGeometry(GameTestHelper helper, FlatScenario scenario) {
         // A broad integer-height floor and empty body/halo volume provide the ordinary
         // flat-terrain case. Each counterexample changes only the relevant geometry.
         for (int x = 3; x <= 18; x++) for (int z = 3; z <= 18; z++) for (int y = 0; y <= 8; y++) {
-            helper.setBlock(new BlockPos(x, y, z), y <= 2 ? Blocks.STONE : Blocks.AIR);
+            helper.setBlock(new BlockPos(x, y, z), y <= 2
+                    ? scenario == FlatScenario.BRICKS ? Blocks.STONE_BRICKS : Blocks.STONE : Blocks.AIR);
         }
         if (scenario == FlatScenario.STAIR_SUPPORT) {
             helper.setBlock(new BlockPos(9, 2, 8), Blocks.STONE_STAIRS.defaultBlockState()
@@ -418,7 +429,7 @@ public final class ZombiesNavigationStairGameTests {
         TraversalValidator validator;
         TraversalValidator.NeighborCursor neighbours;
         TraversalValidator.ValidationCursor validation;
-        boolean finished;
+        boolean finished, changedDuringScan;
 
         FlatGeometryRun(GameTestHelper helper, FlatScenario scenario) {
             this.helper = helper;
@@ -474,6 +485,15 @@ public final class ZombiesNavigationStairGameTests {
                                 && batch.status() != TraversalValidator.ScanStatus.WAITING_CHUNK,
                         "the small loaded flat fixture must not need extra resources or chunks");
                 edges.addAll(batch.edges());
+                if (scenario == FlatScenario.MID_SCAN_MUTATION && !changedDuringScan) {
+                    helper.assertTrue(batch.status() == TraversalValidator.ScanStatus.PENDING && edges.isEmpty(),
+                            "the wall change must interrupt an unfinished geometry proof");
+                    for (int y = 3; y <= 5; y++) helper.setBlock(new BlockPos(9, y, 8), Blocks.STONE);
+                    cache.invalidate(new AABB(helper.absoluteVec(new Vec3(9, 3, 8)),
+                            helper.absoluteVec(new Vec3(10, 6, 9))), "wall changed between read batches");
+                    changedDuringScan = true;
+                    return;
+                }
                 if (batch.status() != TraversalValidator.ScanStatus.COMPLETE) return;
                 helper.assertTrue(validator.fastNeighborScans() == (scenario == FlatScenario.CLEAR
                                 || scenario == FlatScenario.MUTATION ? 1 : 0),
@@ -481,7 +501,7 @@ public final class ZombiesNavigationStairGameTests {
                 if (scenario == FlatScenario.STAIR_SUPPORT) helper.assertTrue(validator.simplifiedStairScans() == 1,
                         "a proven connected stair top must exercise the redundant-offset shortcut");
                 switch (scenario) {
-                    case CLEAR, STAIR_SUPPORT -> {
+                    case CLEAR, BRICKS, STAIR_SUPPORT -> {
                         helper.assertTrue(edges.size() == 8, "an unobstructed centred floor must expose all eight neighbours");
                         for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
                             if (dx == 0 && dz == 0) continue;
@@ -496,6 +516,14 @@ public final class ZombiesNavigationStairGameTests {
                         Vec3 forbidden = feet.add(1, 0, 1);
                         helper.assertTrue(edges.stream().noneMatch(edge -> edge.to().feet().distanceToSqr(forbidden) < 1.0E-8),
                                 "a clear diagonal endpoint must not allow the zombie body to cut through two solid corners");
+                    }
+                    case MID_SCAN_MUTATION -> {
+                        helper.assertTrue(changedDuringScan && edges.stream().noneMatch(edge ->
+                                        edge.to().feet().distanceToSqr(feet.add(1, 0, 0)) < 1.0E-8),
+                                "resumed scans must see the new wall instead of reusing pre-change read evidence");
+                        helper.assertTrue(edges.stream().anyMatch(edge ->
+                                        edge.to().feet().distanceToSqr(feet.add(-1, 0, 0)) < 1.0E-8),
+                                "an invalidated proof must resume discovery of the remaining clear exits");
                     }
                     case DANGER -> {
                         Vec3 east = feet.add(1, 0, 0), west = feet.add(-1, 0, 0);
@@ -684,7 +712,7 @@ public final class ZombiesNavigationStairGameTests {
         final UUID original;
         final Vec3 origin, target, start;
         final List<java.util.Map<String, Object>> trajectory = new ArrayList<>();
-        Vec3 previous;
+        Vec3 previous, firstActivePosition;
         boolean finished, climbedLowSteps, enteredFarAscent, reachedUpperFloor;
         double travelled, farthestFromTarget;
         int requeued, discarded, maxGeometry, maxExpansions;
@@ -692,6 +720,7 @@ public final class ZombiesNavigationStairGameTests {
         long firstSearchRequestTick = -1, firstSearchRequestGeometry = -1, firstSearchRequestExpansions = -1;
         long firstActiveEdgeTick = -1, firstActiveEdgeGeometry = -1, firstActiveEdgeExpansions = -1;
         long firstFollowTick = -1, firstFollowGeometry = -1, firstFollowExpansions = -1;
+        long firstSearchRequestNanos = -1, firstActiveEdgeNanos = -1, firstObservedRouteMotionTick = -1;
 
         DistantStairRun(GameTestHelper helper, ZombiesNavigationGameTests.Fixture fixture, Mob mob) {
             this.helper = helper;
@@ -733,12 +762,15 @@ public final class ZombiesNavigationStairGameTests {
                         firstSearchRequestTick = helper.getTick();
                         firstSearchRequestGeometry = stats.geometry();
                         firstSearchRequestExpansions = stats.expansions();
+                        firstSearchRequestNanos = stats.nanos();
                     }
                     TraversalEdge active = runtime.activeEdge(mob);
                     if (firstActiveEdgeTick < 0 && active != null) {
                         firstActiveEdgeTick = helper.getTick();
                         firstActiveEdgeGeometry = stats.geometry();
                         firstActiveEdgeExpansions = stats.expansions();
+                        firstActiveEdgeNanos = stats.nanos();
+                        firstActivePosition = position;
                         helper.assertTrue(firstActiveEdgeGeometry - firstSearchRequestGeometry < FIRST_STAIR_ROUTE_GEOMETRY_LIMIT,
                                 "the initial distant-stair route must avoid exhaustive fractional search below the player");
                     }
@@ -747,6 +779,11 @@ public final class ZombiesNavigationStairGameTests {
                         firstFollowGeometry = stats.geometry();
                         firstFollowExpansions = stats.expansions();
                     }
+                    // FOLLOW can be set before its execution proof is ready. Record physical
+                    // displacement separately instead of treating that phase as actual motion.
+                    if (firstObservedRouteMotionTick < 0 && active != null && firstActivePosition != null
+                            && position.distanceToSqr(firstActivePosition) >= 0.1 * 0.1)
+                        firstObservedRouteMotionTick = helper.getTick();
                     int geometry = (int) (stats.geometry() - previousGeometry);
                     int expansions = (int) (stats.expansions() - previousExpansions);
                     maxGeometry = Math.max(maxGeometry, geometry);
@@ -772,6 +809,8 @@ public final class ZombiesNavigationStairGameTests {
                         && mob.distanceToSqr(fixture.player) <= reach * reach + fixture.player.getBbWidth()
                         && mob.getSensing().hasLineOfSight(fixture.player);
                 if (arrived) {
+                    helper.assertTrue(firstObservedRouteMotionTick >= firstActiveEdgeTick && firstActiveEdgeTick >= 0,
+                            "a completed route must record both its first edge and subsequent physical movement");
                     helper.assertTrue(climbedLowSteps && enteredFarAscent && reachedUpperFloor,
                             "arrival must include the low stairs, far ascent, and actual upper-floor traversal");
                     helper.assertTrue(farthestFromTarget > start.distanceTo(target) + 15,
@@ -824,6 +863,12 @@ public final class ZombiesNavigationStairGameTests {
             report.put("firstFollowTick", firstFollowTick);
             report.put("firstFollowGeometry", firstFollowGeometry);
             report.put("firstFollowExpansions", firstFollowExpansions);
+            report.put("firstActiveEdgePlanningNanos", firstActiveEdgeNanos < 0 || firstSearchRequestNanos < 0
+                    ? -1 : firstActiveEdgeNanos - firstSearchRequestNanos);
+            report.put("firstObservedRouteMotionTick", firstObservedRouteMotionTick);
+            report.put("firstRequestToObservedMotionTicks", firstSearchRequestTick < 0 || firstObservedRouteMotionTick < 0
+                    ? -1 : firstObservedRouteMotionTick - firstSearchRequestTick);
+            report.put("routeMotionMeasurement", "first observed displacement of at least 0.1 blocks from the first active edge position while a route remains active");
             report.put("firstRequestToActiveEdgeTicks", firstSearchRequestTick < 0 || firstActiveEdgeTick < 0
                     ? -1 : firstActiveEdgeTick - firstSearchRequestTick);
             report.put("firstRequestToFollowTicks", firstSearchRequestTick < 0 || firstFollowTick < 0

@@ -51,9 +51,15 @@ public final class TraversalValidator {
     private final NavigationGraphCache cache;
     private long fastNeighborScans;
     private long simplifiedStairScans;
+    private long readBatches,chunkChecks,reusedChunkChecks,tileVersionChecks,reusedTileVersions;
 
     public long fastNeighborScans() { return fastNeighborScans; }
     public long simplifiedStairScans() { return simplifiedStairScans; }
+    public record SliceReadStats(long batches,long chunkChecks,long reusedChunkChecks,
+            long tileVersionChecks,long reusedTileVersions) { }
+    public SliceReadStats sliceReadStats() {
+        return new SliceReadStats(readBatches,chunkChecks,reusedChunkChecks,tileVersionChecks,reusedTileVersions);
+    }
 
     public enum Verdict { CLEAR, BLOCKED, WAITING_CHUNK, UNKNOWN, STALE, NATIVE_INTERACTION }
     public enum ScanStatus { PENDING, COMPLETE, WAITING_CHUNK, RESOURCE_LIMITED }
@@ -744,6 +750,7 @@ public final class TraversalValidator {
         void advance() {
             waiting=false; limited=false;
             int reads=0,cells=0;
+            ReadSlice readSlice=new ReadSlice();
             while (!failed && !proved && reads<BLOCK_BATCH && cells<CACHED_CELL_BATCH) {
                 if (y>bounds.maxY) {
                     // A multi-slice proof cannot publish mixed revisions after a block event.
@@ -753,9 +760,9 @@ public final class TraversalValidator {
                     proved=true; fastNeighborScans++; return;
                 }
                 BlockPos pos=new BlockPos(x,y,z);
-                if (!loaded(new AABB(pos).inflate(1))) { waiting=true; return; }
-                NavigationGraphCache.TileKey tile=NavigationGraphCache.TileKey.at(pos);
-                long version=cache.version(tile);
+                if (!readSlice.loaded(pos)) { waiting=true; return; }
+                long version=readSlice.version(pos);
+                NavigationGraphCache.TileKey tile=readSlice.tile;
                 if (version<0) { limited=true; return; }
                 if (!dependencies.containsKey(tile)) {
                     if (!lease.reserve(1)) { limited=true; return; }
@@ -1212,6 +1219,7 @@ public final class TraversalValidator {
             waiting=false; limited=hardLimited;
             if (hardLimited) return;
             int blocks=0,shapes=0,cells=0;
+            ReadSlice readSlice=new ReadSlice();
             while (!done && blocks<BLOCK_BATCH && shapes<SHAPE_BATCH && cells<CACHED_CELL_BATCH) {
                 if (boxIndex < pending.size()) {
                     AABB box=pending.get(boxIndex);
@@ -1238,9 +1246,9 @@ public final class TraversalValidator {
                 lease.release(pending.size()); pending=List.of(); boxIndex=0;
                 if (y>maxY) { done=true; break; }
                 BlockPos pos=new BlockPos(x,y,z);
-                if (!loaded(new AABB(pos).inflate(1))) { waiting=true; return; }
-                NavigationGraphCache.TileKey tile=NavigationGraphCache.TileKey.at(Vec3.atCenterOf(pos));
-                long version=cache.version(tile);
+                if (!readSlice.loaded(pos)) { waiting=true; return; }
+                long version=readSlice.version(pos);
+                NavigationGraphCache.TileKey tile=readSlice.tile;
                 if (version<0) { limited=true; return; }
                 if (!dependencies.containsKey(tile)) {
                     if (!reserve(1)) return;
@@ -1409,6 +1417,60 @@ public final class TraversalValidator {
             for (int z=Mth.floor(area.minZ)>>4;z<=Mth.floor(area.maxZ)>>4;z++)
                 if (!context.level().hasChunkAt(new BlockPos(x<<4,context.level().getMinBuildHeight(),z<<4))) return false;
         return true;
+    }
+    /**
+     * A single bounded, synchronous scan batch can reuse adjacent read checks. This
+     * object never survives an advance call: chunk availability and the read observer
+     * must be checked again when the cursor resumes, even within the same game tick.
+     */
+    private final class ReadSlice {
+        private final long[] loadedChunks=new long[4];
+        private int loadedCount;
+        private long chunkRevision=cache.revision();
+        private NavigationGraphCache.TileKey tile;
+        private long tileVersion,tileRevision;
+
+        private ReadSlice() { readBatches++; }
+
+        private boolean loaded(BlockPos position) {
+            if (chunkRevision!=cache.revision()) {
+                loadedCount=0;
+                chunkRevision=cache.revision();
+            }
+            // Match loaded(new AABB(position).inflate(1)) exactly, including the
+            // upper boundary at position+2 needed by neighbouring shape/path hooks.
+            int minX=(position.getX()-1)>>4,maxX=(position.getX()+2)>>4;
+            int minZ=(position.getZ()-1)>>4,maxZ=(position.getZ()+2)>>4;
+            for (int x=minX;x<=maxX;x++) for (int z=minZ;z<=maxZ;z++) {
+                long key=((long)x<<32)^(z&0xffffffffL);
+                boolean known=false;
+                for (int i=0;i<loadedCount;i++) if (loadedChunks[i]==key) { known=true; break; }
+                if (known) { reusedChunkChecks++; continue; }
+                chunkChecks++;
+                if (!context.level().hasChunkAt(new BlockPos(x<<4,context.level().getMinBuildHeight(),z<<4)))
+                    return false;
+                // Larger scan batches simply fall back to fresh checks beyond four chunks.
+                if (loadedCount<loadedChunks.length) loadedChunks[loadedCount++]=key;
+            }
+            return true;
+        }
+
+        private long version(BlockPos position) {
+            int size=NavigationTuning.TILE_SIZE;
+            int x=Math.floorDiv(position.getX(),size),y=Math.floorDiv(position.getY(),size),
+                    z=Math.floorDiv(position.getZ(),size);
+            if (tile!=null && tile.x()==x && tile.y()==y && tile.z()==z && tileRevision==cache.revision()) {
+                reusedTileVersions++;
+                return tileVersion;
+            }
+            tile=new NavigationGraphCache.TileKey(x,y,z);
+            // version() also informs the active planner's read observer. The first
+            // read of each tile in every batch must go through it.
+            tileVersionChecks++;
+            tileVersion=cache.version(tile);
+            tileRevision=cache.revision();
+            return tileVersion;
+        }
     }
     private static boolean overlapsHorizontal(AABB a,AABB b) {
         return a.maxX>b.minX+EPSILON && a.minX<b.maxX-EPSILON

@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 
 /** Deterministic pure graph tests; never create, teleport, or drive a real entity. */
 public final class NavigationPlannerCompatTest {
@@ -25,6 +26,12 @@ public final class NavigationPlannerCompatTest {
         failureMemoryIsDirectedVersionedAndProfileScoped();
         temporaryAvoidanceCannotBecomeGeometricFailure();
         schedulerSharesBudgetAndRotatesRoomsAndMobs();
+        singleRoomBorrowsIdleTimeWithinOriginalQuantityLimits();
+        everyRoomReceivesItsBaseAllowanceBeforeFairBorrowing();
+        fullyLoadedRoomsKeepRotatingWithinTheServerDeadline();
+        waitingJobsAndEmptyRoomsCannotSpinOrSpendTheSameTickTwice();
+        cancellationDuringASlicePreservesReplacementAndNewRoomWork();
+        schedulerAndUnitTimingUseTheSameClock();
         portalPathsRetainFineEvidenceAndInvalidateLocally();
         fractionalFloorsAndNegativeTilesDoNotAlias();
         targetMotionKeepsOpenFrontier();
@@ -57,7 +64,7 @@ public final class NavigationPlannerCompatTest {
         deferredDetailsCompleteMissingConnectionsBeforeDeclaringUnreachable();
         blockedDetailedBranchDoesNotStarveAnotherExit();
         reopenedCoarseNodePropagatesItsImprovedDistance();
-        System.out.println("NavigationPlannerCompatTest: 39 checks passed");
+        System.out.println("NavigationPlannerCompatTest: 45 checks passed");
     }
     private static void provenCoarseRouteDoesNotOpenDetailedGeometry() {
         for (int work : new int[]{1, 64}) {
@@ -485,6 +492,190 @@ public final class NavigationPlannerCompatTest {
         }
         require(work.stream().allMatch(count -> count.get() == 4), "both rooms and all entities get a turn");
         scheduler.reset(); require(scheduler.jobCount() == 0 && scheduler.roomCount() == 0, "reset releases queues");
+    }
+    private static void singleRoomBorrowsIdleTimeWithinOriginalQuantityLimits() {
+        for (long unitCost : new long[]{50_000L, 0L}) {
+            SchedulerClock clock = new SchedulerClock();
+            NavigationScheduler scheduler = new NavigationScheduler(NavigationTuning.DEFAULT, clock);
+            AtomicInteger count = new AtomicInteger();
+            scheduler.submit(UUID.randomUUID(), UUID.randomUUID(), geometryWork(clock, unitCost, count, null, 0));
+            scheduler.advance(1);
+            require(count.get() == (unitCost == 0 ? 256 : 80),
+                    "one room may use idle server time but cannot exceed its original 256 geometry units");
+            require(scheduler.metrics().elapsedNanos() == (unitCost == 0 ? 0L : 4_000_000L)
+                            && scheduler.metrics().geometry() == count.get(),
+                    "borrowed work must remain inside the original 4ms server deadline and be accounted once");
+            require(scheduler.timing().maxGeometryUnitNanos() == unitCost && scheduler.timing().geometryOverruns() == 0,
+                    "geometry timing must share the deterministic scheduler clock");
+            require(scheduler.timing().borrowedSlices() == (unitCost == 0 ? 0 : 4)
+                            && scheduler.timing().borrowedNanos() == (unitCost == 0 ? 0L : 3_000_000L),
+                    "borrowing counters must include only second-phase slices and their cumulative wall time");
+        }
+        SchedulerClock clock = new SchedulerClock();
+        NavigationScheduler scheduler = new NavigationScheduler(NavigationTuning.DEFAULT, clock);
+        AtomicInteger count = new AtomicInteger();
+        scheduler.submit(UUID.randomUUID(), UUID.randomUUID(), new NavigationScheduler.Work() {
+            @Override public void advance(NavigationScheduler.Budget budget) {
+                int inSlice = 0;
+                while (budget.takeExpansion()) { count.incrementAndGet(); inSlice++; }
+                require(inSlice <= 64, "borrowing must preserve the 64 expansion slice cap");
+            }
+            @Override public boolean finished() { return false; }
+        });
+        scheduler.advance(1);
+        require(count.get() == 1024 && scheduler.metrics().expansions() == 1024,
+                "idle server time must not increase the original per-room expansion cap");
+    }
+    private static void everyRoomReceivesItsBaseAllowanceBeforeFairBorrowing() {
+        SchedulerClock clock = new SchedulerClock();
+        NavigationScheduler scheduler = new NavigationScheduler(schedulerTuning(90, 360), clock);
+        List<Integer> order = new ArrayList<>();
+        List<AtomicInteger> counts = new ArrayList<>();
+        for (int room = 0; room < 3; room++) {
+            AtomicInteger count = new AtomicInteger(); counts.add(count);
+            scheduler.submit(UUID.randomUUID(), UUID.randomUUID(), geometryWork(clock, 10, count, order, room));
+        }
+        AtomicInteger waitingCalls = new AtomicInteger(), cappedUnits = new AtomicInteger();
+        scheduler.submit(UUID.randomUUID(), UUID.randomUUID(), new NavigationScheduler.Work() {
+            @Override public void advance(NavigationScheduler.Budget budget) {
+                require(waitingCalls.incrementAndGet() == 1, "waiting rooms must not participate in borrowed time shares");
+            }
+            @Override public boolean finished() { return false; }
+        });
+        scheduler.submit(UUID.randomUUID(), UUID.randomUUID(), geometryWork(clock, 0, cappedUnits, null, 3));
+        scheduler.advance(1);
+        require(cappedUnits.get() == 256, "a quantity-capped room must be excluded from remaining time shares");
+        require(counts.stream().allMatch(count -> count.get() == 12),
+                "three busy rooms must each receive nine base and three borrowed geometry units");
+        for (int index = 0; index < 27; index++)
+            require(order.get(index) == index / 9, "every base room allowance must precede the first borrowed slice");
+        for (int index = 27; index < 36; index++)
+            require(order.get(index) == (index - 27) / 3, "the first borrower must not consume its peers' remaining time");
+        require(scheduler.metrics().elapsedNanos() == 360 && scheduler.metrics().geometry() == 292,
+                "all fair shares together must respect the server deadline");
+    }
+    private static void fullyLoadedRoomsKeepRotatingWithinTheServerDeadline() {
+        for (int rooms : new int[]{4, 5}) {
+            SchedulerClock clock = new SchedulerClock();
+            NavigationScheduler scheduler = new NavigationScheduler(schedulerTuning(90, 360), clock);
+            List<AtomicInteger> counts = new ArrayList<>();
+            for (int room = 0; room < rooms; room++) {
+                AtomicInteger count = new AtomicInteger(); counts.add(count);
+                scheduler.submit(UUID.randomUUID(), UUID.randomUUID(), geometryWork(clock, 10, count, null, room));
+            }
+            for (int tick = 1; tick <= rooms; tick++) {
+                scheduler.advance(tick);
+                require(scheduler.metrics().elapsedNanos() == 360 && scheduler.metrics().geometry() == 36,
+                        "a saturated server must stop at its original time budget on every tick");
+                require(scheduler.timing().borrowedSlices() == 0 && scheduler.timing().borrowedNanos() == 0,
+                        "a fully saturated base round must never borrow extra server time");
+                int min = counts.stream().mapToInt(AtomicInteger::get).min().orElseThrow();
+                int max = counts.stream().mapToInt(AtomicInteger::get).max().orElseThrow();
+                require(max - min <= 9, "the next tick must begin with rooms denied the previous tick's base share");
+            }
+            require(counts.stream().allMatch(count -> count.get() == 36),
+                    "four or five continuously busy rooms must receive equal total work across a full rotation");
+        }
+    }
+    private static void waitingJobsAndEmptyRoomsCannotSpinOrSpendTheSameTickTwice() {
+        SchedulerClock clock = new SchedulerClock();
+        NavigationScheduler scheduler = new NavigationScheduler(schedulerTuning(90, 360), clock);
+        AtomicInteger prunes = new AtomicInteger();
+        UUID liveRoom = UUID.randomUUID(), emptyRoom = UUID.randomUUID();
+        scheduler.register(liveRoom, null, (bounds, reason) -> { }, prunes::incrementAndGet);
+        List<AtomicInteger> calls = new ArrayList<>();
+        for (int job = 0; job < 3; job++) {
+            AtomicInteger count = new AtomicInteger(); calls.add(count);
+            scheduler.submit(liveRoom, UUID.randomUUID(), new NavigationScheduler.Work() {
+                @Override public void advance(NavigationScheduler.Budget budget) {
+                    require(count.incrementAndGet() <= budget.serverTick(),
+                            "a waiting job must never be retried in a zero-time busy loop or in the borrowing phase");
+                }
+                @Override public boolean finished() { return false; }
+            });
+        }
+        scheduler.submit(emptyRoom, UUID.randomUUID(), new NavigationScheduler.Work() {
+            @Override public void advance(NavigationScheduler.Budget budget) { throw new AssertionError("finished work must not run"); }
+            @Override public boolean finished() { return true; }
+        });
+        scheduler.advance(1); scheduler.advance(1);
+        require(prunes.get() == 1 && calls.stream().allMatch(count -> count.get() == 1),
+                "same-tick deduplication must cover pruning and both scheduling phases");
+        require(scheduler.metrics().slices() == 3 && scheduler.metrics().elapsedNanos() == 0
+                        && scheduler.roomCount() == 1 && scheduler.jobCount() == 3,
+                "empty rooms must be removed and waiting jobs must finish the tick without consuming fake time");
+        scheduler.advance(2);
+        require(prunes.get() == 2 && calls.stream().allMatch(count -> count.get() == 2),
+                "waiting work must become eligible again on the next server tick");
+        scheduler.reset(); scheduler.advance(3);
+        require(scheduler.metrics().slices() == 0 && scheduler.registeredRoomCount() == 0,
+                "a fully empty scheduler must leave both phases immediately");
+    }
+    private static void cancellationDuringASlicePreservesReplacementAndNewRoomWork() {
+        SchedulerClock clock = new SchedulerClock();
+        NavigationScheduler scheduler = new NavigationScheduler(schedulerTuning(90, 360), clock);
+        UUID room = UUID.randomUUID(), mob = UUID.randomUUID();
+        AtomicInteger replacements = new AtomicInteger(), newRoom = new AtomicInteger();
+        NavigationScheduler.Work replacement = oneExpansionWork(replacements);
+        scheduler.submit(room, mob, new NavigationScheduler.Work() {
+            private boolean done;
+            @Override public void advance(NavigationScheduler.Budget budget) {
+                require(budget.takeExpansion(), "the canceled slice must still account its original unit");
+                scheduler.cancel(room, mob);
+                scheduler.submit(room, mob, replacement);
+                scheduler.submit(UUID.randomUUID(), UUID.randomUUID(), oneExpansionWork(newRoom));
+                done = true;
+            }
+            @Override public boolean finished() { return done; }
+        });
+        scheduler.advance(1);
+        require(replacements.get() == 1 && newRoom.get() == 1 && scheduler.metrics().expansions() == 3,
+                "finishing a canceled job must not cancel its same-ID replacement or starve a newly submitted room");
+        require(scheduler.jobCount() == 0 && scheduler.roomCount() == 0,
+                "self-cancellation, replacement completion and new-room completion must leave no rotation entries");
+    }
+    private static void schedulerAndUnitTimingUseTheSameClock() {
+        SchedulerClock clock = new SchedulerClock();
+        NavigationScheduler scheduler = new NavigationScheduler(schedulerTuning(9, 9), clock);
+        scheduler.submit(UUID.randomUUID(), UUID.randomUUID(), geometryWork(clock, 10, new AtomicInteger(), null, 0));
+        scheduler.advance(1);
+        require(scheduler.metrics().geometry() == 1 && scheduler.metrics().elapsedNanos() == 10
+                        && scheduler.timing().maxSliceNanos() == 10 && scheduler.timing().maxGeometryUnitNanos() == 10
+                        && scheduler.timing().geometryOverruns() == 1 && scheduler.timing().exceededSlices() == 1,
+                "an indivisible unit crossing the deadline must be measured once in the same clock domain");
+    }
+    private static NavigationTuning schedulerTuning(long roomNanos, long serverNanos) {
+        NavigationTuning defaults = NavigationTuning.DEFAULT;
+        return new NavigationTuning(roomNanos, serverNanos, defaults.roomExpansions(), defaults.roomGeometry(),
+                defaults.serverExpansions(), defaults.serverGeometry(), defaults.sliceExpansions(), defaults.sliceGeometry(),
+                defaults.residentTiles(), defaults.surfaceNodes(), defaults.fineEdges(), defaults.searchRecords(), defaults.failedEdges());
+    }
+    private static NavigationScheduler.Work geometryWork(SchedulerClock clock, long cost, AtomicInteger count,
+            List<Integer> order, int room) {
+        return new NavigationScheduler.Work() {
+            @Override public void advance(NavigationScheduler.Budget budget) {
+                int inSlice = 0;
+                while (budget.geometryRemaining() > 0) {
+                    long started = clock.getAsLong();
+                    budget.accountGeometry(1); count.incrementAndGet(); inSlice++;
+                    if (order != null) order.add(room);
+                    clock.nanos += cost;
+                    budget.recordUnit(NavigationScheduler.UnitKind.GEOMETRY, started);
+                }
+                require(inSlice <= 16, "borrowing must preserve the 16 geometry slice cap");
+            }
+            @Override public boolean finished() { return false; }
+        };
+    }
+    private static NavigationScheduler.Work oneExpansionWork(AtomicInteger count) {
+        return new NavigationScheduler.Work() {
+            @Override public void advance(NavigationScheduler.Budget budget) { if (budget.takeExpansion()) count.incrementAndGet(); }
+            @Override public boolean finished() { return count.get() != 0; }
+        };
+    }
+    private static final class SchedulerClock implements LongSupplier {
+        long nanos;
+        @Override public long getAsLong() { return nanos; }
     }
     private static void portalPathsRetainFineEvidenceAndInvalidateLocally() {
         NavigationGraphCache cache = new NavigationGraphCache();

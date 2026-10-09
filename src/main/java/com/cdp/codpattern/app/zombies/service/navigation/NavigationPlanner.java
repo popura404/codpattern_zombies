@@ -39,10 +39,11 @@ public final class NavigationPlanner implements AutoCloseable {
     public RepairStats repairStats() { return new RepairStats(repairAttempts, repairSucceeded, repairFallbacks, reusedSuffixEdges); }
     public record Stats(long requests, long expansions, long geometry, long nanos, long cacheHits,
             long chunkWaits, long resourceWaits, int activeRequests, int searchRecords, long fastNeighborScans,
-            long simplifiedStairScans, TraversalValidator.SliceReadStats sliceReads) { }
+            long simplifiedStairScans, TraversalValidator.SliceReadStats sliceReads,
+            TraversalValidator.ScanStats scanStats) { }
     public Stats stats() { return new Stats(requests, expansions, geometry, nanos, cache.cacheHits(),
             chunkWaits, resourceWaits, jobs.size(), searchRecords, validator.fastNeighborScans(),
-            validator.simplifiedStairScans(), validator.sliceReadStats()); }
+            validator.simplifiedStairScans(), validator.sliceReadStats(), validator.scanStats()); }
 
     public NavigationPlanner(NavigationContext context) { this(context, NavigationTuning.DEFAULT); }
     public NavigationPlanner(NavigationContext context, NavigationTuning tuning) {

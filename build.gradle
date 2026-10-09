@@ -60,6 +60,14 @@ def navigationScaledRoutes = project.hasProperty('navigationScaledRoutes')
 def navigationArrival = project.hasProperty('navigationArrival')
 def navigationRetarget = project.hasProperty('navigationRetarget')
 def navigationStairs = project.hasProperty('navigationStairs')
+def navigationStairFloor = project.hasProperty('navigationStairFloor')
+        ? findProperty('navigationStairFloor').toString() : 'stone'
+if (!(navigationStairFloor in ['stone', 'stone-bricks', 'cobblestone'])) {
+    throw new GradleException('navigationStairFloor must be stone, stone-bricks, or cobblestone')
+}
+if (project.hasProperty('navigationStairFloor') && !navigationStairs) {
+    throw new GradleException('navigationStairFloor requires navigationStairs')
+}
 def navigationDiagnostic = navigationReference || navigationDropMatrix || navigationDropChanges || navigationDropShapes || navigationLifecycle
         || navigationDropSurfaces || navigationDropContext || navigationRoomLifecycle
         || navigationQualification || navigationChunks || navigationDoors || navigationRaid || navigationScaledRoutes
@@ -130,6 +138,7 @@ def navigationHolder = navigationStairs ? 'codpattern_navigation_stairs'
         : navigationLoadSize ? "codpattern_navigation_load${navigationLoadSize}" : 'codpattern_navigation'
 def navigationResultsDirectory = file(findProperty('navigationResultsDirectory')
         ?: "build/verification/navigation/${navigationEngine}-${navigationScenario}-${navigationSeedText}"
+                + (navigationStairs && navigationStairFloor != 'stone' ? "-${navigationStairFloor}" : '')
                 + (navigationLoadTargetMotion == 'after-deadline' ? '' : "-${navigationLoadTargetMotion}"))
 def navigationComplexCatalog = new groovy.json.JsonSlurper().parse(file('gradle/navigation-complex-window-catalog.json'))
 def navigationComplexScenario = navigationDropContext ? 'drop-context' : navigationScenario
@@ -187,6 +196,7 @@ minecraft {
             property 'codpattern.zombies.navigationSeed', navigationSeedText
             property 'codpattern.zombies.navigationDifficulty', navigationDifficulty
             property 'codpattern.zombies.navigationLoadTargetMotion', navigationLoadTargetMotion
+            property 'codpattern.zombies.navigationStairFloor', navigationStairFloor
             property 'codpattern.zombies.navigationChunkStartsMissing', navigationChunkStartsMissing.toString()
             property 'codpattern.zombies.navigationChunkTargetMovesMissing', navigationChunkTargetMovesMissing.toString()
             property 'codpattern.zombies.navigationResultsDirectory', navigationResultsDirectory.absolutePath
@@ -318,6 +328,7 @@ tasks.matching { it.name == 'runGameTestServer' }.configureEach {
                           expectedGenerateStructures: false, worldEnvironment: 'world-environment.json',
                           navigationDebugEnabled: project.hasProperty('navigationDebug'),
                           targetMotionPolicy: navigationLoadTargetMotion,
+                          stairFloorMaterial: navigationStairs ? navigationStairFloor : null,
                           jfrEnabled: project.hasProperty('navigationJfr')]
             new File(navigationResultsDirectory, 'launch-environment.json').setText(
                     groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(launch)), 'UTF-8')
@@ -381,6 +392,7 @@ tasks.register('archiveNavigationGameTestResult') {
                       chunkStartsMissing: navigationChunkStartsMissing,
                       chunkTargetMovesMissing: navigationChunkTargetMovesMissing,
                       targetMotionPolicy: navigationLoadTargetMotion,
+                      stairFloorMaterial: navigationStairs ? navigationStairFloor : null,
                       worldDifficulty: navigationDifficulty,
                       expectedTests: expected, executedTests: executed, passedTests: executed == null ? null : executed - failed,
                       failedTests: failed, failureNames: failureNames, processExitCode: processExit,

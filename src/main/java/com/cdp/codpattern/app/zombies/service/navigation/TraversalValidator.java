@@ -19,8 +19,10 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +43,7 @@ public final class TraversalValidator {
     // Keep the full entity/profile key, but avoid rereading overlapping shaft layers solely
     // because the hypothetical feet moved down one block. All subclasses retain feetY.
     private static final double CONTEXT_INDEPENDENT_FEET = Double.NEGATIVE_INFINITY;
-    // Raw vanilla state snapshots have no projected-feet dependency. This separate
+    // Proven context-independent state snapshots have no projected-feet dependency. This separate
     // key never supplies CachedCell/path-type evidence to the general shape scan.
     private static final double FLAT_PROOF_STATE = Double.POSITIVE_INFINITY;
     private static final int MAX_LOCAL_BOXES = 1024;
@@ -52,6 +54,35 @@ public final class TraversalValidator {
     private long fastNeighborScans;
     private long simplifiedStairScans;
     private long readBatches,chunkChecks,reusedChunkChecks,tileVersionChecks,reusedTileVersions;
+    private final long[] scanWorkUnits = new long[ScanPhase.values().length];
+    private long blockReads,shapeQueries,geometryCacheHits,flatStateCacheHits;
+
+    private enum ScanPhase {
+        LOCATE("locate"), CONNECTION("connection"), FLAT_PROOF("flatProof"), FLAT_EDGES("flatEdges"),
+        LOCAL_SHAPE("localShape"), NATIVE_CANDIDATES("nativeCandidates"), NATIVE_EDGES("nativeEdges"),
+        FINE_CANDIDATES("fineCandidates"), FINE_EDGES("fineEdges"), DROP("drop"),
+        NEIGHBOR_COMPLETION("neighborCompletion"), VALIDATION("validation"),
+        JUMP_VALIDATION("jumpValidation"), PROBE("probe");
+        private final String key;
+        ScanPhase(String key) { this.key = key; }
+    }
+
+    /**
+     * Lifetime counters for this validator. Each charged advance work unit belongs to exactly
+     * one phase, including retries and completion bookkeeping. Read counters also include
+     * synchronous scans; they count only this class's direct world/shape calls and successful
+     * cell-cache lookups, not reads performed internally by Minecraft or block callbacks.
+     */
+    public record ScanStats(Map<String,Long> workUnits,long blockReads,long shapeQueries,
+            long geometryCacheHits,long flatStateCacheHits) {
+        public ScanStats { workUnits = Collections.unmodifiableMap(new LinkedHashMap<>(workUnits)); }
+    }
+    public ScanStats scanStats() {
+        Map<String,Long> workUnits = new LinkedHashMap<>();
+        for (ScanPhase phase : ScanPhase.values()) workUnits.put(phase.key,scanWorkUnits[phase.ordinal()]);
+        return new ScanStats(workUnits,blockReads,shapeQueries,geometryCacheHits,flatStateCacheHits);
+    }
+    private void recordScanWork(ScanPhase phase) { scanWorkUnits[phase.ordinal()]++; }
 
     public long fastNeighborScans() { return fastNeighborScans; }
     public long simplifiedStairScans() { return simplifiedStairScans; }
@@ -103,6 +134,7 @@ public final class TraversalValidator {
         int used = 0;
         while (!cursor.done && used < workUnits && System.nanoTime() < deadlineNanos) {
             used++;
+            recordScanWork(ScanPhase.JUMP_VALIDATION);
             if (!jumpSnapshotApplies(cursor)) { cursor.finish(Verdict.UNKNOWN); break; }
             if (!cursor.samplesReserved) {
                 if (!cursor.memory.reserve(cursor.plan.samples().size()))
@@ -233,6 +265,7 @@ public final class TraversalValidator {
         int used=0;
         while (!cursor.done && used<workUnits && System.nanoTime()<deadlineNanos) {
             used++;
+            recordScanWork(ScanPhase.VALIDATION);
             if (!context.owns(cursor.mob) || !cursor.mob.onGround()
                     || cursor.mob.position().distanceToSqr(cursor.actual)>0.04) {
                 cursor.verdict=Verdict.UNKNOWN; cursor.done=true; break;
@@ -411,7 +444,7 @@ public final class TraversalValidator {
     public ProbeBatch advanceProbe(ProbeCursor cursor,int workUnits,long deadlineNanos) {
         int used=0;
         while (!cursor.scan.done && used<workUnits && System.nanoTime()<deadlineNanos) {
-            used++; cursor.scan.advance();
+            used++; recordScanWork(ScanPhase.PROBE); cursor.scan.advance();
             if (cursor.scan.waiting) return new ProbeBatch(0,ScanStatus.WAITING_CHUNK,used);
             if (cursor.scan.limited) return new ProbeBatch(0,ScanStatus.RESOURCE_LIMITED,used);
         }
@@ -436,6 +469,7 @@ public final class TraversalValidator {
         int used=0;
         while (!cursor.done && used<workUnits && System.nanoTime()<deadlineNanos) {
             used++;
+            recordScanWork(ScanPhase.LOCATE);
             if (!cursor.scan.done) {
                 cursor.scan.advance();
                 if (cursor.scan.waiting) return new LocateBatch(null,ScanStatus.WAITING_CHUNK,used);
@@ -489,6 +523,7 @@ public final class TraversalValidator {
         int used=0;
         while (!cursor.done && used<workUnits && System.nanoTime()<deadlineNanos) {
             used++;
+            recordScanWork(ScanPhase.CONNECTION);
             if (!cursor.scan.done) {
                 cursor.scan.advance();
                 if (cursor.scan.waiting) return new NeighborBatch(List.of(),ScanStatus.WAITING_CHUNK,used);
@@ -542,11 +577,13 @@ public final class TraversalValidator {
             if (cursor.flat != null && !cursor.flat.failed) {
                 FlatProof flat = cursor.flat;
                 if (!flat.proved) {
+                    recordScanWork(ScanPhase.FLAT_PROOF);
                     flat.advance();
                     if (flat.waiting) return new NeighborBatch(ready, ScanStatus.WAITING_CHUNK, used);
                     if (flat.limited) return new NeighborBatch(ready, ScanStatus.RESOURCE_LIMITED, used);
                     continue;
                 }
+                recordScanWork(ScanPhase.FLAT_EDGES);
                 if (flat.outputIndex < DIRECTIONS.length) {
                     int[] direction = DIRECTIONS[flat.outputIndex];
                     Vec3 from = cursor.from.feet();
@@ -560,12 +597,14 @@ public final class TraversalValidator {
                 continue;
             }
             if (!cursor.local.done) {
+                recordScanWork(ScanPhase.LOCAL_SHAPE);
                 cursor.local.advance();
                 if (cursor.local.waiting) return new NeighborBatch(ready, ScanStatus.WAITING_CHUNK, used);
                 if (cursor.local.limited) return new NeighborBatch(ready, ScanStatus.RESOURCE_LIMITED, used);
                 continue;
             }
             if (!cursor.nativeGenerated) {
+                recordScanWork(ScanPhase.NATIVE_CANDIDATES);
                 int end=Math.min(cursor.local.boxes.size(),cursor.nativeBoxIndex+SHAPE_BATCH);
                 while (cursor.nativeBoxIndex<end) {
                     AABB box=cursor.local.boxes.get(cursor.nativeBoxIndex);
@@ -610,6 +649,7 @@ public final class TraversalValidator {
                 continue;
             }
             if (cursor.nativeIndex<cursor.nativePending.size()) {
+                recordScanWork(ScanPhase.NATIVE_EDGES);
                 Vec3 feet=cursor.nativePending.get(cursor.nativeIndex);
                 TraversalEdge edge=localEdge(cursor.mob,cursor.from,feet,cursor.profile,cursor.local);
                 if (edge!=null) {
@@ -621,6 +661,7 @@ public final class TraversalValidator {
                 continue;
             }
             if (!cursor.generated) {
+                recordScanWork(ScanPhase.FINE_CANDIDATES);
                 if (!cursor.includeDetail && cursor.local.partialHorizontal && !cursor.canSimplifyStairs()) {
                     cursor.exhaustive=false;
                     cursor.done=true;
@@ -631,6 +672,7 @@ public final class TraversalValidator {
                 continue;
             }
             if (cursor.candidateIndex < cursor.candidates.size()) {
+                recordScanWork(ScanPhase.FINE_EDGES);
                 Vec3 feet = cursor.candidates.get(cursor.candidateIndex);
                 if (cursor.nativeCandidates.contains(feet)) { cursor.candidateIndex++; continue; }
                 TraversalEdge edge = localEdge(cursor.mob, cursor.from, feet, cursor.profile, cursor.local);
@@ -642,6 +684,7 @@ public final class TraversalValidator {
                 continue;
             }
             if (cursor.drop != null) {
+                recordScanWork(ScanPhase.DROP);
                 TraversalEdge edge = cursor.drop.advance();
                 if (cursor.drop.scan != null && cursor.drop.scan.waiting)
                     return new NeighborBatch(ready, ScanStatus.WAITING_CHUNK, used);
@@ -656,10 +699,12 @@ public final class TraversalValidator {
                 continue;
             }
             if (cursor.dropIndex < cursor.departures.size()) {
+                recordScanWork(ScanPhase.DROP);
                 cursor.drop = new DropCursor(cursor.mob, cursor.from, cursor.departures.get(cursor.dropIndex++),
                         cursor.profile, cursor.local.dependencies,true);
                 continue;
             }
+            recordScanWork(ScanPhase.NEIGHBOR_COMPLETION);
             cursor.done = true;
         }
         return new NeighborBatch(ready, cursor.done ? ScanStatus.COMPLETE : ScanStatus.PENDING, used);
@@ -769,26 +814,26 @@ public final class TraversalValidator {
                     dependencies.put(tile,version);
                 }
                 BlockState state=(BlockState)cache.geometryCell(profile,FLAT_PROOF_STATE,pos);
+                boolean cachedState=state!=null;
                 if (state==null) {
+                    blockReads++;
                     state=context.level().getBlockState(pos); reads++;
-                    if (plainStone(state) || plainAir(state))
-                        cache.putGeometryCell(profile,FLAT_PROOF_STATE,pos,state);
-                }
+                } else flatStateCacheHits++;
                 cells++;
-                boolean stone=plainStone(state),air=plainAir(state);
-                // A strict whitelist also excludes Forge path hooks and collision
-                // contexts on custom blocks. Check FIRE tags even on these states.
-                if ((!stone && !air) || WalkNodeEvaluator.isBurningBlock(state)
+                boolean air=plainAir(state);
+                boolean solid=!air && OrdinaryBlockClassifier.isOrdinarySolid(state,context.level(),pos);
+                if (!cachedState && (solid || air))
+                    cache.putGeometryCell(profile,FLAT_PROOF_STATE,pos,state);
+                // Only behavior-proven full cubes qualify as floor support. Unknown
+                // shapes/path hooks fall back, and reloadable tags are rechecked even
+                // for cached states and the three ordinary air states.
+                if ((!solid && !air) || air && OrdinaryBlockClassifier.hasSpecialPathTags(state)
                         || !state.getFluidState().isEmpty()
-                        || y==floorY && !stone || y>floorY && y<=clearThroughY && !air) {
+                        || y==floorY && !solid || y>floorY && y<=clearThroughY && !air) {
                     fail(); return;
                 }
                 if (++x>bounds.maxX) { x=bounds.minX; if (++z>bounds.maxZ) { z=bounds.minZ; y++; } }
             }
-        }
-        private boolean plainStone(BlockState state) {
-            return state==Blocks.STONE.defaultBlockState()
-                    && state.getBlock().getClass()==net.minecraft.world.level.block.Block.class;
         }
         private boolean plainAir(BlockState state) {
             return state.getBlock().getClass()==net.minecraft.world.level.block.AirBlock.class
@@ -1257,12 +1302,14 @@ public final class TraversalValidator {
                 CachedCell cell=cacheProfile==null?null:(CachedCell)cache.geometryCell(cacheProfile,CONTEXT_INDEPENDENT_FEET,pos);
                 if (cell==null && cacheProfile!=null) cell=(CachedCell)cache.geometryCell(cacheProfile,feetY,pos);
                 if (cell==null) {
+                    blockReads++;
                     var state=context.level().getBlockState(pos);
                     if (jumpMotionChecks && new AABB(pos).intersects(area)
                             && (state.getBlock().getSpeedFactor() != 1.0F || state.is(Blocks.COBWEB)
                             || state.is(Blocks.SCAFFOLDING) || state.is(BlockTags.CLIMBABLE)))
                         jumpMotionBlocked = true;
                     BlockPathTypes type=WalkNodeEvaluator.getBlockPathTypeStatic(context.level(),pos.mutable());
+                    shapeQueries++;
                     VoxelShape shape=state.getCollisionShape(context.level(),pos,new ProjectedCollisionContext(mob,feetY));
                     List<AABB> shapeBoxes=shape.move(x,y,z).toAabbs();
                     // The third-party callback itself is indivisible; reject its oversized result
@@ -1279,7 +1326,7 @@ public final class TraversalValidator {
                         cache.putGeometryCell(cacheProfile,independent?CONTEXT_INDEPENDENT_FEET:feetY,pos,cell);
                     }
                     blocks++;
-                }
+                } else geometryCacheHits++;
                 boolean hazard=dangerous(cell.type()) || cell.fluid();
                 if (!reserve(cell.boxes().size()+(hazard && retainGeometry?1:0))) return;
                 cells++;

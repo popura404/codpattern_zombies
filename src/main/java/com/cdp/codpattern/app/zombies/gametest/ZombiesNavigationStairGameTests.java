@@ -5,6 +5,7 @@ import com.cdp.codpattern.app.zombies.service.navigation.LayeredNavigationRuntim
 import com.cdp.codpattern.app.zombies.service.navigation.MovementProfile;
 import com.cdp.codpattern.app.zombies.service.navigation.NavigationContext;
 import com.cdp.codpattern.app.zombies.service.navigation.NavigationGraphCache;
+import com.cdp.codpattern.app.zombies.service.navigation.OrdinaryBlockClassifier;
 import com.cdp.codpattern.app.zombies.service.navigation.SurfaceNode;
 import com.cdp.codpattern.app.zombies.service.navigation.TraversalEdge;
 import com.cdp.codpattern.app.zombies.service.navigation.TraversalValidator;
@@ -12,13 +13,24 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.StairBlock;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.pathfinder.BlockPathTypes;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
@@ -355,8 +367,152 @@ public final class ZombiesNavigationStairGameTests {
     }
 
     @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
-    public static void brickFloorRetainsAllExitsThroughGeneralShapeScanning(GameTestHelper helper) {
+    public static void brickFloorKeepsEightExitsThroughTheOrdinaryBlockFastProof(GameTestHelper helper) {
         flatGeometry(helper, FlatScenario.BRICKS);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
+    public static void cobblestoneFloorKeepsEightExitsThroughTheOrdinaryBlockFastProof(GameTestHelper helper) {
+        flatGeometry(helper, FlatScenario.COBBLESTONE);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
+    public static void glassFloorKeepsEightExitsThroughTheOrdinaryBlockFastProof(GameTestHelper helper) {
+        flatGeometry(helper, FlatScenario.GLASS);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
+    public static void logFloorKeepsEightExitsThroughTheOrdinaryBlockFastProof(GameTestHelper helper) {
+        flatGeometry(helper, FlatScenario.LOG);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
+    public static void oreFloorKeepsEightExitsThroughTheOrdinaryBlockFastProof(GameTestHelper helper) {
+        flatGeometry(helper, FlatScenario.ORE);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
+    public static void plankFloorKeepsEightExitsThroughTheOrdinaryBlockFastProof(GameTestHelper helper) {
+        flatGeometry(helper, FlatScenario.PLANKS);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
+    public static void slipperyFullCubeFloorRetainsEightExitsThroughGeneralShapeScanning(GameTestHelper helper) {
+        flatGeometry(helper, FlatScenario.ICE);
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 100)
+    public static void ordinaryVanillaCubeStatesIncludeTransparentAndInheritedBlockClasses(GameTestHelper helper) {
+        BlockPos pos = helper.absolutePos(new BlockPos(8, 2, 8));
+        for (Block block : List.of(Blocks.STONE, Blocks.STONE_BRICKS, Blocks.COBBLESTONE, Blocks.GLASS,
+                Blocks.OAK_LOG, Blocks.IRON_ORE, Blocks.OAK_PLANKS, Blocks.DIRT)) {
+            helper.assertTrue(OrdinaryBlockClassifier.isOrdinarySolid(block.defaultBlockState(), helper.getLevel(), pos),
+                    "ordinary full-cube classification must depend on walking behavior, not one material or exact Block class: "
+                            + block);
+        }
+        helper.assertTrue(!Blocks.GLASS.defaultBlockState().canOcclude(),
+                "the accepted glass state must exercise the non-occluding full-collision-cube boundary");
+        helper.succeed();
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 100)
+    public static void specialAndPartialVanillaStatesCannotBecomeOrdinaryCubes(GameTestHelper helper) {
+        BlockPos pos = helper.absolutePos(new BlockPos(8, 2, 8));
+        for (Block block : List.of(Blocks.ICE, Blocks.PACKED_ICE, Blocks.BLUE_ICE, Blocks.MAGMA_BLOCK,
+                Blocks.SLIME_BLOCK, Blocks.HONEY_BLOCK, Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE,
+                Blocks.SOUL_SAND, Blocks.SOUL_SOIL, Blocks.STONE_SLAB, Blocks.STONE_STAIRS, Blocks.OAK_FENCE,
+                Blocks.OAK_LEAVES, Blocks.COBWEB, Blocks.POWDER_SNOW, Blocks.WATER, Blocks.LAVA,
+                Blocks.AIR, Blocks.STRUCTURE_VOID, Blocks.MOVING_PISTON, Blocks.BAMBOO)) {
+            helper.assertTrue(!OrdinaryBlockClassifier.isOrdinarySolid(block.defaultBlockState(), helper.getLevel(), pos),
+                    "special movement, context-dependent, fluid, non-colliding or partial geometry must fall back: " + block);
+        }
+        helper.assertTrue(Block.isShapeFullBlock(Blocks.PACKED_ICE.defaultBlockState()
+                        .getCollisionShape(helper.getLevel(), pos)),
+                "the friction counterexample must really have a complete cube collision shape");
+        helper.assertTrue(Blocks.STRUCTURE_VOID.defaultBlockState().getCollisionShape(helper.getLevel(), pos).isEmpty(),
+                "the non-colliding counterexample must really have no solid collision shape");
+        helper.assertTrue(Blocks.MOVING_PISTON.hasDynamicShape(),
+                "the rejected moving piston must exercise dynamic-shape properties");
+        helper.assertTrue(Blocks.BAMBOO.defaultBlockState().hasOffsetFunction(),
+                "the rejected bamboo state must exercise offset geometry");
+        helper.succeed();
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 100)
+    public static void inheritedOrdinaryClassBehaviorAcceptsDecorationOnlyModStyleSubclasses(GameTestHelper helper) {
+        helper.assertTrue(OrdinaryBlockClassifier.hasOrdinaryBehavior(Block.class),
+                "the default Block class must satisfy the ordinary behavior proof");
+        helper.assertTrue(OrdinaryBlockClassifier.hasOrdinaryBehavior(DecorativeCubeBlock.class)
+                        && OrdinaryBlockClassifier.hasOrdinaryBehavior(InheritedDecorativeCubeBlock.class),
+                "mod-style subclasses that inherit ordinary movement behavior must pass the class proof");
+        // Class literals deliberately avoid creating unregistered intrusive registry holders after registry freeze.
+        // These assertions prove inherited method behavior; actual state and neighbor geometry are tested separately.
+        helper.succeed();
+    }
+
+    @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 100)
+    public static void overriddenCollisionAndForgeHooksCannotPassTheOrdinaryClassBehaviorProof(GameTestHelper helper) {
+        List<Class<? extends Block>> specialClasses = List.of(ContextCollisionCubeBlock.class,
+                ContextOutlineCubeBlock.class, ForgePathCubeBlock.class, ForgeAdjacentPathCubeBlock.class,
+                ForgeFrictionCubeBlock.class, StepEffectCubeBlock.class, InsideEffectCubeBlock.class);
+        for (Class<? extends Block> blockClass : specialClasses) {
+            helper.assertTrue(!OrdinaryBlockClassifier.hasOrdinaryBehavior(blockClass),
+                    "an entity/context-sensitive override must fall back even when its empty-context shape looks full: "
+                            + blockClass.getSimpleName());
+        }
+        helper.succeed();
+    }
+
+    private static class DecorativeCubeBlock extends Block {
+        private DecorativeCubeBlock() { super(BlockBehaviour.Properties.of().strength(1.0F)); }
+    }
+
+    private static final class InheritedDecorativeCubeBlock extends DecorativeCubeBlock { }
+
+    private static final class ContextCollisionCubeBlock extends DecorativeCubeBlock {
+        @Override
+        public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+            return context.isDescending() ? Shapes.empty() : Shapes.block();
+        }
+    }
+
+    private static final class ContextOutlineCubeBlock extends DecorativeCubeBlock {
+        @Override
+        public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+            return context.isDescending() ? Shapes.empty() : Shapes.block();
+        }
+    }
+
+    private static final class ForgePathCubeBlock extends DecorativeCubeBlock {
+        @Override
+        public BlockPathTypes getBlockPathType(BlockState state, BlockGetter level, BlockPos pos, Mob mob) {
+            return BlockPathTypes.DAMAGE_FIRE;
+        }
+    }
+
+    private static final class ForgeAdjacentPathCubeBlock extends DecorativeCubeBlock {
+        @Override
+        public BlockPathTypes getAdjacentBlockPathType(BlockState state, BlockGetter level, BlockPos pos,
+                                                      Mob mob, BlockPathTypes originalType) {
+            return BlockPathTypes.DANGER_FIRE;
+        }
+    }
+
+    private static final class ForgeFrictionCubeBlock extends DecorativeCubeBlock {
+        @Override
+        public float getFriction(BlockState state, LevelReader level, BlockPos pos, Entity entity) {
+            return entity == null ? 0.6F : 0.98F;
+        }
+    }
+
+    private static final class StepEffectCubeBlock extends DecorativeCubeBlock {
+        @Override
+        public void stepOn(Level level, BlockPos pos, BlockState state, Entity entity) { }
+    }
+
+    private static final class InsideEffectCubeBlock extends DecorativeCubeBlock {
+        @Override
+        public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) { }
     }
 
     @GameTest(template = "zombies_navigation", batch = "navigation_flat_geometry", timeoutTicks = 400)
@@ -384,14 +540,37 @@ public final class ZombiesNavigationStairGameTests {
         flatGeometry(helper, FlatScenario.MUTATION);
     }
 
-    private enum FlatScenario { CLEAR, BRICKS, STAIR_SUPPORT, CORNER, DANGER, MUTATION, MID_SCAN_MUTATION }
+    private enum FlatScenario {
+        CLEAR, BRICKS, COBBLESTONE, GLASS, LOG, ORE, PLANKS, ICE,
+        STAIR_SUPPORT, CORNER, DANGER, MUTATION, MID_SCAN_MUTATION;
+
+        Block floor() {
+            return switch (this) {
+                case BRICKS -> Blocks.STONE_BRICKS;
+                case COBBLESTONE -> Blocks.COBBLESTONE;
+                case GLASS -> Blocks.GLASS;
+                case LOG -> Blocks.OAK_LOG;
+                case ORE -> Blocks.IRON_ORE;
+                case PLANKS -> Blocks.OAK_PLANKS;
+                case ICE -> Blocks.PACKED_ICE;
+                default -> Blocks.STONE;
+            };
+        }
+
+        boolean fastProofExpected() {
+            return switch (this) {
+                case CLEAR, BRICKS, COBBLESTONE, GLASS, LOG, ORE, PLANKS, MUTATION -> true;
+                default -> false;
+            };
+        }
+    }
 
     private static void flatGeometry(GameTestHelper helper, FlatScenario scenario) {
         // A broad integer-height floor and empty body/halo volume provide the ordinary
         // flat-terrain case. Each counterexample changes only the relevant geometry.
         for (int x = 3; x <= 18; x++) for (int z = 3; z <= 18; z++) for (int y = 0; y <= 8; y++) {
             helper.setBlock(new BlockPos(x, y, z), y <= 2
-                    ? scenario == FlatScenario.BRICKS ? Blocks.STONE_BRICKS : Blocks.STONE : Blocks.AIR);
+                    ? scenario.floor() : Blocks.AIR);
         }
         if (scenario == FlatScenario.STAIR_SUPPORT) {
             helper.setBlock(new BlockPos(9, 2, 8), Blocks.STONE_STAIRS.defaultBlockState()
@@ -495,13 +674,13 @@ public final class ZombiesNavigationStairGameTests {
                     return;
                 }
                 if (batch.status() != TraversalValidator.ScanStatus.COMPLETE) return;
-                helper.assertTrue(validator.fastNeighborScans() == (scenario == FlatScenario.CLEAR
-                                || scenario == FlatScenario.MUTATION ? 1 : 0),
-                        "clear stone must exercise the fast proof; corners and danger must use full geometry");
+                helper.assertTrue(validator.fastNeighborScans() == (scenario.fastProofExpected() ? 1 : 0),
+                        "ordinary complete floors must exercise the fast proof; special floors, corners and danger must use full geometry: "
+                                + scenario);
                 if (scenario == FlatScenario.STAIR_SUPPORT) helper.assertTrue(validator.simplifiedStairScans() == 1,
                         "a proven connected stair top must exercise the redundant-offset shortcut");
                 switch (scenario) {
-                    case CLEAR, BRICKS, STAIR_SUPPORT -> {
+                    case CLEAR, BRICKS, COBBLESTONE, GLASS, LOG, ORE, PLANKS, ICE, STAIR_SUPPORT -> {
                         helper.assertTrue(edges.size() == 8, "an unobstructed centred floor must expose all eight neighbours");
                         for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++) {
                             if (dx == 0 && dz == 0) continue;
@@ -646,49 +825,62 @@ public final class ZombiesNavigationStairGameTests {
     // A work-count gate is stable across hardware; the previous exhaustive search used over 300k.
     private static final long FIRST_STAIR_ROUTE_GEOMETRY_LIMIT = 100_000;
     private static final BlockPos STAIR_ROOM_SIZE = new BlockPos(48, 20, 54);
+    private static final String STAIR_FLOOR_MATERIAL = System.getProperty("codpattern.zombies.navigationStairFloor", "stone");
+    private static final Block STAIR_FLOOR_BLOCK = switch (STAIR_FLOOR_MATERIAL) {
+        case "stone" -> Blocks.STONE;
+        case "stone-bricks" -> Blocks.STONE_BRICKS;
+        case "cobblestone" -> Blocks.COBBLESTONE;
+        default -> throw new IllegalArgumentException("Unknown navigationStairFloor: " + STAIR_FLOOR_MATERIAL);
+    };
 
     @GameTest(setupTicks = 20, template = "zombies_navigation_distant_stairs", batch = "navigation_distant_stairs", timeoutTicks = STAIR_DEADLINE + 10)
     public static void originalZombieClimbsDistantStairsPastLowStepsToFixedUpperPlayer(GameTestHelper helper) {
         ZombiesNavigationTestTiming.begin(helper, "distant-stairs-low-approach", false);
+        var floorState = STAIR_FLOOR_BLOCK.defaultBlockState();
+        helper.assertTrue(STAIR_FLOOR_BLOCK.getClass() == Block.class
+                        && Block.isShapeFullBlock(floorState.getCollisionShape(helper.getLevel(), helper.absolutePos(BlockPos.ZERO)))
+                        && floorState.getFluidState().isEmpty() && STAIR_FLOOR_BLOCK.getSpeedFactor() == 1.0F,
+                "the material comparison requires an ordinary full-block floor with no fluid or movement slowdown");
         // The open lower floor is wide enough that searching all nearby positions below the
         // player is much cheaper heuristically than first walking away to the actual stairs.
         for (int x = 0; x < STAIR_ROOM_SIZE.getX(); x++) {
             for (int z = 0; z < STAIR_ROOM_SIZE.getZ(); z++) {
                 for (int y = 0; y < STAIR_ROOM_SIZE.getY(); y++) {
                     boolean shell = x == 0 || x == 47 || z == 0 || z == 53 || y == 0 || y == 19;
-                    helper.setBlock(new BlockPos(x, y, z), shell ? Blocks.STONE : Blocks.AIR);
+                    helper.setBlock(new BlockPos(x, y, z), y == 0 ? STAIR_FLOOR_BLOCK
+                            : shell ? Blocks.STONE : Blocks.AIR);
                 }
             }
         }
         // The target's upper floor covers the start and the short approach steps. A side
         // gallery connects it to the far landing without putting a ceiling over the ascent.
         for (int x = 1; x <= 46; x++) for (int z = 1; z <= 25; z++) {
-            helper.setBlock(new BlockPos(x, 14, z), Blocks.STONE);
+            helper.setBlock(new BlockPos(x, 14, z), STAIR_FLOOR_BLOCK);
         }
         for (int x = 2; x <= 6; x++) for (int z = 26; z <= 44; z++) {
-            helper.setBlock(new BlockPos(x, 14, z), Blocks.STONE);
+            helper.setBlock(new BlockPos(x, 14, z), STAIR_FLOOR_BLOCK);
         }
         for (int x = 1; x <= 46; x++) for (int z = 45; z <= 50; z++) {
-            helper.setBlock(new BlockPos(x, 14, z), Blocks.STONE);
+            helper.setBlock(new BlockPos(x, 14, z), STAIR_FLOOR_BLOCK);
         }
         // Three real low stairs first lead to a raised lower floor. Its near lip is the
         // tempting local high point below the stationary player, but it cannot reach them.
         for (int x = 1; x <= 46; x++) {
             for (int z = 10; z <= 12; z++) {
                 int support = z - 9;
-                for (int y = 1; y < support; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+                for (int y = 1; y < support; y++) helper.setBlock(new BlockPos(x, y, z), STAIR_FLOOR_BLOCK);
                 helper.setBlock(new BlockPos(x, support, z), Blocks.STONE_STAIRS.defaultBlockState()
                         .setValue(StairBlock.FACING, Direction.SOUTH));
             }
             for (int z = 13; z <= 33; z++) for (int y = 1; y <= 3; y++) {
-                helper.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+                helper.setBlock(new BlockPos(x, y, z), STAIR_FLOOR_BLOCK);
             }
         }
         // The only ascent is 27 blocks horizontally from the initial player column;
         // its top is 37 blocks away, both comfortably inside the reported 50-block range.
         for (int x = 22; x <= 26; x++) for (int z = 34; z <= 44; z++) {
             int support = z - 30;
-            for (int y = 1; y < support; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.STONE);
+            for (int y = 1; y < support; y++) helper.setBlock(new BlockPos(x, y, z), STAIR_FLOOR_BLOCK);
             helper.setBlock(new BlockPos(x, support, z), Blocks.STONE_STAIRS.defaultBlockState()
                     .setValue(StairBlock.FACING, Direction.SOUTH));
         }
@@ -721,6 +913,8 @@ public final class ZombiesNavigationStairGameTests {
         long firstActiveEdgeTick = -1, firstActiveEdgeGeometry = -1, firstActiveEdgeExpansions = -1;
         long firstFollowTick = -1, firstFollowGeometry = -1, firstFollowExpansions = -1;
         long firstSearchRequestNanos = -1, firstActiveEdgeNanos = -1, firstObservedRouteMotionTick = -1;
+        long lastObservedGeometry = -1;
+        TraversalValidator.ScanStats firstSearchRequestScans, firstActiveEdgeScans, lastObservedScans;
 
         DistantStairRun(GameTestHelper helper, ZombiesNavigationGameTests.Fixture fixture, Mob mob) {
             this.helper = helper;
@@ -756,6 +950,8 @@ public final class ZombiesNavigationStairGameTests {
                 var runtime = com.cdp.codpattern.app.zombies.service.navigation.LayeredNavigationRuntime.of(mob);
                 if (runtime != null) {
                     var stats = runtime.planningStats();
+                    lastObservedScans = stats.scanStats();
+                    lastObservedGeometry = stats.geometry();
                     // Observe before recycling can unregister the controller. These are tick-granularity
                     // observations and cumulative planner counters, not wall-clock or CPU timings.
                     if (firstSearchRequestTick < 0 && stats.requests() > 0) {
@@ -763,6 +959,7 @@ public final class ZombiesNavigationStairGameTests {
                         firstSearchRequestGeometry = stats.geometry();
                         firstSearchRequestExpansions = stats.expansions();
                         firstSearchRequestNanos = stats.nanos();
+                        firstSearchRequestScans = lastObservedScans;
                     }
                     TraversalEdge active = runtime.activeEdge(mob);
                     if (firstActiveEdgeTick < 0 && active != null) {
@@ -770,7 +967,11 @@ public final class ZombiesNavigationStairGameTests {
                         firstActiveEdgeGeometry = stats.geometry();
                         firstActiveEdgeExpansions = stats.expansions();
                         firstActiveEdgeNanos = stats.nanos();
+                        firstActiveEdgeScans = lastObservedScans;
                         firstActivePosition = position;
+                        helper.assertTrue(scanWorkUnits(firstActiveEdgeScans) - scanWorkUnits(firstSearchRequestScans)
+                                        == firstActiveEdgeGeometry - firstSearchRequestGeometry,
+                                "first-route scan stage work must reconcile with the same observed geometry interval");
                         helper.assertTrue(firstActiveEdgeGeometry - firstSearchRequestGeometry < FIRST_STAIR_ROUTE_GEOMETRY_LIMIT,
                                 "the initial distant-stair route must avoid exhaustive fractional search below the player");
                     }
@@ -788,6 +989,8 @@ public final class ZombiesNavigationStairGameTests {
                     int expansions = (int) (stats.expansions() - previousExpansions);
                     maxGeometry = Math.max(maxGeometry, geometry);
                     maxExpansions = Math.max(maxExpansions, expansions);
+                    helper.assertTrue(scanWorkUnits(lastObservedScans) == lastObservedGeometry,
+                            "cumulative scan stage work must reconcile with cumulative planner geometry work");
                     helper.assertTrue(geometry <= 256 && expansions <= 1024 && runtime.schedulerMetrics().geometry() <= 1024
                                     && runtime.schedulerMetrics().expansions() <= 4096,
                             "distant stair searches must retain the existing room/server work budgets");
@@ -843,6 +1046,8 @@ public final class ZombiesNavigationStairGameTests {
             report.put("target", point(target.subtract(origin)));
             report.put("end", point(mob.position().subtract(origin)));
             report.put("floorSeparation", 14);
+            report.put("stairFloorMaterial", STAIR_FLOOR_MATERIAL);
+            report.put("stairFloorMaterialScope", "distant scene only: lower floor, upper platforms, raised lower floor, and solid supports beneath both stair runs; walls, roof and all stone stairs remain unchanged");
             report.put("realStairBlocks", true);
             report.put("climbedLowSteps", climbedLowSteps);
             report.put("enteredFarAscent", enteredFarAscent);
@@ -874,6 +1079,18 @@ public final class ZombiesNavigationStairGameTests {
             report.put("firstRequestToFollowTicks", firstSearchRequestTick < 0 || firstFollowTick < 0
                     ? -1 : firstFollowTick - firstSearchRequestTick);
             report.put("firstRouteGeometryLimit", FIRST_STAIR_ROUTE_GEOMETRY_LIMIT);
+            report.put("firstRouteGeometry", firstSearchRequestGeometry < 0 || firstActiveEdgeGeometry < 0
+                    ? null : firstActiveEdgeGeometry - firstSearchRequestGeometry);
+            report.put("scanStatisticsMeasurement", "cumulative room validator work observed once per GameTest tick; workUnits are accounted geometry work by scan stage, not blocks or CPU time; blockReads and shapeQueries count explicit validator calls, including synchronous checks but excluding reads inside Minecraft callbacks; cache hits count reused values; absent milestones are null");
+            report.put("firstSearchRequestScanStats", firstSearchRequestScans);
+            report.put("firstActiveEdgeScanStats", firstActiveEdgeScans);
+            report.put("firstRouteScanStats", scanDifference(firstActiveEdgeScans, firstSearchRequestScans));
+            report.put("firstRouteScanWorkUnits", firstSearchRequestScans == null || firstActiveEdgeScans == null
+                    ? null : scanWorkUnits(firstActiveEdgeScans) - scanWorkUnits(firstSearchRequestScans));
+            report.put("lastObservedScanStats", lastObservedScans);
+            report.put("lastObservedGeometry", lastObservedGeometry < 0 ? null : lastObservedGeometry);
+            report.put("lastObservedScanWorkUnits", lastObservedScans == null ? null : scanWorkUnits(lastObservedScans));
+            report.put("firstRequestToLastObservedScanStats", scanDifference(lastObservedScans, firstSearchRequestScans));
             report.put("runtime", fixture.spawnService.navigationRuntimeMetrics());
             report.put("execution", runtime == null ? "legacy" : runtime.describe(mob));
             report.put("trajectory", trajectory);
@@ -883,6 +1100,21 @@ public final class ZombiesNavigationStairGameTests {
             if (success) ZombiesNavigationTestTiming.succeed(helper);
             else ZombiesNavigationTestTiming.fail(helper, reason);
         }
+    }
+
+    private static long scanWorkUnits(TraversalValidator.ScanStats stats) {
+        return stats.workUnits().values().stream().mapToLong(Long::longValue).sum();
+    }
+
+    private static TraversalValidator.ScanStats scanDifference(TraversalValidator.ScanStats end,
+                                                                TraversalValidator.ScanStats start) {
+        if (end == null || start == null) return null;
+        java.util.Map<String, Long> workUnits = new java.util.LinkedHashMap<>();
+        end.workUnits().forEach((stage, units) -> workUnits.put(stage, units - start.workUnits().getOrDefault(stage, 0L)));
+        start.workUnits().forEach((stage, units) -> workUnits.putIfAbsent(stage, -units));
+        return new TraversalValidator.ScanStats(workUnits, end.blockReads() - start.blockReads(),
+                end.shapeQueries() - start.shapeQueries(), end.geometryCacheHits() - start.geometryCacheHits(),
+                end.flatStateCacheHits() - start.flatStateCacheHits());
     }
 
     private static List<Double> point(Vec3 value) { return List.of(value.x, value.y, value.z); }

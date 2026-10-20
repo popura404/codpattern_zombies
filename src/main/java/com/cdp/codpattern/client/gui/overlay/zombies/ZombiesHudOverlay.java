@@ -4,6 +4,7 @@ import com.cdp.codpattern.app.match.model.ModeObjectState;
 import com.cdp.codpattern.app.zombies.item.ZombiesRequiredItem;
 import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponItemStackService;
+import com.cdp.codpattern.app.zombies.service.ZombiesBaseGunAmmoService;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponInventoryService;
 import com.cdp.codpattern.app.zombies.sync.ZombiesObjectStateKeys;
 import com.cdp.codpattern.client.ClientMatchState;
@@ -728,21 +729,34 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             boolean taczInteractKey
     ) {
         if (isEmpty(mainHand) || !TaczClientApi.isGun(mainHand)) {
-            return Optional.of(disabledPrompt("主手持僵尸枪械补弹"));
+            return Optional.of(disabledPrompt(Component.translatable(
+                    "hud.codpattern.zombies.ammo.hold_weapon").getString()));
         }
         Optional<HeldWeaponPromptData> weapon = heldWeaponPromptData(mainHand, roomKey);
         if (weapon.isEmpty()) {
-            return Optional.of(disabledPrompt("当前武器无法补弹"));
+            return Optional.of(disabledPrompt(Component.translatable(
+                    "hud.codpattern.zombies.ammo.unavailable_weapon").getString()));
         }
         HeldWeaponPromptData data = weapon.get();
-        if (data.maxReserveAmmo() > 0 && data.reserveAmmo() >= data.maxReserveAmmo()) {
-            return Optional.of(disabledPrompt(data.gunId() + " 等级 " + data.weaponLevel() + " 弹药已满"));
+        if (data.reserveStatus() != ZombiesBaseGunAmmoService.ReserveStatus.VALID) {
+            return Optional.of(disabledPrompt(Component.translatable(
+                    "hud.codpattern.zombies.ammo.base_reserve_unavailable").getString()));
+        }
+        if (data.maxReserveAmmo() == 0) {
+            return Optional.of(disabledPrompt(Component.translatable(
+                    "hud.codpattern.zombies.ammo.no_reserve_capacity").getString()));
+        }
+        if (data.reserveAmmo() >= data.maxReserveAmmo()) {
+            return Optional.of(disabledPrompt(Component.translatable(
+                    "hud.codpattern.zombies.ammo.already_full", data.gunId(), data.weaponLevel()).getString()));
         }
         int cost = ammoCost(payload, data.weaponLevel());
         if (cost < 0) {
-            return Optional.of(disabledPrompt(data.gunId() + " 等级 " + data.weaponLevel() + " 无补弹价格"));
+            return Optional.of(disabledPrompt(Component.translatable(
+                    "hud.codpattern.zombies.ammo.missing_price", data.gunId(), data.weaponLevel()).getString()));
         }
-        return Optional.of(activePrompt("补满 " + data.gunId() + " 等级 " + data.weaponLevel() + " - " + cost + "点",
+        return Optional.of(activePrompt(Component.translatable(
+                "hud.codpattern.zombies.ammo.refill_price", data.gunId(), data.weaponLevel(), cost).getString(),
                 taczInteractKey));
     }
 
@@ -933,21 +947,14 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
         if (gunId.isBlank() || weaponLevel <= 0) {
             return Optional.empty();
         }
-        int reserveAmmo = positiveIntTag(tag, ZombiesWeaponItemStackService.TAG_RESERVE_AMMO);
-        int maxReserveAmmo = positiveIntTag(tag, ZombiesWeaponItemStackService.TAG_MAX_RESERVE_AMMO);
-        if (TaczClientApi.isGun(stack)) {
-            int liveMaxReserveAmmo = Math.max(0, TaczClientApi.resolveMaxReserveAmmo(stack));
-            if (liveMaxReserveAmmo > 0) {
-                reserveAmmo = Math.max(0, Math.min(TaczClientApi.resolveReserveAmmo(stack), liveMaxReserveAmmo));
-                maxReserveAmmo = liveMaxReserveAmmo;
-            }
-        }
+        ZombiesBaseGunAmmoService.ReserveAmmo reserve = ZombiesBaseGunAmmoService.readReserve(stack);
         return Optional.of(new HeldWeaponPromptData(
                 gunId,
                 weaponLevel,
                 positiveIntTag(tag, ZombiesWeaponItemStackService.TAG_UPGRADE_LEVEL),
-                reserveAmmo,
-                maxReserveAmmo));
+                reserve.valid() ? reserve.current() : 0,
+                reserve.valid() ? reserve.maximum() : 0,
+                reserve.status()));
     }
 
     /** Returns whether the same layout used by the renderer is drawable now. */
@@ -1479,7 +1486,8 @@ public final class ZombiesHudOverlay implements IGuiOverlay {
             int weaponLevel,
             int upgradeLevel,
             int reserveAmmo,
-            int maxReserveAmmo
+            int maxReserveAmmo,
+            ZombiesBaseGunAmmoService.ReserveStatus reserveStatus
     ) {
     }
 

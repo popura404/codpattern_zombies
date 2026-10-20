@@ -7,12 +7,18 @@ import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlotSnapshot;
 import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSnapshot;
 import com.cdp.codpattern.app.zombies.model.ZombiesPlayerRuntimeState;
 import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
+import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.core.throwable.ThrowableInventoryService;
+import com.tacz.guns.api.DefaultAssets;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.LinkedHashMap;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.Map;
 import java.util.Objects;
 
@@ -107,6 +113,47 @@ public final class ZombiesReviveLoadoutService {
             applyRuntimeWeaponState(playerState, slotSnapshot.slot(),
                     restoredWeaponState(slotSnapshot, slotSnapshot.itemStack()));
         }
+    }
+
+    /** Rebuilds only runtime mirrors after login; persisted inventory NBT is never written. */
+    public void syncRuntimeStateFromInventory(
+            RoomId roomId, Inventory inventory, ZombiesPlayerRuntimeState playerState
+    ) {
+        if (roomId == null || inventory == null || playerState == null) {
+            return;
+        }
+        var seenSlots = EnumSet.noneOf(ZombiesEquipmentSlot.class);
+        var conflictingSlots = EnumSet.noneOf(ZombiesEquipmentSlot.class);
+        var candidates = new EnumMap<ZombiesEquipmentSlot, ZombiesWeaponInstanceState>(ZombiesEquipmentSlot.class);
+        for (int index = 0; index < inventory.getContainerSize(); index++) {
+            ItemStack stack = inventory.getItem(index);
+            var metadata = weaponItemStackService.readWeaponTags(stack).value().orElse(null);
+            if (metadata == null || !roomId.encode().equals(metadata.roomId())) {
+                continue;
+            }
+            if (!seenSlots.add(metadata.slot())) {
+                conflictingSlots.add(metadata.slot());
+            }
+            if (!TaczGatewayProvider.gateway().isGun(stack)
+                    || stack.getTag() == null || !stack.getTag().contains("GunId", Tag.TAG_STRING)) {
+                continue;
+            }
+            ResourceLocation rootGunId = ResourceLocation.tryParse(stack.getTag().getString("GunId"));
+            ResourceLocation taggedGunId = ResourceLocation.tryParse(metadata.gunId());
+            if (rootGunId == null || DefaultAssets.EMPTY_GUN_ID.equals(rootGunId)
+                    || !rootGunId.equals(taggedGunId)) {
+                continue;
+            }
+            // Runtime slots have no instance id. The uniquely tagged physical item owns
+            // its committed progression; never combine it with a different cached gun.
+            candidates.put(metadata.slot(), ZombiesBaseGunAmmoService.withReserve(
+                    metadata.toWeaponState(), ZombiesBaseGunAmmoService.readReserve(stack)));
+        }
+        candidates.forEach((slot, state) -> {
+            if (!conflictingSlots.contains(slot)) {
+                applyRuntimeWeaponState(playerState, slot, state);
+            }
+        });
     }
 
     private ZombiesWeaponInstanceState restoredWeaponState(

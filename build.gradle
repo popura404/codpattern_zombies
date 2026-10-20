@@ -19,6 +19,12 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 def barrierGroupRulesGameTests = project.hasProperty('barrierGroupRulesGameTests')
 def backpackGameTests = project.hasProperty('backpackGameTests')
+def baseAmmoArcanaGameTests = project.hasProperty('baseAmmoArcanaGameTests')
+if (baseAmmoArcanaGameTests && !backpackGameTests) {
+    throw new GradleException('baseAmmoArcanaGameTests requires backpackGameTests and the actual Arcana/Vanguard runtime fixtures')
+}
+def backpackTestNamespaces = 'codpattern_backpack,codpattern_zombies_ammo,codpattern_zombies_baseammo' +
+        (baseAmmoArcanaGameTests ? ',codpattern_zombies_baseammo_arcana' : '')
 def navigationLoadSize = findProperty('navigationLoad')?.toString()
 if (navigationLoadSize != null && !(navigationLoadSize in ['8', '32', '64'])) {
     throw new GradleException('navigationLoad must be 8, 32, or 64')
@@ -198,7 +204,7 @@ minecraft {
             workingDirectory gameTestRunDirectory
             property 'codpattern.test.workspace', project.projectDir.absolutePath
             property 'codpattern.test.results', (findProperty('barrierGroupRulesResultsPath') ?: 'build/verification/barrier-group-rules/forge-results.txt').toString()
-            property 'forge.enabledGameTestNamespaces', backpackGameTests ? 'codpattern_backpack,codpattern_zombies_ammo'
+            property 'forge.enabledGameTestNamespaces', backpackGameTests ? backpackTestNamespaces
                     : barrierGroupRulesGameTests ? 'codpattern_barrier_rules'
                     : navigationVerification ? navigationHolder
                     : project.hasProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'
@@ -268,12 +274,17 @@ tasks.register('syncZombiesDeployGameTestClasses', Sync) {
             include 'com/cdp/codpattern/app/zombies/deploy/ZombiesBackpackGameTests*'
             include 'com/cdp/codpattern/app/zombies/deploy/ZombiesEquipmentSnapshotGameTests*'
             include 'com/cdp/codpattern/app/zombies/deploy/ZombiesBaseAmmoCommitGameTests*'
+            include 'com/cdp/codpattern/app/zombies/deploy/ZombiesReconnectAmmoGameTests*'
+            include 'com/cdp/codpattern/app/zombies/deploy/baseammo/**'
             include 'com/cdp/codpattern/app/zombies/service/ZombiesBaseGunAmmoGameTests*'
             include 'com/cdp/codpattern/app/zombies/deploy/ZombiesDeployGameTestBootstrap*'
             include 'com/cdp/codpattern/app/zombies/service/ZombiesBackpackRuntimeTestSupport*'
             include 'com/cdp/codpattern/config/zombies/ZombiesBackpackCompatSuite*'
         }
-        from('src/test/resources') { include 'data/codpattern_backpack/**', 'data/codpattern_zombies_ammo/**' }
+        from('src/test/resources') {
+            include 'data/codpattern_backpack/**', 'data/codpattern_zombies_ammo/**',
+                    'data/codpattern_zombies_baseammo/**', 'data/codpattern_zombies_baseammo_arcana/**'
+        }
     } else if (barrierGroupRulesGameTests) {
         dependsOn tasks.named('compileBarrierGroupRulesGameTests')
         from layout.buildDirectory.dir('verification/barrier-group-rules/forge-test-classes')

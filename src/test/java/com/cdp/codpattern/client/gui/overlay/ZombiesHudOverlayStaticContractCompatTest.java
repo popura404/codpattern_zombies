@@ -170,10 +170,44 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "ammo prompt must use synced level prices rather than a minimum fallback cost");
         requireContains(overlay, "ZombiesWeaponItemStackService.TAG_WEAPON_LEVEL",
                 "ammo prompt must compute exact price from the held zombies weapon level");
-        requireContains(overlay, "TaczClientApi.resolveReserveAmmo(stack)",
-                "ammo prompt must use live TaCZ reserve ammo instead of stale starter weapon tag reserve");
-        requireContains(overlay, "TaczClientApi.resolveMaxReserveAmmo(stack)",
-                "ammo prompt must use live TaCZ max reserve ammo for full-ammo checks");
+        String promptData = section(overlay, "    private static Optional<HeldWeaponPromptData> heldWeaponPromptData(",
+                "    /** Returns whether the same layout used by the renderer is drawable now. */");
+        requireContains(promptData, "ZombiesBaseGunAmmoService.readReserve(stack)",
+                "transaction prompts must observe the actual base-gun reserve");
+        requireContains(promptData, "reserve.status()", "prompt data must distinguish invalid/missing reserve from valid zero capacity");
+        requireContains(promptData, "reserve.valid() ? reserve.current() : 0", "invalid reserve cannot reuse cached values");
+        requireContains(promptData, "reserve.valid() ? reserve.maximum() : 0", "invalid capacity cannot reuse cached values");
+        requireAbsent(promptData, "TAG_RESERVE_AMMO", "management tags are not an ammunition source");
+        requireAbsent(promptData, "TAG_MAX_RESERVE_AMMO", "management tags are not a reserve-capacity source");
+        requireAbsent(promptData, "resolveReserveAmmo", "transaction prompts must not read the active alternate mode");
+        requireAbsent(promptData, "resolveMaxReserveAmmo", "transaction prompts must not read the active alternate mode capacity");
+        String ammoPrompt = section(overlay, "    private static Optional<InteractionPromptLine> ammoBoxPrompt(",
+                "    private static Optional<InteractionPromptLine> armorStationPrompt(");
+        requireContains(ammoPrompt, "data.reserveStatus() != ZombiesBaseGunAmmoService.ReserveStatus.VALID",
+                "unavailable base ammunition disables only the ammo transaction prompt");
+        requireContains(ammoPrompt, "data.maxReserveAmmo() == 0", "valid zero capacity has its own disabled state");
+        requireContains(ammoPrompt, "data.reserveAmmo() >= data.maxReserveAmmo()", "full uses the actual base reserve");
+        requireContains(ammoPrompt, "hud.codpattern.zombies.ammo.base_reserve_unavailable", "unavailable data is localized");
+        requireContains(ammoPrompt, "hud.codpattern.zombies.ammo.no_reserve_capacity", "zero capacity is localized");
+        requireContains(ammoPrompt, "hud.codpattern.zombies.ammo.already_full", "full base reserve is localized");
+        requireContains(ammoPrompt, "hud.codpattern.zombies.ammo.refill_price", "price describes a base-reserve refill");
+        requireOrder(ammoPrompt, "data.reserveStatus()", "data.maxReserveAmmo() == 0", "invalid data must not look like zero capacity");
+        requireOrder(ammoPrompt, "data.maxReserveAmmo() == 0", "data.reserveAmmo() >= data.maxReserveAmmo()",
+                "zero capacity must not look like a full usable reserve");
+        requireOrder(ammoPrompt, "data.reserveAmmo() >= data.maxReserveAmmo()", "ammoCost(payload, data.weaponLevel())",
+                "unavailable/full states do not offer a purchase price");
+        String ultimatePrompt = section(overlay, "    private static Optional<InteractionPromptLine> ultimateMachinePrompt(",
+                "    private static Optional<InteractionPromptLine> barrierPrompt(");
+        requireAbsent(ultimatePrompt, "reserveStatus", "unavailable ammunition does not disable metadata upgrades");
+        requireAbsent(ultimatePrompt, "maxReserveAmmo", "capacity does not control upgrade availability");
+        String shootingPanel = section(overlay, "    private static Optional<HeldWeaponPanelData> heldWeaponPanelData(",
+                "    static String upgradeRoman(");
+        requireContains(shootingPanel, "gun.getCurrentAmmoCount(stack)", "shooting panel keeps current-mode magazine");
+        requireContains(shootingPanel, "resolveMagazineAmmo(stack)", "shooting panel keeps current-mode capacity");
+        requireContains(shootingPanel, "TaczClientApi.resolveReserveAmmo(stack)", "shooting panel keeps current-mode reserve");
+        requireContains(shootingPanel, "TaczClientApi.getGunHudTexture(stack)", "shooting panel keeps current-mode icon");
+        requireContains(shootingPanel, "IGun.getMainHandFireMode", "shooting panel keeps current-mode fire mode");
+        requireAbsent(shootingPanel, "ZombiesBaseGunAmmoService", "shooting panel must not combine base reserve with alternate magazine");
         requireContains(overlay, "ultimateMachinePrompt",
                 "interaction prompt must include ultimate machines");
         requireContains(overlay, "sodaMachinePrompt",
@@ -216,6 +250,21 @@ public final class ZombiesHudOverlayStaticContractCompatTest {
                 "owned and missing required item states must render green and red");
 
         System.out.println("PASS zombies HUD overlay static contract compat");
+    }
+
+    private static String section(String source, String start, String end) {
+        int begin = source.indexOf(start);
+        int finish = source.indexOf(end, begin + start.length());
+        if (begin < 0 || finish <= begin) {
+            throw new AssertionError("Expected HUD section: " + start);
+        }
+        return source.substring(begin, finish);
+    }
+
+    private static void requireOrder(String source, String first, String second, String message) {
+        if (source.indexOf(first) < 0 || source.indexOf(second) <= source.indexOf(first)) {
+            throw new AssertionError(message);
+        }
     }
 
     private static void requireContains(String text, String expected, String message) {

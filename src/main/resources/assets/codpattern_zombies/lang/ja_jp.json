@@ -1,4 +1,11 @@
 {
+    "hud.codpattern.zombies.ammo.hold_weapon": "ゾンビ武器をメインハンドに持って本体の予備弾薬を補充",
+    "hud.codpattern.zombies.ammo.unavailable_weapon": "この武器の本体予備弾薬は補充できません",
+    "hud.codpattern.zombies.ammo.base_reserve_unavailable": "本体の予備弾薬データを確認できません",
+    "hud.codpattern.zombies.ammo.no_reserve_capacity": "この銃本体には予備弾薬の容量がありません",
+    "hud.codpattern.zombies.ammo.already_full": "%s レベル %s の本体予備弾薬は満タンです",
+    "hud.codpattern.zombies.ammo.missing_price": "%s レベル %s の本体予備弾薬の補充価格が未設定です",
+    "hud.codpattern.zombies.ammo.refill_price": "%s レベル %s の本体予備弾薬を補充 - %s ポイント",
     "message.codpattern.zombies.interaction.failure.base_reserve_unavailable": "§c本体の弾薬データを確認できません。補充もポイント消費も行われていません。",
     "message.codpattern.zombies.interaction.failure.no_reserve_capacity": "§eこの銃本体には予備弾薬の容量がありません。",
     "screen.codpattern.zombies_room.create_tool_hint": "ゾンビ配置ツールでマップを作成してください",

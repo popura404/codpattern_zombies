@@ -1,4 +1,11 @@
 {
+    "hud.codpattern.zombies.ammo.hold_weapon": "Hold a Zombies gun in your main hand to refill its base reserve",
+    "hud.codpattern.zombies.ammo.unavailable_weapon": "This weapon cannot receive a base-reserve refill",
+    "hud.codpattern.zombies.ammo.base_reserve_unavailable": "Base-gun reserve data is unavailable",
+    "hud.codpattern.zombies.ammo.no_reserve_capacity": "This base gun has no reserve capacity",
+    "hud.codpattern.zombies.ammo.already_full": "Base reserve full: %s, level %s",
+    "hud.codpattern.zombies.ammo.missing_price": "No base-reserve refill price for %s, level %s",
+    "hud.codpattern.zombies.ammo.refill_price": "Refill base reserve: %s, level %s - %s points",
     "message.codpattern.zombies.interaction.failure.base_reserve_unavailable": "§cBase-gun ammo data is unavailable. No ammo or points were changed.",
     "message.codpattern.zombies.interaction.failure.no_reserve_capacity": "§eThis base gun has no reserve capacity.",
     "screen.codpattern.zombies_room.create_tool_hint": "Use the Zombies Deploy Tool to create a map",

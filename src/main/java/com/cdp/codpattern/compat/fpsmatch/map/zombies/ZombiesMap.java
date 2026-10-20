@@ -418,6 +418,11 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         }
         playerStateService.recordPlayerName(player.getUUID(), player.getName().getString());
         connectionStateService.markOnline(player.getUUID());
+        if (isStart && runtimeState.phase().isRoundRunning()) {
+            playerStateService.get(player.getUUID()).filter(state -> !state.lifeState().isDeadSpectating())
+                    .ifPresent(state -> reviveLoadoutService.syncRuntimeStateFromInventory(
+                            roomId, player.getInventory(), state));
+        }
         if (runtimeState.phase() == ZombiesGamePhase.WAITING) {
             readyService.initializeReadyState(player);
         }
@@ -451,8 +456,11 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         connectionStateService.markOnline(playerId);
         if (state.get().lifeState().isDeadSpectating()) {
             keepDeadSpectating(player);
-        } else if (!player.gameMode.getGameModeForPlayer().isCreative()) {
-            player.setGameMode(GameType.ADVENTURE);
+        } else {
+            reviveLoadoutService.syncRuntimeStateFromInventory(roomId, player.getInventory(), state.get());
+            if (!player.gameMode.getGameModeForPlayer().isCreative()) {
+                player.setGameMode(GameType.ADVENTURE);
+            }
         }
         buffRuntimeEffectService.syncPlayer(player);
         syncBarrierVisual(player);

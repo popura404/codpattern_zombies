@@ -1,4 +1,11 @@
 {
+    "hud.codpattern.zombies.ammo.hold_weapon": "主手持殭屍槍械補充本體備彈",
+    "hud.codpattern.zombies.ammo.unavailable_weapon": "目前武器無法補充本體備彈",
+    "hud.codpattern.zombies.ammo.base_reserve_unavailable": "本體備彈資料無法使用",
+    "hud.codpattern.zombies.ammo.no_reserve_capacity": "這把槍的本體沒有備彈容量",
+    "hud.codpattern.zombies.ammo.already_full": "%s 等級 %s 的本體備彈已滿",
+    "hud.codpattern.zombies.ammo.missing_price": "%s 等級 %s 未設定本體備彈補給價格",
+    "hud.codpattern.zombies.ammo.refill_price": "補滿 %s 等級 %s 的本體備彈 - %s 點數",
     "message.codpattern.zombies.interaction.failure.base_reserve_unavailable": "§c本體彈藥資料無法使用，未補彈或扣費。",
     "message.codpattern.zombies.interaction.failure.no_reserve_capacity": "§e這把槍的本體沒有備彈容量。",
     "screen.codpattern.zombies_room.create_tool_hint": "使用殭屍部署工具建立地圖",

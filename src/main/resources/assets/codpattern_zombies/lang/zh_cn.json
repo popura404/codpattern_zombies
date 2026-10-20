@@ -1,4 +1,11 @@
 {
+    "hud.codpattern.zombies.ammo.hold_weapon": "主手持僵尸枪械补充本体备弹",
+    "hud.codpattern.zombies.ammo.unavailable_weapon": "当前武器无法补充本体备弹",
+    "hud.codpattern.zombies.ammo.base_reserve_unavailable": "本体备弹数据不可用",
+    "hud.codpattern.zombies.ammo.no_reserve_capacity": "这把枪的本体没有备弹容量",
+    "hud.codpattern.zombies.ammo.already_full": "%s 等级 %s 的本体备弹已满",
+    "hud.codpattern.zombies.ammo.missing_price": "%s 等级 %s 未配置本体备弹补给价格",
+    "hud.codpattern.zombies.ammo.refill_price": "补满 %s 等级 %s 的本体备弹 - %s 点数",
     "message.codpattern.zombies.interaction.failure.base_reserve_unavailable": "§c本体弹药数据不可用，未进行补弹或扣费。",
     "message.codpattern.zombies.interaction.failure.no_reserve_capacity": "§e这把枪的本体没有备弹容量。",
     "screen.codpattern.zombies_room.create_tool_hint": "使用僵尸部署工具创建地图",

@@ -1,5 +1,6 @@
 package com.cdp.codpattern.app.zombies.deploy;
 
+import com.cdp.codpattern.adapter.forge.network.ModNetworkChannel;
 import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.zombies.model.ZombiesConnectionState;
 import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot;
@@ -17,20 +18,40 @@ import com.cdp.codpattern.app.zombies.service.ZombiesReviveLoadoutService;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponInventoryService;
 import com.cdp.codpattern.app.zombies.service.ZombiesWeaponItemStackService;
 import com.cdp.codpattern.compat.fpsmatch.map.zombies.ZombiesMap;
+import com.cdp.codpattern.fpsmatch.room.PlayerInfo;
+import com.cdp.codpattern.network.match.TeamPlayerListPacket;
 import com.mojang.authlib.GameProfile;
 import com.phasetranscrystal.fpsmatch.core.FPSMCore;
 import com.phasetranscrystal.fpsmatch.core.data.AreaData;
 import com.tacz.guns.item.ModernKineticGunItem;
+import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.network.Connection;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.PacketSendListener;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.server.players.PlayerList;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
+import net.minecraftforge.network.NetworkDirection;
 
+import java.lang.reflect.ParameterizedType;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.EnumMap;
 import java.util.UUID;
@@ -214,6 +235,268 @@ public final class ZombiesReconnectAmmoGameTests {
             }
         }
         helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "codpattern_backpack", batch = "backpack", timeoutTicks = 100)
+    public static void reconnectPublishesFullRosterForAliveAndSpectatingPlayers(GameTestHelper helper) throws Exception {
+        for (boolean spectating : new boolean[]{false, true}) {
+            try (var fixture = new RosterFixture(helper)) {
+                if (spectating) fixture.runtime.markDeadSpectating();
+                fixture.markers.writeActiveRoundMarker(fixture.original, fixture.room, Optional.empty());
+                fixture.map.onPlayerLoggedOut(fixture.original);
+                fixture.returned.load(fixture.original.saveWithoutId(new CompoundTag()));
+                fixture.registerOnline(fixture.returned);
+                fixture.map.getMapTeams().removePlayer(fixture.original.getUUID());
+                fixture.clearPackets();
+
+                var result = ZombiesLoginRecoveryContributor.recover(fixture.returned);
+                require(result.outcome() == ZombiesReconnectRecoveryService.RecoveryOutcome.ACTIVE_ROUND_REJOIN,
+                        "The real login contributor accepts the same UUID's new player instance");
+                fixture.assertReturningRoster(spectating, "active-round recovery");
+                require(fixture.peerPackets.rosters.isEmpty(),
+                        "Returning-player repair sends only to that connection, not other survivors");
+
+                // The ordinary FPSM login hook can run after contributor recovery. It must also
+                // independently bootstrap a cleared client, even when the roster did not change.
+                fixture.clearPackets();
+                fixture.map.onPlayerLoggedIn(fixture.returned);
+                fixture.assertReturningRoster(spectating, "ordinary login after recovery");
+                require(fixture.peerPackets.rosters.isEmpty(),
+                        "Ordinary login resync is also restricted to the returning connection");
+                fixture.clearPackets();
+                fixture.map.onPlayerLoggedIn(fixture.returned);
+                fixture.assertReturningRoster(spectating, "repeated ordinary login");
+            }
+        }
+        System.out.println("[ZOMBIES-RECONNECT-ROSTER] PASS alive/spectating reconnect and ordinary login send real full room rosters to the new connection");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", templateNamespace = "codpattern_backpack", batch = "backpack", timeoutTicks = 100)
+    public static void rejectedReconnectNeverPublishesRoomContext(GameTestHelper helper) throws Exception {
+        try (var fixture = new RosterFixture(helper)) {
+            var outsider = new FakePlayer(helper.getLevel(), new GameProfile(UUID.randomUUID(), "RosterOutsider"));
+            var outsiderPackets = new RosterPacketCapture();
+            outsider.connection = new CapturingPacketListener(outsider, outsiderPackets);
+            fixture.map.onPlayerLoggedIn(outsider);
+            require(!fixture.map.restoreActiveRoundReconnect(outsider),
+                    "Unknown players cannot restore an active room");
+            require(outsiderPackets.rosters.isEmpty(), "An unknown player receives no room roster/context");
+
+            fixture.registerOnline(fixture.returned);
+            fixture.runtime.markLeft();
+            fixture.clearPackets();
+            require(!fixture.map.restoreActiveRoundReconnect(fixture.returned),
+                    "A player who left cannot recover old room membership");
+            require(fixture.returnedPackets.rosters.isEmpty(), "Rejected LEFT recovery sends no room context");
+
+            fixture.runtime.markOnline();
+            fixture.map.isStart = false;
+            fixture.clearPackets();
+            require(!fixture.map.restoreActiveRoundReconnect(fixture.returned),
+                    "A room outside an active match rejects active-round recovery");
+            require(fixture.returnedPackets.rosters.isEmpty(), "Inactive-room rejection sends no room context");
+            fixture.map.onPlayerLoggedIn(null);
+            require(!fixture.map.restoreActiveRoundReconnect(null), "Null recovery is rejected");
+        }
+        helper.succeed();
+    }
+
+    private record CapturedRoster(String roomKey, int version, Map<String, List<PlayerInfo>> teams) { }
+
+    /**
+     * Capture the real Forge wire packet. PacketDistributor.PLAYER sends through Connection,
+     * bypassing ServerGamePacketListenerImpl.send; intercepting only the latter misses this bug.
+     */
+    private static final class RosterPacketCapture extends Connection {
+        private final ResourceLocation channel;
+        private final int discriminator;
+        private final List<CapturedRoster> rosters = new ArrayList<>();
+
+        private RosterPacketCapture() {
+            super(PacketFlow.SERVERBOUND);
+            var probe = (ClientboundCustomPayloadPacket) ModNetworkChannel.channel().toVanillaPacket(
+                    new TeamPlayerListPacket("fixture:probe", 0, Map.of()), NetworkDirection.PLAY_TO_CLIENT);
+            channel = probe.getIdentifier();
+            // Discover the discriminator from the installed CDP, whose registration order may differ.
+            var data = probe.getData();
+            try {
+                discriminator = data.readUnsignedByte();
+            } finally {
+                data.release();
+            }
+        }
+
+        @Override
+        public void send(Packet<?> packet) {
+            capture(packet);
+        }
+
+        @Override
+        public void send(Packet<?> packet, PacketSendListener listener) {
+            capture(packet);
+        }
+
+        private void capture(Packet<?> packet) {
+            if (!(packet instanceof ClientboundCustomPayloadPacket payload)
+                    || !channel.equals(payload.getIdentifier())) return;
+            var input = payload.getData();
+            try {
+                if (!input.isReadable() || input.readUnsignedByte() != discriminator) return;
+                var decoded = TeamPlayerListPacket.decode(input);
+                require(!input.isReadable(), "Full roster decoder consumes the complete real packet");
+                var body = new FriendlyByteBuf(Unpooled.buffer());
+                try {
+                    // Use the product decoder/encoder without relying on private packet field names.
+                    decoded.encode(body);
+                    String roomKey = body.readUtf();
+                    int version = body.readInt();
+                    Map<String, List<PlayerInfo>> teams = new HashMap<>();
+                    for (int count = body.readInt(); count > 0; count--) {
+                        String name = body.readUtf();
+                        List<PlayerInfo> members = new ArrayList<>();
+                        for (int players = body.readInt(); players > 0; players--) members.add(PlayerInfo.read(body));
+                        teams.put(name, List.copyOf(members));
+                    }
+                    require(!body.isReadable(), "Inspected full roster has no trailing fields");
+                    rosters.add(new CapturedRoster(roomKey, version, Map.copyOf(teams)));
+                } finally {
+                    body.release();
+                }
+            } finally {
+                input.release();
+            }
+        }
+    }
+
+    private static final class CapturingPacketListener extends ServerGamePacketListenerImpl {
+        private final RosterPacketCapture packets;
+
+        private CapturingPacketListener(ServerPlayer player, RosterPacketCapture packets) {
+            super(player.getServer(), packets, player);
+            this.packets = packets;
+        }
+
+        @Override
+        public void send(Packet<?> packet) {
+            packets.capture(packet);
+        }
+
+        @Override
+        public void send(Packet<?> packet, PacketSendListener listener) {
+            packets.capture(packet);
+        }
+    }
+
+    private static final class RosterFixture implements AutoCloseable {
+        private final ZombiesMap map;
+        private final RoomId room;
+        private final FakePlayer original;
+        private final FakePlayer returned;
+        private final FakePlayer peer;
+        private final RosterPacketCapture returnedPackets = new RosterPacketCapture();
+        private final RosterPacketCapture peerPackets = new RosterPacketCapture();
+        private final ZombiesPlayerRuntimeState runtime;
+        private final ZombiesPlayerRuntimeMarkerService markers = ZombiesPlayerRuntimeMarkerService.instance();
+        private final Map<UUID, ServerPlayer> onlinePlayers;
+        private final Map<UUID, ServerPlayer> previousEntries = new HashMap<>();
+
+        private RosterFixture(GameTestHelper helper) throws Exception {
+            var level = helper.getLevel();
+            var core = FPSMCore.getInstance();
+            if (!core.checkGameType("zombies")) core.registerGameType("zombies", ZombiesMap::new);
+            String name = "roster-reconnect-" + UUID.randomUUID().toString().substring(0, 8);
+            room = RoomId.of("zombies", name);
+            BlockPos pos = helper.absolutePos(BlockPos.ZERO);
+            map = new ZombiesMap(level, name, new AreaData(pos, pos.offset(8, 8, 8)));
+            core.registerMap("zombies", map);
+            onlinePlayers = playerDirectory(level.getServer().getPlayerList());
+            var profile = new GameProfile(UUID.randomUUID(), "RosterReturn");
+            original = new FakePlayer(level, profile);
+            returned = new FakePlayer(level, profile);
+            peer = new FakePlayer(level, new GameProfile(UUID.randomUUID(), "RosterPeer"));
+            original.connection = new CapturingPacketListener(original, new RosterPacketCapture());
+            returned.connection = new CapturingPacketListener(returned, returnedPackets);
+            peer.connection = new CapturingPacketListener(peer, peerPackets);
+            original.setGameMode(GameType.ADVENTURE);
+            peer.setGameMode(GameType.ADVENTURE);
+            registerOnline(original);
+            registerOnline(peer);
+            var state = fixtureField(map, "runtimeState", ZombiesRoomRuntimeState.class);
+            state.transitionTo(ZombiesGamePhase.WAVE_ACTIVE);
+            map.isStart = true;
+            var players = fixtureField(map, "playerStateService", ZombiesPlayerStateService.class);
+            runtime = players.getOrCreate(profile.getId());
+            runtime.addKill();
+            players.getOrCreate(peer.getUUID()).addKill();
+            var team = map.getMapTeams().getTeamByName(ZombiesTeamNames.SURVIVORS).orElseThrow();
+            team.join(original);
+            team.join(peer);
+            clearPackets();
+        }
+
+        private void registerOnline(ServerPlayer player) {
+            if (!previousEntries.containsKey(player.getUUID())) {
+                previousEntries.put(player.getUUID(), onlinePlayers.get(player.getUUID()));
+            }
+            onlinePlayers.put(player.getUUID(), player);
+            require(player.getServer().getPlayerList().getPlayer(player.getUUID()) == player,
+                    "Actual server UUID lookup resolves the currently connected fixture instance");
+        }
+
+        private void clearPackets() {
+            returnedPackets.rosters.clear();
+            peerPackets.rosters.clear();
+        }
+
+        private void assertReturningRoster(boolean spectating, String source) {
+            require(returnedPackets.rosters.size() == 1,
+                    source + " immediately sends exactly one actual full roster, found " + returnedPackets.rosters.size());
+            var roster = returnedPackets.rosters.get(0);
+            require(room.encode().equals(roster.roomKey()) && roster.version() > 0,
+                    source + " carries the room identity and a valid roster version");
+            require(roster.teams().keySet().equals(java.util.Set.of(ZombiesTeamNames.SURVIVORS)),
+                    source + " carries the authoritative survivor team");
+            var survivors = roster.teams().get(ZombiesTeamNames.SURVIVORS);
+            require(survivors.size() == 2
+                            && survivors.stream().anyMatch(info -> info.uuid().equals(peer.getUUID())),
+                    source + " includes the full two-player roster, not a returning-player-only delta");
+            var info = survivors.stream().filter(member -> member.uuid().equals(returned.getUUID())).findFirst().orElseThrow();
+            require(info.name().equals("RosterReturn") && info.kills() == 1
+                            && info.deaths() == (spectating ? 1 : 0) && info.isAlive() == !spectating,
+                    source + " reflects the current life state and retained player statistics");
+        }
+
+        @Override
+        public void close() {
+            try {
+                markers.clearMarker(original);
+                markers.clearMarker(returned);
+                map.getMapTeams().removePlayer(original.getUUID());
+                map.getMapTeams().removePlayer(peer.getUUID());
+                FPSMCore.getInstance().unregisterMap(map);
+                map.getMapTeams().retireCreatedScoreboardTeams();
+            } finally {
+                previousEntries.forEach((id, previous) -> {
+                    if (previous == null) onlinePlayers.remove(id);
+                    else onlinePlayers.put(id, previous);
+                });
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        private static Map<UUID, ServerPlayer> playerDirectory(PlayerList players) throws ReflectiveOperationException {
+            // Generic types survive named/reobfuscated runs; no Minecraft field-name mapping is assumed.
+            for (var field : PlayerList.class.getDeclaredFields()) {
+                if (field.getGenericType() instanceof ParameterizedType type
+                        && type.getRawType() == Map.class
+                        && java.util.Arrays.equals(type.getActualTypeArguments(), new Object[]{UUID.class, ServerPlayer.class})) {
+                    field.setAccessible(true);
+                    return (Map<UUID, ServerPlayer>) field.get(players);
+                }
+            }
+            throw new IllegalStateException("Cannot locate the actual server UUID player directory");
+        }
     }
 
     private static ZombiesWeaponInstanceState weapon(ZombiesPlayerRuntimeState runtime, ZombiesEquipmentSlot slot) {

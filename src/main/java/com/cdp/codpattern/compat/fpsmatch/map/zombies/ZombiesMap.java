@@ -429,6 +429,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         buffRuntimeEffectService.syncPlayer(player);
         syncBarrierVisual(player);
         markRosterDirty();
+        syncReturningPlayerRoster(player);
     }
 
     public boolean restoreActiveRoundReconnect(ServerPlayer player) {
@@ -465,6 +466,7 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
         buffRuntimeEffectService.syncPlayer(player);
         syncBarrierVisual(player);
         markRosterDirty();
+        syncReturningPlayerRoster(player);
         return true;
     }
 
@@ -660,6 +662,12 @@ public class ZombiesMap extends BaseMap implements EndTeleportMap<ZombiesMap>, c
                 port.requestRosterResync(survivor);
             }
         });
+    }
+
+    private void syncReturningPlayerRoster(ServerPlayer player) {
+        // Disconnect clears the client's room context. Runtime/object snapshots do
+        // not restore it; the full roster must bootstrap this new connection.
+        roomHandle.rosterPort().ifPresent(port -> port.requestRosterResync(player));
     }
 
     private void notifySurvivors(Component message) {

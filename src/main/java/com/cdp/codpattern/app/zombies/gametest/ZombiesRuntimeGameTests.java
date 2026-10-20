@@ -18,6 +18,7 @@ import com.cdp.codpattern.app.zombies.service.ZombiesAmmoBoxService;
 import com.cdp.codpattern.app.zombies.service.ZombiesArmorService;
 import com.cdp.codpattern.app.zombies.service.ZombiesBarrierMovementService;
 import com.cdp.codpattern.app.zombies.service.ZombiesBarrierService;
+import com.cdp.codpattern.app.zombies.service.ZombiesBaseGunAmmoService;
 import com.cdp.codpattern.app.zombies.service.ZombiesBuffCombatService;
 import com.cdp.codpattern.app.zombies.service.ZombiesBuffService;
 import com.cdp.codpattern.app.zombies.service.ZombiesCrashRecoveryService;
@@ -290,7 +291,7 @@ public final class ZombiesRuntimeGameTests {
         ZombiesWeaponItemStackService itemStackService = new ZombiesWeaponItemStackService();
         ZombiesWeaponInventoryService inventoryService = new ZombiesWeaponInventoryService(
                 itemStackService,
-                ignoredGunId -> new ItemStack(Items.CROSSBOW));
+                ZombiesWeaponInventoryService::createDefaultTaczGunStackForRules);
         RoomId roomId = roomId("weapon-tags");
         ZombiesWeaponInstanceState weapon = ZombiesWeaponInstanceState.primary(
                 "tacz:m4a1",
@@ -321,9 +322,11 @@ public final class ZombiesRuntimeGameTests {
         ZombiesWeaponItemStackService itemStackService = new ZombiesWeaponItemStackService();
         ZombiesWeaponInventoryService inventoryService = new ZombiesWeaponInventoryService(
                 itemStackService,
-                ignoredGunId -> new ItemStack(Items.CROSSBOW));
+                ZombiesWeaponInventoryService::createDefaultTaczGunStackForRules);
         RoomId roomId = roomId("weapon-sync");
-        ItemStack stack = new ItemStack(Items.CROSSBOW);
+        ItemStack stack = ZombiesWeaponInventoryService.createDefaultTaczGunStackForRules("tacz:glock_17");
+        helper.assertTrue(ZombiesBaseGunAmmoService.initialize(stack, 7, 84).success(),
+                "new fixture gun must initialize its native reserve explicitly");
         ZombiesWeaponInstanceState starterWeapon = new ZombiesWeaponInstanceState(
                 "tacz:glock_17",
                 0,
@@ -336,16 +339,18 @@ public final class ZombiesRuntimeGameTests {
                         stack,
                         roomId,
                         "starter-instance",
-                        ZombiesEquipmentSlot.STARTER,
+                        ZombiesEquipmentSlot.PRIMARY,
                         starterWeapon);
-        helper.assertTrue(setup.success(), "starter tag setup should succeed");
+        helper.assertTrue(setup.success(), "initial tag setup should succeed");
+        var prepared = inventoryService.prepareAmmoRefill(roomId, stack);
+        helper.assertTrue(prepared.success(), "actual refill preparation should capture the current slot");
+        helper.assertTrue(itemStackService.writeWeaponTags(stack, roomId, "starter-instance",
+                ZombiesEquipmentSlot.STARTER, starterWeapon).success(),
+                "fixture moves the item to another declared slot before commit");
+        var beforeCommit = stack.getTag().copy();
 
         ZombiesServiceResult<ZombiesWeaponInventoryService.InventoryMutationResult> sync =
-                inventoryService.syncReserveAmmo(
-                        stack,
-                        roomId,
-                        ZombiesEquipmentSlot.PRIMARY,
-                        ZombiesWeaponInstanceState.primary("tacz:m4a1", 2, 1.25D, 210));
+                inventoryService.commitAmmoRefill(stack, roomId, prepared.value().orElseThrow());
 
         helper.assertFalse(sync.success(), "syncing the wrong slot should fail");
         helper.assertTrue(
@@ -358,6 +363,7 @@ public final class ZombiesRuntimeGameTests {
         helper.assertTrue(tag.slot() == ZombiesEquipmentSlot.STARTER, "failed sync should keep starter slot");
         helper.assertTrue(tag.reserveAmmo() == 7, "failed sync should not change reserve ammo");
         helper.assertTrue(tag.maxReserveAmmo() == 84, "failed sync should not change max reserve ammo");
+        helper.assertTrue(stack.getTag().equals(beforeCommit), "rejected stale-slot commit must leave complete NBT unchanged");
         helper.succeed();
     }
 
@@ -413,14 +419,14 @@ public final class ZombiesRuntimeGameTests {
         ZombiesWeaponItemStackService itemStackService = new ZombiesWeaponItemStackService();
         ZombiesWeaponInventoryService inventoryService = new ZombiesWeaponInventoryService(
                 itemStackService,
-                ignoredGunId -> new ItemStack(Items.CROSSBOW));
+                ZombiesWeaponInventoryService::createDefaultTaczGunStackForRules);
         RoomId roomId = roomId("weapon-player-inventory");
         ServerPlayer player = detachedServerPlayer(helper);
         player.getInventory().clearContent();
 
         try {
             ZombiesWeaponInstanceState oldPrimary =
-                    ZombiesWeaponInstanceState.primary("tacz:old_primary", 1, 1.10D, 80);
+                    ZombiesWeaponInstanceState.primary("tacz:ak47", 1, 1.10D, 80);
             ZombiesServiceResult<ZombiesWeaponInventoryService.PreparedWeaponStack> oldPrepared =
                     inventoryService.preparePurchasedPrimaryWeapon(roomId, oldPrimary);
             helper.assertTrue(oldPrepared.success(), "old primary setup should prepare");
@@ -433,7 +439,7 @@ public final class ZombiesRuntimeGameTests {
             helper.assertTrue(oldApply.success(), "old primary setup should apply to player inventory");
 
             ZombiesWeaponInstanceState newPrimary =
-                    ZombiesWeaponInstanceState.primary("tacz:new_primary", 2, 1.35D, 120);
+                    ZombiesWeaponInstanceState.primary("tacz:m4a1", 2, 1.35D, 120);
             ZombiesServiceResult<ZombiesWeaponInventoryService.PreparedWeaponStack> newPrepared =
                     inventoryService.preparePurchasedPrimaryWeapon(roomId, newPrimary);
             helper.assertTrue(newPrepared.success(), "new primary should prepare");
@@ -451,7 +457,7 @@ public final class ZombiesRuntimeGameTests {
             ItemStack primaryStack = player.getInventory().getItem(ZombiesEquipmentSlot.PRIMARY.defaultInventorySlot());
             ZombiesWeaponItemStackService.ZombiesWeaponTagData currentTag =
                     itemStackService.readWeaponTags(primaryStack).value().orElseThrow();
-            helper.assertTrue("tacz:new_primary".equals(currentTag.gunId()),
+            helper.assertTrue("tacz:m4a1".equals(currentTag.gunId()),
                     "player inventory primary slot should contain the replacement weapon");
             helper.assertTrue(countRoomPrimaryWeapons(player, itemStackService, roomId) == 1,
                     "replacing primary should remove the old same-room primary");
@@ -787,14 +793,16 @@ public final class ZombiesRuntimeGameTests {
             ZombiesEconomyService economyService = new ZombiesEconomyService(playerStateService);
             economyService.addPoints(player.getUUID(), 1_000.0D);
             ZombiesWeaponInstanceState lowReservePrimary = new ZombiesWeaponInstanceState(
-                    "tacz:ammo_primary",
+                    "tacz:m4a1",
                     2,
                     0,
                     1.25D,
                     12,
                     120);
             playerStateService.getOrCreate(player.getUUID()).setPrimaryWeapon(lowReservePrimary);
-            ItemStack primaryStack = new ItemStack(Items.CROSSBOW);
+            ItemStack primaryStack = ZombiesWeaponInventoryService.createDefaultTaczGunStackForRules("tacz:m4a1");
+            helper.assertTrue(ZombiesBaseGunAmmoService.initialize(primaryStack, 12, 120).success(),
+                    "new ammo-box fixture must initialize native reserve explicitly");
             ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> tagSetup =
                     itemStackService.writeWeaponTags(
                             primaryStack,
@@ -820,7 +828,8 @@ public final class ZombiesRuntimeGameTests {
                     economyService,
                     powerService,
                     objectStateStore,
-                    new ZombiesWeaponInventoryService(itemStackService, ignored -> new ItemStack(Items.CROSSBOW)),
+                    new ZombiesWeaponInventoryService(itemStackService,
+                            ZombiesWeaponInventoryService::createDefaultTaczGunStackForRules),
                     List.of(ammoBox),
                     Optional.empty());
 
@@ -850,6 +859,8 @@ public final class ZombiesRuntimeGameTests {
                     "ammo sync should preserve the tagged weapon instance id");
             helper.assertTrue(syncedTag.reserveAmmo() == 120, "real primary stack NBT reserve should be refilled");
             helper.assertTrue(syncedTag.maxReserveAmmo() == 120, "real primary stack NBT max reserve should be preserved");
+            helper.assertTrue(ZombiesBaseGunAmmoService.readReserve(syncedStack).current() == 120,
+                    "ammo interaction must commit native root reserve, not only metadata");
             helper.assertTrue(
                     interactionService.objectStatesForClient(player)
                             .stream()

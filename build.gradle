@@ -198,7 +198,7 @@ minecraft {
             workingDirectory gameTestRunDirectory
             property 'codpattern.test.workspace', project.projectDir.absolutePath
             property 'codpattern.test.results', (findProperty('barrierGroupRulesResultsPath') ?: 'build/verification/barrier-group-rules/forge-results.txt').toString()
-            property 'forge.enabledGameTestNamespaces', backpackGameTests ? 'codpattern_backpack'
+            property 'forge.enabledGameTestNamespaces', backpackGameTests ? 'codpattern_backpack,codpattern_zombies_ammo'
                     : barrierGroupRulesGameTests ? 'codpattern_barrier_rules'
                     : navigationVerification ? navigationHolder
                     : project.hasProperty('forceEndGameTests') ? 'codpattern_termination' : 'codpattern'
@@ -266,11 +266,14 @@ tasks.register('syncZombiesDeployGameTestClasses', Sync) {
         dependsOn tasks.named('testClasses')
         from(sourceSets.test.output.classesDirs) {
             include 'com/cdp/codpattern/app/zombies/deploy/ZombiesBackpackGameTests*'
+            include 'com/cdp/codpattern/app/zombies/deploy/ZombiesEquipmentSnapshotGameTests*'
+            include 'com/cdp/codpattern/app/zombies/deploy/ZombiesBaseAmmoCommitGameTests*'
+            include 'com/cdp/codpattern/app/zombies/service/ZombiesBaseGunAmmoGameTests*'
             include 'com/cdp/codpattern/app/zombies/deploy/ZombiesDeployGameTestBootstrap*'
             include 'com/cdp/codpattern/app/zombies/service/ZombiesBackpackRuntimeTestSupport*'
             include 'com/cdp/codpattern/config/zombies/ZombiesBackpackCompatSuite*'
         }
-        from('src/test/resources') { include 'data/codpattern_backpack/**' }
+        from('src/test/resources') { include 'data/codpattern_backpack/**', 'data/codpattern_zombies_ammo/**' }
     } else if (barrierGroupRulesGameTests) {
         dependsOn tasks.named('compileBarrierGroupRulesGameTests')
         from layout.buildDirectory.dir('verification/barrier-group-rules/forge-test-classes')
@@ -566,7 +569,7 @@ tasks.withType(JavaCompile).configureEach {
 
 def splitCompatTestClasspath = sourceSets.test.output + sourceSets.test.compileClasspath
 
-['ZombiesNavigationProgressTrackerCompatTest', 'ZombiesMobRecycleProgressCompatTest',
+['ZombiesUltimateMachineHeldWeaponCompatTest', 'ZombiesNavigationProgressTrackerCompatTest', 'ZombiesMobRecycleProgressCompatTest',
  'ZombiesGroundSpawnPolicyCompatTest', 'ZombiesWaveRuntimeStaticContractCompatTest'].each { testName ->
     tasks.register("run${testName}", JavaExec) {
         group = 'verification'
@@ -733,6 +736,15 @@ tasks.register('runZombiesStorageMigrationCompat', JavaExec) {
     dependsOn tasks.named('testClasses')
 }
 
+
+tasks.register('runZombiesBaseAmmoTransactionCompat', JavaExec) {
+    group = 'verification'
+    description = 'Verify base-reserve prices, exact equipment-slot mirrors, and failed transaction rollback.'
+    workingDir = project.projectDir
+    classpath = splitCompatTestClasspath
+    mainClass = 'com.cdp.codpattern.app.zombies.service.ZombiesBaseAmmoTransactionCompatTest'
+    dependsOn tasks.named('testClasses')
+}
 
 tasks.register('runZombiesBackpackCompatSuite', JavaExec) {
     group = 'verification'

@@ -351,12 +351,20 @@ public final class ZombiesStarterKitDistributor {
             }
 
             if (TaczGatewayProvider.gateway().isGun(stack)) {
-                TaczGatewayProvider.gateway().configureGunAmmo(stack, 0);
+                var baseGun = ZombiesBaseGunAmmoService.resolveBaseGun(stack);
+                if (!baseGun.success() || baseGun.value().isEmpty()) {
+                    return ZombiesServiceResult.failure(baseGun.code(), baseGun.params(), baseGun.logMessage());
+                }
+                var info = baseGun.value().orElseThrow();
                 int maxReserveAmmo = ZombiesBackpackAmmoResolver.resolve(
-                        TaczGatewayProvider.gateway().resolveGunId(stack).orElse(null),
-                        TaczGatewayProvider.gateway().resolveGunType(stack).orElse(null),
+                        info.gunId(),
+                        info.gunType(),
                         backpackConfig().getAmmunition());
-                TaczGatewayProvider.gateway().setReserveAmmo(stack, maxReserveAmmo, maxReserveAmmo);
+                var initialized = ZombiesBaseGunAmmoService.initialize(stack, maxReserveAmmo, maxReserveAmmo);
+                if (!initialized.success()) {
+                    return ZombiesServiceResult.failure(
+                            initialized.code(), initialized.params(), initialized.logMessage());
+                }
             }
             return ZombiesServiceResult.success(stack);
         } catch (Exception exception) {
@@ -377,18 +385,17 @@ public final class ZombiesStarterKitDistributor {
     }
 
     private static ZombiesWeaponInstanceState starterWeaponState(ItemStack stack) {
-        String gunId = TaczGatewayProvider.gateway().resolveGunId(stack)
+        String gunId = ZombiesBaseGunAmmoService.resolveBaseGun(stack).value()
+                .map(ZombiesBaseGunAmmoService.BaseGunInfo::gunId)
                 .orElseGet(() -> BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-        int reserveAmmo = Math.max(0, TaczGatewayProvider.gateway().resolveReserveAmmo(stack));
-        int maxReserveAmmo = Math.max(reserveAmmo, TaczGatewayProvider.gateway().resolveMaxReserveAmmo(stack));
-        return new ZombiesWeaponInstanceState(
+        return ZombiesBaseGunAmmoService.withReserve(new ZombiesWeaponInstanceState(
                 gunId,
                 1,
                 0,
                 1.0D,
                 1.0D,
-                reserveAmmo,
-                maxReserveAmmo);
+                0,
+                0), ZombiesBaseGunAmmoService.readReserve(stack));
     }
 
     private static List<UUID> normalizeMembers(Collection<UUID> playerIds) {

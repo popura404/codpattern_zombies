@@ -4,7 +4,6 @@ import com.cdp.codpattern.app.match.model.ModePlayerValue;
 import com.cdp.codpattern.app.match.model.RoomId;
 import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot;
 import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
-import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
@@ -15,6 +14,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+/** Zombies metadata only; native gun ammunition is owned by ZombiesBaseGunAmmoService. */
 public final class ZombiesWeaponItemStackService {
     public static final String TAG_ROOM_ID = "codpattern.zombies.roomId";
     public static final String TAG_INSTANCE_ID = "codpattern.zombies.instanceId";
@@ -61,7 +61,6 @@ public final class ZombiesWeaponItemStackService {
                 slot,
                 weaponState);
         writeTag(stack.getOrCreateTag(), data);
-        syncTaczReserveAmmo(stack, data);
         return ZombiesServiceResult.success(data);
     }
 
@@ -69,10 +68,7 @@ public final class ZombiesWeaponItemStackService {
         if (stack == null || stack.isEmpty() || stack.getTag() == null) {
             return ZombiesServiceResult.failure(INVALID_WEAPON_TAG);
         }
-        ZombiesServiceResult<ZombiesWeaponTagData> result = readWeaponTags(stack.getTag());
-        return result.value()
-                .map(data -> ZombiesServiceResult.success(withLiveTaczReserveAmmo(stack, data)))
-                .orElse(result);
+        return readWeaponTags(stack.getTag());
     }
 
     public ZombiesServiceResult<ZombiesWeaponTagData> readWeaponTags(CompoundTag tag) {
@@ -193,38 +189,6 @@ public final class ZombiesWeaponItemStackService {
         tag.putFloat(TAG_UPGRADE_DAMAGE_MULTIPLIER, (float) data.upgradeDamageMultiplier());
         tag.putInt(TAG_RESERVE_AMMO, data.reserveAmmo());
         tag.putInt(TAG_MAX_RESERVE_AMMO, data.maxReserveAmmo());
-    }
-
-    private void syncTaczReserveAmmo(ItemStack stack, ZombiesWeaponTagData data) {
-        if (stack == null || stack.isEmpty() || !TaczGatewayProvider.gateway().isGun(stack)) {
-            return;
-        }
-        TaczGatewayProvider.gateway().setReserveAmmo(stack, data.reserveAmmo(), data.maxReserveAmmo());
-    }
-
-    private ZombiesWeaponTagData withLiveTaczReserveAmmo(ItemStack stack, ZombiesWeaponTagData data) {
-        if (stack == null || stack.isEmpty() || data == null || !TaczGatewayProvider.gateway().isGun(stack)) {
-            return data;
-        }
-        int liveMaxReserveAmmo = Math.max(0, TaczGatewayProvider.gateway().resolveMaxReserveAmmo(stack));
-        if (liveMaxReserveAmmo <= 0) {
-            return data;
-        }
-        int liveReserveAmmo = Math.max(
-                0,
-                Math.min(TaczGatewayProvider.gateway().resolveReserveAmmo(stack), liveMaxReserveAmmo));
-        return new ZombiesWeaponTagData(
-                data.roomId(),
-                data.instanceId(),
-                data.slot(),
-                data.gunId(),
-                data.rarityId(),
-                data.weaponLevel(),
-                data.levelDamageMultiplier(),
-                data.upgradeLevel(),
-                data.upgradeDamageMultiplier(),
-                liveReserveAmmo,
-                liveMaxReserveAmmo);
     }
 
     private static Map<String, ModePlayerValue> tagParams(

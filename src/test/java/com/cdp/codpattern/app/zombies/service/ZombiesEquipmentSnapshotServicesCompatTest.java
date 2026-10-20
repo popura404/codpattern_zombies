@@ -121,13 +121,15 @@ public final class ZombiesEquipmentSnapshotServicesCompatTest {
         require(syncedStarter.gunId().equals("tacz:glock_17"), "starter gun id should sync");
         require(syncedStarter.weaponLevel() == 0, "starter weapon level should sync");
         require(syncedStarter.upgradeLevel() == 1, "starter upgrade level should sync");
-        require(syncedStarter.reserveAmmo() == 21, "starter reserve should sync");
+        require(syncedStarter.reserveAmmo() == 0 && syncedStarter.maxReserveAmmo() == 0,
+                "legacy snapshot without a physical starter must not invent native reserve");
         require(syncedPrimary.gunId().equals("tacz:m4a1"), "primary gun id should sync");
         require(syncedPrimary.weaponLevel() == 2, "primary weapon level should sync");
         require(syncedPrimary.upgradeLevel() == 2, "primary upgrade level should sync");
         requireClose(syncedPrimary.levelDamageMultiplier(), 1.25D, "primary level multiplier should sync");
         requireClose(syncedPrimary.upgradeDamageMultiplier(), 2.0D, "primary upgrade multiplier should sync");
-        require(syncedPrimary.reserveAmmo() == 88, "primary reserve should sync");
+        require(syncedPrimary.reserveAmmo() == 0 && syncedPrimary.maxReserveAmmo() == 0,
+                "legacy snapshot without a physical primary must not invent native reserve");
     }
 
     private static void requireSuccess(ZombiesServiceResult<?> result, String message) {

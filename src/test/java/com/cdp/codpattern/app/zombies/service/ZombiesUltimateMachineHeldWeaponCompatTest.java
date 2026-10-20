@@ -16,9 +16,11 @@ public final class ZombiesUltimateMachineHeldWeaponCompatTest {
         for (ZombiesEquipmentSlot slot : ZombiesEquipmentSlot.values()) {
             upgradesOnlySelectedSource(slot);
             missingTrackedWeaponDoesNotFallBack(slot);
+            liveReserveCapacityIsNotWeaponIdentity(slot);
         }
         starterAndMysteryDoNotRequirePrimary();
         failedUpgradesDoNotSpend();
+        nonAmmoIdentityRemainsStrict();
         legacyPrimaryApiStillWorks();
         mainHandWiringNeverSearchesInventory();
         System.out.println("PASS: ultimate-machine focused checks; three sources, slot isolation, failures and main-hand source wiring");
@@ -58,6 +60,35 @@ public final class ZombiesUltimateMachineHeldWeaponCompatTest {
         var result = f.service.upgradeHeldWeapon(f.id, slot, f.weapon, f.rules, false, null);
         require(!result.success(), "missing selected slot must not fall back to another gun");
         require(get(f.state, slot) == null && f.state.points() == 5000.0D, "missing slot must not mutate or charge");
+    }
+
+    private static void liveReserveCapacityIsNotWeaponIdentity(ZombiesEquipmentSlot selected) {
+        var reserves = java.util.List.of(
+                new ZombiesBaseGunAmmoService.ReserveAmmo(ZombiesBaseGunAmmoService.ReserveStatus.VALID, 0, 0),
+                new ZombiesBaseGunAmmoService.ReserveAmmo(ZombiesBaseGunAmmoService.ReserveStatus.VALID, 7, 240),
+                new ZombiesBaseGunAmmoService.ReserveAmmo(ZombiesBaseGunAmmoService.ReserveStatus.INVALID, -1, 180),
+                new ZombiesBaseGunAmmoService.ReserveAmmo(ZombiesBaseGunAmmoService.ReserveStatus.MISSING, 0, 0));
+        for (var reserve : reserves) {
+            Fixture f = new Fixture();
+            ZombiesWeaponInstanceState held = ZombiesBaseGunAmmoService.withReserve(f.weapon, reserve);
+            int[] commits = {0};
+            var result = f.service.upgradeHeldWeapon(f.id, selected, held, f.rules, false,
+                    (current, upgraded) -> {
+                        require(current.equals(held), "upgrade observes live or unavailable-ammo mirror");
+                        require(upgraded.reserveAmmo() == held.reserveAmmo()
+                                        && upgraded.maxReserveAmmo() == held.maxReserveAmmo(),
+                                "metadata upgrade cannot repair or refill ammunition");
+                        commits[0]++;
+                        return ZombiesServiceResult.ok();
+                    });
+            require(result.success() && commits[0] == 1, "changed/zero/unavailable live capacity permits metadata upgrade");
+            require(f.state.points() == 4500.0D, "metadata upgrade charges exactly once");
+            for (ZombiesEquipmentSlot slot : ZombiesEquipmentSlot.values()) {
+                require(get(f.state, slot).equals(slot == selected ? held.withUpgrade(1, 2.0D) : f.weapon),
+                        "capacity changes mirror only the selected slot");
+            }
+        }
+        System.out.println("PASS: " + selected + " upgrades preserve zero/changed/unavailable live reserve mirrors");
     }
 
     private static void starterAndMysteryDoNotRequirePrimary() {
@@ -106,6 +137,31 @@ public final class ZombiesUltimateMachineHeldWeaponCompatTest {
         require(f.state.starterWeapon().orElseThrow().equals(f.weapon), "legacy leaves starter alone");
     }
 
+    private static void nonAmmoIdentityRemainsStrict() {
+        Fixture f = new Fixture();
+        var mismatches = java.util.List.of(
+                new ZombiesWeaponInstanceState("tacz:ak47", "rare", 1, 0, 1.25, 1.0, 0, 0),
+                new ZombiesWeaponInstanceState(f.weapon.gunId(), "common", 1, 0, 1.25, 1.0, 0, 0),
+                new ZombiesWeaponInstanceState(f.weapon.gunId(), "rare", 2, 0, 1.25, 1.0, 0, 0),
+                new ZombiesWeaponInstanceState(f.weapon.gunId(), "rare", 1, 1, 1.25, 2.0, 0, 0),
+                new ZombiesWeaponInstanceState(f.weapon.gunId(), "rare", 1, 0, 1.5, 1.0, 0, 0),
+                new ZombiesWeaponInstanceState(f.weapon.gunId(), "rare", 1, 0, 1.25, 1.5, 0, 0));
+        int[] commits = {0};
+        for (ZombiesEquipmentSlot slot : ZombiesEquipmentSlot.values()) {
+            for (var held : mismatches) {
+                var result = f.service.upgradeHeldWeapon(f.id, slot, held, f.rules, false,
+                        (current, upgraded) -> {
+                            commits[0]++;
+                            return ZombiesServiceResult.ok();
+                        });
+                require(!result.success() && result.code().equals(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON),
+                        "gun, rarity, levels and both multipliers remain part of the identity check");
+            }
+            require(get(f.state, slot).equals(f.weapon), "identity mismatch preserves tracked weapon");
+        }
+        require(commits[0] == 0 && f.state.points() == 5000.0D, "identity mismatch never commits or charges");
+    }
+
     private static void mainHandWiringNeverSearchesInventory() throws Exception {
         Path base = Path.of("src/main/java/com/cdp/codpattern/app/zombies/service");
         String source = Files.readString(base.resolve("ZombiesObjectInteractionService.java"));
@@ -120,12 +176,12 @@ public final class ZombiesUltimateMachineHeldWeaponCompatTest {
                 && source.contains("case ULTIMATE_MACHINE -> mainHandTacz;"), "reject offhand interaction events");
         String inventory = Files.readString(base.resolve("ZombiesWeaponInventoryService.java"));
         begin = inventory.indexOf("    public ZombiesServiceResult<InventoryMutationResult> syncMainHandWeapon(");
-        end = inventory.indexOf("    public ZombiesServiceResult<InventoryMutationResult> validateReserveAmmoSync(", begin);
+        end = inventory.indexOf("    public ZombiesServiceResult<PreparedAmmoRefill> prepareAmmoRefill(", begin);
         require(begin >= 0 && end > begin, "dedicated main-hand commit exists");
         String commit = inventory.substring(begin, end);
         require(commit.contains("player.getMainHandItem() != expectedStack") && commit.contains("filter(expectedTag::equals)"),
                 "revalidate the exact held instance and its tags before commit");
-        require(commit.contains("syncReserveAmmo(expectedStack, roomId, expectedTag.slot(), weaponState)"), "write only captured stack");
+        require(commit.contains("syncWeaponMetadata(expectedStack, roomId, expectedTag.slot(), weaponState)"), "write only captured stack");
         require(!commit.contains("findWeaponStack") && !commit.contains("getContainerSize")
                 && !commit.contains("getOffhandItem") && !commit.contains("getInventory()"), "no inventory/offhand fallback search");
         System.out.println("PASS: source wiring reads main hand, rejects offhand events, and commits exact stack without inventory search");

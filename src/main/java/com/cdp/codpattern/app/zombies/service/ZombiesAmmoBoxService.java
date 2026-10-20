@@ -2,6 +2,7 @@ package com.cdp.codpattern.app.zombies.service;
 
 import com.cdp.codpattern.app.match.model.ModePlayerValue;
 import com.cdp.codpattern.app.zombies.model.ZombiesPlayerRuntimeState;
+import com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot;
 import com.cdp.codpattern.app.zombies.model.ZombiesWeaponInstanceState;
 
 import java.util.LinkedHashMap;
@@ -43,6 +44,9 @@ public final class ZombiesAmmoBoxService {
         if (currentWeapon == null) {
             return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
         }
+        if (currentWeapon.maxReserveAmmo() == 0) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.of("ammo.no_reserve_capacity"));
+        }
         if (currentWeapon.isReserveFull()) {
             return ZombiesServiceResult.failure(AMMO_ALREADY_FULL, weaponParams(currentWeapon), "");
         }
@@ -59,6 +63,9 @@ public final class ZombiesAmmoBoxService {
             ZombiesWeaponInstanceState lockedWeapon = lockedState.primaryWeapon().orElse(null);
             if (lockedWeapon == null) {
                 return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
+            }
+            if (lockedWeapon.maxReserveAmmo() == 0) {
+                return ZombiesServiceResult.failure(ZombiesErrorCode.of("ammo.no_reserve_capacity"));
             }
             if (lockedWeapon.isReserveFull()) {
                 return ZombiesServiceResult.failure(AMMO_ALREADY_FULL, weaponParams(lockedWeapon), "");
@@ -85,13 +92,18 @@ public final class ZombiesAmmoBoxService {
 
     public ZombiesServiceResult<AmmoRefillResult> refillHeldWeapon(
             UUID playerId,
+            ZombiesEquipmentSlot slot,
             ZombiesWeaponInstanceState currentWeapon,
             Map<?, Integer> pricesByWeaponLevel,
             AmmoRefillCommitGuard commitGuard
     ) {
-        if (currentWeapon == null || !ZombiesWeaponInstanceState.isValidGunId(currentWeapon.gunId())
+        if (slot == null || commitGuard == null || currentWeapon == null
+                || !ZombiesWeaponInstanceState.isValidGunId(currentWeapon.gunId())
                 || !ZombiesWeaponInstanceState.isValidWeaponLevel(currentWeapon.weaponLevel())) {
             return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
+        }
+        if (currentWeapon.maxReserveAmmo() == 0) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.of("ammo.no_reserve_capacity"));
         }
         if (currentWeapon.isReserveFull()) {
             return ZombiesServiceResult.failure(AMMO_ALREADY_FULL, weaponParams(currentWeapon), "");
@@ -116,19 +128,14 @@ public final class ZombiesAmmoBoxService {
                         guardResult == null ? Map.of() : guardResult.params(),
                         guardResult == null ? "" : guardResult.logMessage());
             }
-            if (currentWeapon.rarityId().isBlank()) {
-                lockedState.starterWeapon()
-                        .filter(starter -> starter.sameGunAndLevel(currentWeapon.gunId(), currentWeapon.weaponLevel()))
-                        .ifPresent(ignored -> lockedState.setStarterWeapon(refilledWeapon));
-                lockedState.primaryWeapon()
-                        .filter(primary -> primary.sameGunAndLevel(currentWeapon.gunId(), currentWeapon.weaponLevel()))
-                        .ifPresent(ignored -> lockedState.setPrimaryWeapon(refilledWeapon));
-            } else {
-                lockedState.primaryWeapon()
-                        .filter(primary -> primary.sameGunAndRarity(currentWeapon.gunId(), currentWeapon.rarityId()))
-                        .ifPresent(ignored -> lockedState.setPrimaryWeapon(refilledWeapon));
+            // The item commit validated the exact instance. Only its declared equipment slot is mirrored.
+            switch (slot) {
+                case STARTER -> lockedState.setStarterWeapon(refilledWeapon);
+                case PRIMARY -> lockedState.setPrimaryWeapon(refilledWeapon);
+                case MYSTERY_BOX -> lockedState.setMysteryBoxWeapon(refilledWeapon);
             }
-            return ZombiesServiceResult.success(new AmmoRefillResult(refilledWeapon, cost, false));
+            return ZombiesServiceResult.success(new AmmoRefillResult(
+                    refilledWeapon, cost, slot == ZombiesEquipmentSlot.STARTER));
         });
     }
 

@@ -772,10 +772,9 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
 
     private int mysteryBoxReserveAmmo(String gunId) {
         ItemStack stack = ZombiesWeaponInventoryService.createDefaultTaczGunStackForRules(gunId);
-        String gunType = stack == null || stack.isEmpty() ? null
-                : TaczGatewayProvider.gateway().resolveGunType(stack).orElse(null);
-        String actualGunId = stack == null || stack.isEmpty() ? gunId
-                : TaczGatewayProvider.gateway().resolveGunId(stack).orElse(gunId);
+        var baseGun = ZombiesBaseGunAmmoService.resolveBaseGun(stack).value();
+        String gunType = baseGun.map(ZombiesBaseGunAmmoService.BaseGunInfo::gunType).orElse(null);
+        String actualGunId = baseGun.map(ZombiesBaseGunAmmoService.BaseGunInfo::gunId).orElse(gunId);
         ZombiesBackpackConfig backpack = backpackSupplier.get();
         return ZombiesBackpackAmmoResolver.resolve(actualGunId, gunType,
                 (backpack == null ? ZombiesBackpackConfig.defaults() : backpack).getAmmunition());
@@ -848,97 +847,37 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
             ZombiesAmmoBoxData ammoBox,
             ModeObjectInteractionContext context
     ) {
-        ItemStack currentItemStack = context == null ? ItemStack.EMPTY : context.itemStack();
-        Optional<ZombiesWeaponItemStackService.ZombiesWeaponTagData> currentWeaponTag =
-                weaponInventoryService.currentWeaponTag(roomId, currentItemStack);
-        if (currentWeaponTag.isEmpty() || !TaczGatewayProvider.gateway().isGun(currentItemStack)) {
-            sendFailureMessage(
-                    player,
-                    target,
+        // Interaction contexts contain a copy. Capture the actual held object for the transaction.
+        ItemStack currentItemStack = player.getMainHandItem();
+        var observedTag = weaponInventoryService.currentWeaponTag(
+                roomId, context == null ? ItemStack.EMPTY : context.itemStack());
+        if (context == null || context.hand() != InteractionHand.MAIN_HAND || observedTag.isEmpty()
+                || context.itemStack().getItem() != currentItemStack.getItem()
+                || weaponInventoryService.currentWeaponTag(roomId, currentItemStack)
+                .filter(tag -> tag.instanceId().equals(observedTag.get().instanceId())
+                        && tag.slot() == observedTag.get().slot()).isEmpty()) {
+            sendFailureMessage(player, target,
                     ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON));
             return InteractionResult.FAIL;
         }
-        ZombiesWeaponItemStackService.ZombiesWeaponTagData tag = currentWeaponTag.get();
-        ZombiesWeaponInstanceState currentWeapon = tag.toWeaponState();
-        ZombiesWeaponInstanceState refilledWeapon = currentWeapon.refillReserveAmmo();
-        ZombiesServiceResult<ZombiesWeaponInventoryService.InventoryMutationResult> validationResult =
-                weaponInventoryService.validateReserveAmmoSync(
-                        player,
-                        roomId,
-                        tag.slot(),
-                        refilledWeapon,
-                        currentItemStack);
-        if (!validationResult.success()) {
-            sendFailureMessage(player, target, validationResult);
+        var preparation = weaponInventoryService.prepareAmmoRefill(roomId, currentItemStack);
+        if (!preparation.success()) {
+            sendFailureMessage(player, target, preparation);
             return InteractionResult.FAIL;
         }
-
+        var prepared = preparation.value().orElseThrow();
+        ZombiesWeaponInstanceState refilledWeapon = prepared.weaponState().refillReserveAmmo();
         ZombiesServiceResult<ZombiesAmmoBoxService.AmmoRefillResult> result =
                 ammoBoxService.refillHeldWeapon(
-                        player.getUUID(),
-                        currentWeapon,
+                        player.getUUID(), prepared.tagData().slot(), prepared.weaponState(),
                         ammoBox.pricesByWeaponLevel(),
-                        (lockedWeapon, refilled) -> weaponInventoryService.syncReserveAmmo(
-                                player,
-                                roomId,
-                                tag.slot(),
-                                refilled,
-                                currentItemStack));
+                        (current, filled) -> weaponInventoryService.commitAmmoRefill(player, roomId, prepared));
         if (result.success()) {
             ZombiesAmmoBoxService.AmmoRefillResult refill = result.value().orElse(null);
             ZombiesWeaponInstanceState weapon = refill == null ? refilledWeapon : refill.weapon();
             objectStateStore.markAmmoBoxUsed(ammoBox);
             double cost = refill == null ? displayAmmoCost(ammoBox) : refill.cost();
             sendMessage(player, SUCCESS_AMMO, weapon.gunId(), weapon.weaponLevel(), target.objectId(), displayCost(cost));
-            return InteractionResult.SUCCESS;
-        }
-        sendFailureMessage(player, target, result);
-        return InteractionResult.FAIL;
-    }
-
-    private InteractionResult refillPrimaryAmmoBox(
-            ServerPlayer player,
-            InteractionTarget target,
-            ZombiesAmmoBoxData ammoBox,
-            ItemStack currentItemStack
-    ) {
-        ZombiesServiceResult<ZombiesWeaponInstanceState> currentWeaponResult =
-                weaponInstanceService.currentPrimaryWeapon(player.getUUID());
-        if (!currentWeaponResult.success() || currentWeaponResult.value().isEmpty()) {
-            sendFailureMessage(player, target, currentWeaponResult);
-            return InteractionResult.FAIL;
-        }
-        ZombiesWeaponInstanceState refilledWeapon = currentWeaponResult.value().get().refillReserveAmmo();
-        ZombiesServiceResult<ZombiesWeaponInventoryService.InventoryMutationResult> validationResult =
-                weaponInventoryService.validateReserveAmmoSync(
-                        player,
-                        roomId,
-                        ZombiesEquipmentSlot.PRIMARY,
-                        refilledWeapon,
-                        currentItemStack);
-        if (!validationResult.success()) {
-            sendFailureMessage(player, target, validationResult);
-            return InteractionResult.FAIL;
-        }
-
-        ZombiesServiceResult<ZombiesAmmoBoxService.AmmoRefillResult> result =
-                ammoBoxService.refillPrimaryWeapon(
-                        player.getUUID(),
-                        ammoBox.pricesByWeaponLevel(),
-                        (currentWeapon, refilled) -> weaponInventoryService.syncReserveAmmo(
-                                player,
-                                roomId,
-                                ZombiesEquipmentSlot.PRIMARY,
-                                refilled,
-                                currentItemStack));
-        if (result.success()) {
-            ZombiesAmmoBoxService.AmmoRefillResult refill = result.value().orElse(null);
-            ZombiesWeaponInstanceState weapon = refill == null ? refilledWeapon : refill.weapon();
-            objectStateStore.markAmmoBoxUsed(ammoBox);
-            String gunId = refill == null ? "" : refill.weapon().gunId();
-            int weaponLevel = refill == null ? 0 : refill.weapon().weaponLevel();
-            double cost = refill == null ? displayAmmoCost(ammoBox) : refill.cost();
-            sendMessage(player, SUCCESS_AMMO, gunId, weaponLevel, target.objectId(), displayCost(cost));
             return InteractionResult.SUCCESS;
         }
         sendFailureMessage(player, target, result);
@@ -1081,12 +1020,20 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
             return InteractionResult.FAIL;
         }
         ZombiesWeaponItemStackService.ZombiesWeaponTagData tag = currentWeaponTag.get();
+        String expectedBaseGunId = currentItemStack.getTag().getString("GunId");
         ZombiesServiceResult<ZombiesUltimateMachineService.WeaponUpgradeResult> result =
                 ultimateMachineService.upgradeHeldWeapon(
-                        player.getUUID(), tag.slot(), tag.toWeaponState(), ultimateMachineRules(),
-                        ultimateMachine.requiresPower(), (currentWeapon, upgradedWeapon) ->
-                                weaponInventoryService.syncMainHandWeapon(
-                                        player, roomId, currentItemStack, tag, upgradedWeapon));
+                        player.getUUID(), tag.slot(), ZombiesBaseGunAmmoService.withReserve(
+                                tag.toWeaponState(), ZombiesBaseGunAmmoService.readReserve(currentItemStack)),
+                        ultimateMachineRules(),
+                        ultimateMachine.requiresPower(), (currentWeapon, upgradedWeapon) -> {
+                            if (currentItemStack.getTag() == null
+                                    || !expectedBaseGunId.equals(currentItemStack.getTag().getString("GunId"))) {
+                                return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
+                            }
+                            return weaponInventoryService.syncMainHandWeapon(
+                                    player, roomId, currentItemStack, tag, upgradedWeapon);
+                        });
         if (result.success()) {
             objectStateStore.markUltimateMachineUsed(ultimateMachine);
             ZombiesUltimateMachineService.WeaponUpgradeResult upgrade = result.value().orElse(null);
@@ -1465,6 +1412,14 @@ public final class ZombiesObjectInteractionService implements ModeInteractableOb
                     param(result, "gunId", fallbackGunId(target)),
                     param(result, "rarityId", fallbackRarityId(target)),
                     target.objectId());
+            return;
+        }
+        if (ZombiesErrorCode.of("ammo.base_reserve_unavailable").equals(code)) {
+            sendMessage(player, MESSAGE_PREFIX + "failure.base_reserve_unavailable");
+            return;
+        }
+        if (ZombiesErrorCode.of("ammo.no_reserve_capacity").equals(code)) {
+            sendMessage(player, MESSAGE_PREFIX + "failure.no_reserve_capacity");
             return;
         }
         if (AMMO_ALREADY_FULL.equals(code)) {

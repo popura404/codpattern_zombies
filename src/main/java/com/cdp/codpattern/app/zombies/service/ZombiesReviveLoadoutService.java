@@ -66,8 +66,8 @@ public final class ZombiesReviveLoadoutService {
         int restored = 0;
         int fallbackSlots = 0;
         for (ZombiesEquipmentSlotSnapshot slotSnapshot : snapshot.slots()) {
-            ZombiesWeaponInstanceState weaponState = slotSnapshot.weaponState();
             ItemStack stack = slotSnapshot.itemStack();
+            ZombiesWeaponInstanceState weaponState = restoredWeaponState(slotSnapshot, stack);
             String instanceId = weaponItemStackService.readWeaponTags(stack)
                     .value()
                     .map(ZombiesWeaponItemStackService.ZombiesWeaponTagData::instanceId)
@@ -104,8 +104,21 @@ public final class ZombiesReviveLoadoutService {
             return;
         }
         for (ZombiesEquipmentSlotSnapshot slotSnapshot : snapshot.slots()) {
-            applyRuntimeWeaponState(playerState, slotSnapshot.slot(), slotSnapshot.weaponState());
+            applyRuntimeWeaponState(playerState, slotSnapshot.slot(),
+                    restoredWeaponState(slotSnapshot, slotSnapshot.itemStack()));
         }
+    }
+
+    private ZombiesWeaponInstanceState restoredWeaponState(
+            ZombiesEquipmentSlotSnapshot slotSnapshot, ItemStack stack
+    ) {
+        // Preserve the committed item metadata when an older runtime snapshot differs.
+        // Empty legacy snapshots may still restore progression, but never invent ammo.
+        ZombiesWeaponInstanceState itemState = weaponItemStackService.readWeaponTags(stack)
+                .value()
+                .map(ZombiesWeaponItemStackService.ZombiesWeaponTagData::toWeaponState)
+                .orElse(slotSnapshot.weaponState());
+        return ZombiesBaseGunAmmoService.withReserve(itemState, ZombiesBaseGunAmmoService.readReserve(stack));
     }
 
     private void removeCurrentZombiesWeapons(RoomId roomId, Inventory inventory) {

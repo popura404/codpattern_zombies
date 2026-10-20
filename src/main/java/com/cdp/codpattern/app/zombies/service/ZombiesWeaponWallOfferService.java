@@ -1,7 +1,6 @@
 package com.cdp.codpattern.app.zombies.service;
 
 import com.cdp.codpattern.app.zombies.map.object.ZombiesWeaponWallData;
-import com.cdp.codpattern.compat.tacz.TaczGatewayProvider;
 import com.cdp.codpattern.config.zombies.ZombiesRulesConfig;
 import com.cdp.codpattern.config.zombies.ZombiesBackpackConfig;
 import com.cdp.codpattern.config.zombies.ZombiesRulesRepository;
@@ -150,10 +149,9 @@ public class ZombiesWeaponWallOfferService {
 
     private int maxReserveAmmo(String gunId) {
         ItemStack stack = weaponStackFactory.apply(gunId);
-        String gunType = stack == null || stack.isEmpty() ? null
-                : TaczGatewayProvider.gateway().resolveGunType(stack).orElse(null);
-        String actualGunId = stack == null || stack.isEmpty() ? gunId
-                : TaczGatewayProvider.gateway().resolveGunId(stack).orElse(gunId);
+        var baseGun = ZombiesBaseGunAmmoService.resolveBaseGun(stack).value();
+        String gunType = baseGun.map(ZombiesBaseGunAmmoService.BaseGunInfo::gunType).orElse(null);
+        String actualGunId = baseGun.map(ZombiesBaseGunAmmoService.BaseGunInfo::gunId).orElse(gunId);
         ZombiesBackpackConfig backpack = backpackSupplier.get();
         return ZombiesBackpackAmmoResolver.resolve(actualGunId, gunType,
                 (backpack == null ? ZombiesBackpackConfig.defaults() : backpack).getAmmunition());

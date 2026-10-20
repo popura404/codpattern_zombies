@@ -49,18 +49,8 @@ public final class ZombiesWeaponInventoryServiceCompatTest {
         ZombiesServiceResult<ZombiesWeaponInventoryService.PreparedWeaponStack> prepared =
                 inventoryService.preparePurchasedPrimaryWeapon(roomId, weapon);
 
-        requireSuccess(prepared, "primary purchase stack should prepare");
-        ItemStack stack = prepared.value().orElseThrow().itemStack();
-        ZombiesWeaponItemStackService.ZombiesWeaponTagData tag = itemStackService.readWeaponTags(stack)
-                .value()
-                .orElseThrow();
-        require(roomId.encode().equals(tag.roomId()), "prepared stack should be tagged for the room");
-        require(!tag.instanceId().isBlank(), "prepared stack should have a unique instance id");
-        require(tag.slot() == ZombiesEquipmentSlot.PRIMARY, "prepared stack should be tagged as primary");
-        require("tacz:m4a1".equals(tag.gunId()), "prepared stack should preserve gun id");
-        require(tag.weaponLevel() == 2, "prepared stack should preserve weapon level");
-        require(tag.reserveAmmo() == 210, "prepared stack should start with full reserve ammo");
-        require(tag.maxReserveAmmo() == 210, "prepared stack should preserve max reserve ammo");
+        requireFailure(prepared, ZombiesErrorCode.of("weapon.item_unavailable"),
+                "non-gun factory output must fail before granting or charging");
     }
 
     private static void reserveAmmoSyncUpdatesTaggedWeaponItem() {
@@ -87,7 +77,7 @@ public final class ZombiesWeaponInventoryServiceCompatTest {
                 "setup primary tag should succeed");
 
         ZombiesServiceResult<ZombiesWeaponInventoryService.InventoryMutationResult> sync =
-                inventoryService.syncReserveAmmo(
+                inventoryService.syncWeaponMetadata(
                         stack,
                         roomId,
                         ZombiesEquipmentSlot.PRIMARY,
@@ -98,8 +88,8 @@ public final class ZombiesWeaponInventoryServiceCompatTest {
                 .value()
                 .orElseThrow();
         require("primary-instance".equals(tag.instanceId()), "sync should preserve weapon instance id");
-        require(tag.reserveAmmo() == 210, "sync should write refilled reserve ammo");
-        require(tag.maxReserveAmmo() == 210, "sync should keep max reserve ammo");
+        require(tag.reserveAmmo() == 0, "metadata sync must not invent reserve for a non-gun");
+        require(tag.maxReserveAmmo() == 0, "unavailable root ammo has no authoritative mirror");
     }
 
     private static void reserveAmmoSyncFailureLeavesItemUntouched() {
@@ -126,7 +116,7 @@ public final class ZombiesWeaponInventoryServiceCompatTest {
                 "setup starter tag should succeed");
 
         ZombiesServiceResult<ZombiesWeaponInventoryService.InventoryMutationResult> sync =
-                inventoryService.syncReserveAmmo(
+                inventoryService.syncWeaponMetadata(
                         stack,
                         roomId,
                         ZombiesEquipmentSlot.PRIMARY,

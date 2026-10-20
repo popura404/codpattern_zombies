@@ -140,6 +140,7 @@ public final class ZombiesPurchaseStateServicesCompatTest {
         ZombiesServiceResult<ZombiesAmmoBoxService.AmmoRefillResult> starterRefill =
                 services.ammo.refillHeldWeapon(
                         playerId,
+                        com.cdp.codpattern.app.zombies.model.ZombiesEquipmentSlot.STARTER,
                         starterWeapon,
                         Map.of("1", 200, "2", 350, "3", 500),
                         (currentWeapon, refilledWeapon) -> ZombiesServiceResult.ok());

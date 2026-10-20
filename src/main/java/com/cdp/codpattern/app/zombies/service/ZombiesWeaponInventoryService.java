@@ -58,8 +58,10 @@ public final class ZombiesWeaponInventoryService {
             return ZombiesServiceResult.failure(WEAPON_ITEM_UNAVAILABLE, weaponParams(weaponState), "");
         }
         stack = stack.copy();
-        if (TaczGatewayProvider.gateway().isGun(stack)) {
-            TaczGatewayProvider.gateway().configureGunAmmo(stack, 0);
+        ZombiesServiceResult<ZombiesBaseGunAmmoService.ReserveAmmo> initialized =
+                ZombiesBaseGunAmmoService.initialize(stack, weaponState.reserveAmmo(), weaponState.maxReserveAmmo());
+        if (!initialized.success()) {
+            return ZombiesServiceResult.failure(initialized.code(), initialized.params(), initialized.logMessage());
         }
         ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> tagResult =
                 weaponItemStackService.writeWeaponTags(
@@ -91,7 +93,11 @@ public final class ZombiesWeaponInventoryService {
         if (!TaczGatewayProvider.gateway().isGun(stack)) {
             return ZombiesServiceResult.failure(WEAPON_ITEM_UNAVAILABLE, weaponParams(weaponState), "");
         }
-        TaczGatewayProvider.gateway().configureGunAmmo(stack, 0);
+        ZombiesServiceResult<ZombiesBaseGunAmmoService.ReserveAmmo> initialized =
+                ZombiesBaseGunAmmoService.initialize(stack, weaponState.reserveAmmo(), weaponState.maxReserveAmmo());
+        if (!initialized.success()) {
+            return ZombiesServiceResult.failure(initialized.code(), initialized.params(), initialized.logMessage());
+        }
         ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> tagResult =
                 weaponItemStackService.writeWeaponTags(stack, roomId, ZombiesEquipmentSlot.MYSTERY_BOX, weaponState);
         if (!tagResult.success() || tagResult.value().isEmpty()) {
@@ -251,7 +257,7 @@ public final class ZombiesWeaponInventoryService {
         ItemStack snapshot = expectedStack.copy();
         try {
             ZombiesServiceResult<InventoryMutationResult> result =
-                    syncReserveAmmo(expectedStack, roomId, expectedTag.slot(), weaponState);
+                    syncWeaponMetadata(expectedStack, roomId, expectedTag.slot(), weaponState);
             if (!result.success()) {
                 expectedStack.setTag(snapshot.getTag());
                 return result;
@@ -264,114 +270,83 @@ public final class ZombiesWeaponInventoryService {
         }
     }
 
-    public ZombiesServiceResult<InventoryMutationResult> validateReserveAmmoSync(
-            ServerPlayer player,
-            RoomId roomId,
-            ZombiesEquipmentSlot slot,
-            ZombiesWeaponInstanceState weaponState,
-            ItemStack currentItemStack
-    ) {
-        if (player == null) {
-            return ZombiesServiceResult.failure(
-                    ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON,
-                    weaponParams(weaponState),
-                    "");
+    /** Captures the exact weapon and live base reserve before entering the economy transaction. */
+    public ZombiesServiceResult<PreparedAmmoRefill> prepareAmmoRefill(RoomId roomId, ItemStack stack) {
+        var tag = currentWeaponTag(roomId, stack).orElse(null);
+        if (tag == null || !TaczGatewayProvider.gateway().isGun(stack)) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
         }
-        return validateReserveAmmoSync(player.getInventory(), roomId, slot, weaponState, currentItemStack);
+        var reserve = ZombiesBaseGunAmmoService.readReserve(stack);
+        if (!reserve.valid()) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.of("ammo.base_reserve_unavailable"));
+        }
+        if (reserve.maximum() == 0) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.of("ammo.no_reserve_capacity"));
+        }
+        if (reserve.current() == reserve.maximum()) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.of("ammo.already_full"),
+                    weaponParams(tag.toWeaponState()), "");
+        }
+        return ZombiesServiceResult.success(new PreparedAmmoRefill(stack, tag,
+                stack.getTag().getString("GunId"), reserve,
+                ZombiesBaseGunAmmoService.withReserve(tag.toWeaponState(), reserve)));
     }
 
-    public ZombiesServiceResult<InventoryMutationResult> validateReserveAmmoSync(
-            Inventory inventory,
-            RoomId roomId,
-            ZombiesEquipmentSlot slot,
-            ZombiesWeaponInstanceState weaponState,
-            ItemStack currentItemStack
-    ) {
-        Optional<IndexedWeaponStack> entry = findWeaponStack(inventory, roomId, slot, currentItemStack);
-        if (entry.isEmpty()) {
-            return ZombiesServiceResult.failure(
-                    ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON,
-                    weaponParams(weaponState),
-                    "");
+    public ZombiesServiceResult<InventoryMutationResult> commitAmmoRefill(
+            ServerPlayer player, RoomId roomId, PreparedAmmoRefill prepared) {
+        if (player == null || prepared == null || player.getMainHandItem() != prepared.itemStack()) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
         }
-        ItemStack copy = entry.get().stack().copy();
-        ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> existingTag =
-                weaponItemStackService.readWeaponTags(copy);
-        String instanceId = existingTag.value()
-                .map(ZombiesWeaponItemStackService.ZombiesWeaponTagData::instanceId)
-                .orElse("");
-        ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> tagResult =
-                weaponItemStackService.writeWeaponTags(copy, roomId, instanceId, slot, weaponState);
-        if (!tagResult.success()) {
-            return ZombiesServiceResult.failure(
-                    WEAPON_ITEM_TAG_FAILED,
-                    mergeParams(weaponParams(weaponState), tagResult.params()),
-                    tagResult.logMessage());
-        }
-        return ZombiesServiceResult.success(new InventoryMutationResult(
-                slot,
-                entry.get().index(),
-                tagResult.value()
-                        .map(ZombiesWeaponItemStackService.ZombiesWeaponTagData::instanceId)
-                        .orElse(instanceId),
-                weaponState));
-    }
-
-    public ZombiesServiceResult<InventoryMutationResult> syncReserveAmmo(
-            ServerPlayer player,
-            RoomId roomId,
-            ZombiesEquipmentSlot slot,
-            ZombiesWeaponInstanceState weaponState,
-            ItemStack currentItemStack
-    ) {
-        if (player == null) {
-            return ZombiesServiceResult.failure(
-                    ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON,
-                    weaponParams(weaponState),
-                    "");
-        }
-        InventorySnapshot snapshot = InventorySnapshot.capture(player.getInventory());
+        ItemStack stack = prepared.itemStack();
+        ItemStack snapshot = stack.copy();
         try {
-            ZombiesServiceResult<InventoryMutationResult> result =
-                    syncReserveAmmo(player.getInventory(), roomId, slot, weaponState, currentItemStack);
-            if (!result.success()) {
-                snapshot.restore(player.getInventory());
-                return result;
+            var result = commitAmmoRefill(stack, roomId, prepared);
+            if (result.success()) {
+                syncInventory(player);
             }
-            syncInventory(player);
             return result;
         } catch (RuntimeException exception) {
-            snapshot.restore(player.getInventory());
-            return itemCommitFailure(weaponState, exception);
+            stack.setTag(snapshot.getTag());
+            return itemCommitFailure(prepared.weaponState(), exception);
         }
     }
 
-    public ZombiesServiceResult<InventoryMutationResult> syncReserveAmmo(
-            Inventory inventory,
-            RoomId roomId,
-            ZombiesEquipmentSlot slot,
-            ZombiesWeaponInstanceState weaponState,
-            ItemStack currentItemStack
-    ) {
-        Optional<IndexedWeaponStack> entry = findWeaponStack(inventory, roomId, slot, currentItemStack);
-        if (entry.isEmpty()) {
-            return ZombiesServiceResult.failure(
-                    ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON,
-                    weaponParams(weaponState),
-                    "");
+    /** Testable item commit; the player overload additionally verifies the captured main hand. */
+    public ZombiesServiceResult<InventoryMutationResult> commitAmmoRefill(
+            ItemStack stack, RoomId roomId, PreparedAmmoRefill prepared) {
+        if (prepared == null || stack != prepared.itemStack()
+                || currentWeaponTag(roomId, stack).filter(prepared.tagData()::equals).isEmpty()
+                || stack.getTag() == null || !prepared.gunId().equals(stack.getTag().getString("GunId"))) {
+            return ZombiesServiceResult.failure(ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON);
         }
-        ZombiesServiceResult<InventoryMutationResult> result =
-                syncReserveAmmo(entry.get().stack(), roomId, slot, weaponState);
-        return result.success()
-                ? ZombiesServiceResult.success(new InventoryMutationResult(
-                        slot,
-                        entry.get().index(),
-                        result.value().map(InventoryMutationResult::instanceId).orElse(""),
-                        weaponState))
-                : result;
+        ItemStack snapshot = stack.copy();
+        try {
+            var refill = ZombiesBaseGunAmmoService.refill(stack, prepared.reserve());
+            if (!refill.success()) {
+                return ZombiesServiceResult.failure(refill.code(), refill.params(), refill.logMessage());
+            }
+            var result = syncWeaponMetadata(stack, roomId, prepared.tagData().slot(),
+                    ZombiesBaseGunAmmoService.withReserve(prepared.weaponState(), refill.value().orElseThrow()));
+            if (!result.success()) {
+                stack.setTag(snapshot.getTag());
+            }
+            return result;
+        } catch (RuntimeException exception) {
+            stack.setTag(snapshot.getTag());
+            return itemCommitFailure(prepared.weaponState(), exception);
+        }
     }
 
-    public ZombiesServiceResult<InventoryMutationResult> syncReserveAmmo(
+    public record PreparedAmmoRefill(
+            ItemStack itemStack,
+            ZombiesWeaponItemStackService.ZombiesWeaponTagData tagData,
+            String gunId,
+            ZombiesBaseGunAmmoService.ReserveAmmo reserve,
+            ZombiesWeaponInstanceState weaponState
+    ) { }
+
+    /** Updates management metadata and mirrors live base ammo without changing native ammo. */
+    public ZombiesServiceResult<InventoryMutationResult> syncWeaponMetadata(
             ItemStack stack,
             RoomId roomId,
             ZombiesEquipmentSlot slot,
@@ -392,12 +367,15 @@ public final class ZombiesWeaponInventoryService {
                     "");
         }
         ZombiesWeaponItemStackService.ZombiesWeaponTagData tag = existingTag.value().get();
-        if (tag.slot() != slot || !matchesRoom(roomId, tag.roomId())) {
+        if (tag.slot() != slot || !matchesRoom(roomId, tag.roomId())
+                || !tag.gunId().equals(weaponState.gunId()) || !tag.rarityId().equals(weaponState.rarityId())) {
             return ZombiesServiceResult.failure(
                     ZombiesErrorCode.WEAPON_INVALID_CURRENT_WEAPON,
                     weaponParams(weaponState),
                     "");
         }
+        weaponState = ZombiesBaseGunAmmoService.withReserve(weaponState,
+                ZombiesBaseGunAmmoService.readReserve(stack));
         ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> tagResult =
                 weaponItemStackService.writeWeaponTags(stack, roomId, tag.instanceId(), slot, weaponState);
         if (!tagResult.success()) {
@@ -413,58 +391,6 @@ public final class ZombiesWeaponInventoryService {
                         .map(ZombiesWeaponItemStackService.ZombiesWeaponTagData::instanceId)
                         .orElse(tag.instanceId()),
                 weaponState));
-    }
-
-    private Optional<IndexedWeaponStack> findWeaponStack(
-            Inventory inventory,
-            RoomId roomId,
-            ZombiesEquipmentSlot slot,
-            ItemStack currentItemStack
-    ) {
-        if (inventory == null || slot == null) {
-            return Optional.empty();
-        }
-        Optional<ZombiesWeaponItemStackService.ZombiesWeaponTagData> currentTag =
-                currentWeaponTag(roomId, currentItemStack)
-                        .filter(tag -> tag.slot() == slot);
-        if (currentTag.isPresent()) {
-            String currentInstanceId = currentTag.get().instanceId();
-            Optional<IndexedWeaponStack> byInstance = findWeaponStack(
-                    inventory,
-                    roomId,
-                    slot,
-                    currentInstanceId);
-            if (byInstance.isPresent()) {
-                return byInstance;
-            }
-        }
-        return findWeaponStack(inventory, roomId, slot, "");
-    }
-
-    private Optional<IndexedWeaponStack> findWeaponStack(
-            Inventory inventory,
-            RoomId roomId,
-            ZombiesEquipmentSlot slot,
-            String instanceId
-    ) {
-        String expectedInstanceId = Objects.requireNonNullElse(instanceId, "").trim();
-        for (int index = 0; index < inventory.getContainerSize(); index++) {
-            ItemStack stack = inventory.getItem(index);
-            ZombiesServiceResult<ZombiesWeaponItemStackService.ZombiesWeaponTagData> tagResult =
-                    weaponItemStackService.readWeaponTags(stack);
-            if (!tagResult.success() || tagResult.value().isEmpty()) {
-                continue;
-            }
-            ZombiesWeaponItemStackService.ZombiesWeaponTagData tag = tagResult.value().get();
-            if (tag.slot() != slot || !matchesRoom(roomId, tag.roomId())) {
-                continue;
-            }
-            if (!expectedInstanceId.isBlank() && !expectedInstanceId.equals(tag.instanceId())) {
-                continue;
-            }
-            return Optional.of(new IndexedWeaponStack(index, stack));
-        }
-        return Optional.empty();
     }
 
     private void removeRoomWeaponSlot(
@@ -517,8 +443,8 @@ public final class ZombiesWeaponInventoryService {
         if (stack.isEmpty() || !TaczGatewayProvider.gateway().isGun(stack)) {
             return ItemStack.EMPTY;
         }
-        Optional<String> resolvedGunId = TaczGatewayProvider.gateway().resolveGunId(stack);
-        if (resolvedGunId.isEmpty() || !normalizedGunId.equals(resolvedGunId.get())) {
+        var baseGun = ZombiesBaseGunAmmoService.resolveBaseGun(stack).value();
+        if (baseGun.isEmpty() || !normalizedGunId.equals(baseGun.get().gunId())) {
             return ItemStack.EMPTY;
         }
         return stack;
@@ -540,7 +466,7 @@ public final class ZombiesWeaponInventoryService {
     private static boolean matchesRoom(RoomId roomId, String taggedRoomId) {
         String expectedRoomId = roomId == null ? "" : roomId.encode();
         String actualRoomId = Objects.requireNonNullElse(taggedRoomId, "").trim();
-        return expectedRoomId.isBlank() || actualRoomId.isBlank() || expectedRoomId.equals(actualRoomId);
+        return !expectedRoomId.isBlank() && expectedRoomId.equals(actualRoomId);
     }
 
     private static Map<String, ModePlayerValue> weaponParams(ZombiesWeaponInstanceState weaponState) {
@@ -638,13 +564,4 @@ public final class ZombiesWeaponInventoryService {
         }
     }
 
-    private record IndexedWeaponStack(
-            int index,
-            ItemStack stack
-    ) {
-        private IndexedWeaponStack {
-            index = Math.max(0, index);
-            stack = stack == null ? ItemStack.EMPTY : stack;
-        }
-    }
 }

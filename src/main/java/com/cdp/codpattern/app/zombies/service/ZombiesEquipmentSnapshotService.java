@@ -68,10 +68,10 @@ public final class ZombiesEquipmentSnapshotService {
                 continue;
             }
 
-            ZombiesWeaponInstanceState weaponState = runtimeWeaponState(
-                    playerState,
-                    tagData.slot(),
-                    tagData.toWeaponState());
+            // The item carries the weapon's identity and committed progression.
+            // Slot runtime state has no instance id and may belong to a replaced gun.
+            ZombiesWeaponInstanceState weaponState = ZombiesBaseGunAmmoService.withReserve(
+                    tagData.toWeaponState(), ZombiesBaseGunAmmoService.readReserve(stack));
             ItemStack taggedCopy = stack.copy();
             weaponItemStackService.writeWeaponTags(
                     taggedCopy,
@@ -102,23 +102,6 @@ public final class ZombiesEquipmentSnapshotService {
                 inventory.setItem(inventorySlot, ItemStack.EMPTY);
             }
         }
-    }
-
-    private ZombiesWeaponInstanceState runtimeWeaponState(
-            ZombiesPlayerRuntimeState playerState,
-            ZombiesEquipmentSlot slot,
-            ZombiesWeaponInstanceState fallback
-    ) {
-        if (slot == ZombiesEquipmentSlot.STARTER) {
-            return playerState.starterWeapon().orElse(fallback);
-        }
-        if (slot == ZombiesEquipmentSlot.PRIMARY) {
-            return playerState.primaryWeapon().orElse(fallback);
-        }
-        if (slot == ZombiesEquipmentSlot.MYSTERY_BOX) {
-            return playerState.mysteryBoxWeapon().orElse(fallback);
-        }
-        return fallback;
     }
 
     private static void syncInventory(ServerPlayer player) {

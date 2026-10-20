@@ -197,19 +197,23 @@ public final class ZombiesBackpackRuntimeTestSupport {
         check(gateway.resolveReserveAmmo(stack) == 360 - expandedMagazine && gateway.resolveMaxReserveAmmo(stack) == 360,
                 "reload consumption preserves maximum");
         state = state.withReserveAmmo(gateway.resolveReserveAmmo(stack));
-        success(inventoryService.syncReserveAmmo(stack, ROOM, ZombiesEquipmentSlot.PRIMARY, state), "sync consumed reserve");
+        success(inventoryService.syncWeaponMetadata(stack, ROOM, ZombiesEquipmentSlot.PRIMARY, state), "sync consumed reserve");
         assertAmmo(stack, state.reserveAmmo(), 360, "consumed reserve NBT and runtime");
 
         var player = FakePlayerFactory.get(level, new GameProfile(UUID.randomUUID(), "BackpackRestore"));
         var players = new ZombiesPlayerStateService(); var economy = new ZombiesEconomyService(players);
         var runtime = players.getOrCreate(player.getUUID()); runtime.setPrimaryWeapon(state);
         economy.addPoints(player.getUUID(), 10000);
-        var refill = new ZombiesAmmoBoxService(economy).refillPrimaryWeapon(player.getUUID(), Map.of(1, 1),
-                (current, filled) -> inventoryService.syncReserveAmmo(stack, ROOM, ZombiesEquipmentSlot.PRIMARY, filled));
+        var refillPreparation = inventoryService.prepareAmmoRefill(ROOM, stack);
+        success(refillPreparation, "capture live base reserve");
+        var observation = refillPreparation.value().orElseThrow();
+        var refill = new ZombiesAmmoBoxService(economy).refillHeldWeapon(player.getUUID(),
+                observation.tagData().slot(), observation.weaponState(), Map.of(1, 1),
+                (current, filled) -> inventoryService.commitAmmoRefill(stack, ROOM, observation));
         success(refill, "refill"); assertAmmo(stack, 360, 360, "refill uses instance cap");
         var upgrade = new ZombiesUltimateMachineService(economy, new ZombiesPowerService(economy))
                 .upgradePrimaryWeapon(player.getUUID(), new ZombiesRulesConfig().getUltimateMachine(), false,
-                        (current, upgraded) -> inventoryService.syncReserveAmmo(stack, ROOM, ZombiesEquipmentSlot.PRIMARY, upgraded));
+                        (current, upgraded) -> inventoryService.syncWeaponMetadata(stack, ROOM, ZombiesEquipmentSlot.PRIMARY, upgraded));
         success(upgrade, "upgrade");
         check(runtime.primaryWeapon().orElseThrow().upgradeLevel() == 1, "upgrade applied");
         assertAmmo(stack, 360, 360, "upgrade preserves cap");

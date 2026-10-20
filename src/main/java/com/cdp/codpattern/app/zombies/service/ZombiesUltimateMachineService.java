@@ -207,13 +207,12 @@ public final class ZombiesUltimateMachineService {
     private static boolean matchesHeldWeapon(
             ZombiesWeaponInstanceState trackedWeapon, ZombiesWeaponInstanceState heldWeapon
     ) {
-        // Live reserve ammo can be newer than the runtime snapshot after firing/reloading.
+        // Both reserve fields belong to the live item, not to the weapon's management identity.
         return heldWeapon == null || (trackedWeapon != null
                 && trackedWeapon.gunId().equals(heldWeapon.gunId())
                 && trackedWeapon.rarityId().equals(heldWeapon.rarityId())
                 && trackedWeapon.weaponLevel() == heldWeapon.weaponLevel()
                 && trackedWeapon.upgradeLevel() == heldWeapon.upgradeLevel()
-                && trackedWeapon.maxReserveAmmo() == heldWeapon.maxReserveAmmo()
                 && matchesNbtMultiplier(trackedWeapon.levelDamageMultiplier(), heldWeapon.levelDamageMultiplier())
                 && matchesNbtMultiplier(trackedWeapon.upgradeDamageMultiplier(), heldWeapon.upgradeDamageMultiplier()));
     }
